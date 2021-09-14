@@ -5,6 +5,7 @@ import otf2
 from itertools import chain, count, groupby
 from collections import Counter
 from otf2.events import Enter, Leave
+from otter.definitions import EventType, Endpoint, RegionType, TaskStatus, TaskType, EdgeType
 from otter.trace import AttributeLookup, RegionLookup, yield_chunks, process_chunk
 from otter.styling import colormap_region_type, colormap_edge_type, shapemap_region_type
 from otter.helpers import set_tuples, reject_task_create, attr_handler, label_clusters, descendants_if, attr_getter, pass_master_event
@@ -94,7 +95,7 @@ def main():
 
     # Collapse by single-begin/end event
     def is_single_executor(v):
-        return type(v['event']) in [Enter, Leave] and event_attr(v['event'], 'region_type') == 'single_executor'
+        return type(v['event']) in [Enter, Leave] and event_attr(v['event'], 'region_type') == RegionType.single_executor
     print("contracting by single-begin/end event")
     g.vs['cluster'] = label_clusters(g.vs, is_single_executor, 'event')
     nodes_before = num_nodes
@@ -104,7 +105,7 @@ def main():
 
     # Collapse by master-begin/end event
     def is_master(v):
-        return type(v['event']) in [Enter, Leave] and event_attr(v['event'], 'region_type') == 'master'
+        return type(v['event']) in [Enter, Leave] and event_attr(v['event'], 'region_type') == RegionType.master
     print("contracting by master-begin/end event")
     g.vs['cluster'] = label_clusters(g.vs, is_master, 'event')
     nodes_before = num_nodes
@@ -114,9 +115,9 @@ def main():
 
     # Itermediate clean-up: for each master region, remove edges that connect 
     # the same nodes as the master region
-    master_enter = filter(lambda v: event_attr(v['event'], 'region_type') == 'master' and event_attr(v['event'], 'endpoint') == 'enter', g.vs)
+    master_enter = filter(lambda v: event_attr(v['event'], 'region_type') == RegionType.master and event_attr(v['event'], 'endpoint') == Endpoint.enter, g.vs)
     master_enter_nodes = {v['event']: v for v in master_enter}
-    master_leave = filter(lambda v: event_attr(v['event'], 'region_type') == 'master' and event_attr(v['event'], 'endpoint') == 'leave', g.vs)
+    master_leave = filter(lambda v: event_attr(v['event'], 'region_type') == RegionType.master and event_attr(v['event'], 'endpoint') == Endpoint.leave, g.vs)
     master_node_pairs = ((master_enter_nodes[leave_node['master_enter_event']], leave_node) for leave_node in master_leave)
     def yield_neighbours():
         for enter_node, leave_node in master_node_pairs:
@@ -129,7 +130,7 @@ def main():
 
     # Collapse by (task-ID, endpoint) to get 1 subgraph per task
     for v in g.vs:
-        if type(v['event']) in [Enter, Leave] and event_attr(v['event'], 'region_type') == 'explicit_task':
+        if type(v['event']) in [Enter, Leave] and event_attr(v['event'], 'region_type') == RegionType.explicit_task:
             v['task_cluster_id'] = (event_attr(v['event'], 'unique_id'), event_attr(v['event'], 'endpoint'))
     print("contracting by task ID & endpoint")
     g.vs['cluster'] = label_clusters(g.vs, lambda v: v['task_cluster_id'] is not None, 'task_cluster_id')
@@ -166,7 +167,7 @@ def main():
             else:
                 for event in v['event']:
                     node_types.add(event_attr(event, 'region_type'))
-        if node_types in [{'barrier_implicit'}, {'barrier_explicit'}, {'taskwait'}, {'loop'}] and \
+        if node_types in [{RegionType.barrier_implicit}, {RegionType.barrier_explicit}, {RegionType.taskwait}, {RegionType.loop}] and \
                 e.source_vertex.attributes().get('sync_cluster_id', None) is None and \
                 e.target_vertex.attributes().get('sync_cluster_id', None) is None:
             value = next(dummy_counter)
@@ -191,17 +192,17 @@ def main():
 
     # Apply taskwait synchronisation
     print("applying taskwait synchronisation")
-    for twnode in g.vs.select(lambda v: v['region_type'] == 'taskwait'):
+    for twnode in g.vs.select(lambda v: v['region_type'] == RegionType.taskwait):
         parents = set(task_tree.vs[event_attr(e, 'encountering_task_id')] for e in twnode['event'])
         tw_encounter_ts = {event_attr(e, 'encountering_task_id'): e.time for e in twnode['event'] if type(e) is Enter}
         children = [c.index for c in chain(*[p.neighbors(mode='out') for p in parents])
                     if c['crt_ts'] < tw_encounter_ts[c['parent_index']] < c['end_ts']]
-        nodes = [v for v in g.vs if v['region_type'] == 'explicit_task'
+        nodes = [v for v in g.vs if v['region_type'] == RegionType.explicit_task
                                  and event_attr(v['event'], 'unique_id') in children
-                                 and v['endpoint'] != 'enter']
+                                 and v['endpoint'] != Endpoint.enter]
         ecount = g.ecount()
         g.add_edges([(v.index, twnode.index) for v in nodes])
-        g.es[ecount:]['type'] = 'taskwait'
+        g.es[ecount:]['type'] = EdgeType.taskwait
 
     def event_time_per_task(event):
         """Return the map: encountering task id -> event time for all encountering tasks in the event"""
@@ -211,19 +212,19 @@ def main():
 
     # Apply taskgroup synchronisation
     print("applying taskgroup synchronisation")
-    for tgnode in g.vs.select(lambda v: v['region_type'] == 'taskgroup' and v['endpoint'] == 'leave'):
+    for tgnode in g.vs.select(lambda v: v['region_type'] == RegionType.taskgroup and v['endpoint'] == Endpoint.leave):
         tg_enter_ts = event_time_per_task(tgnode['taskgroup_enter_event'])
         tg_leave_ts = event_time_per_task(tgnode['event'])
         parents = [task_tree.vs[k] for k in tg_enter_ts]
         children = [c for c in chain(*[p.neighbors(mode='out') for p in parents])
                     if tg_enter_ts[c['parent_index']] < c['crt_ts'] < tg_leave_ts[c['parent_index']]]
         descendants = list(chain(*[descendants_if(c, cond=lambda x: x['task_type'] != 'implicit') for c in children]))
-        nodes = [v for v in g.vs if v['region_type'] == 'explicit_task'
+        nodes = [v for v in g.vs if v['region_type'] == RegionType.explicit_task
                                  and event_attr(v['event'], 'unique_id') in descendants
-                                 and v['endpoint'] != 'enter']
+                                 and v['endpoint'] != Endpoint.enter]
         ecount = g.ecount()
         g.add_edges([(v.index, tgnode.index) for v in nodes])
-        g.es[ecount:]['type'] = 'taskgroup'
+        g.es[ecount:]['type'] = EdgeType.taskgroup
 
     # Apply styling if desired
     if not args.nostyle:
