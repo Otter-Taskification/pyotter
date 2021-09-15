@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 from pyotter_version import version
 
-setup(name="otter",
+setup(name="pyotter",
     version=".".join(version),
     description="Otter post-processing tool",
     author="Adam Tuft",
