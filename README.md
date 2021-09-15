@@ -1,4 +1,4 @@
-# python-otter - The post-processing package for [Otter](https://github.com/adamtuft/otter)
+# pyotter - The post-processing package for [Otter](https://github.com/adamtuft/otter)
 
 This is the post-processing package for use with Otter - please see [the main Otter repo](https://github.com/adamtuft/otter) for details.
 
@@ -6,22 +6,28 @@ This is the post-processing package for use with Otter - please see [the main Ot
 
 ### Prerequisites
 
-The following dependencies should be installed before installing `python-otter`:
+The following dependencies should be installed before installing pyotter:
 
 - [OTF2 v2.3](https://zenodo.org/record/4682684)
 - [`python-igraph` v0.9.1](https://pypi.org/project/python-igraph/0.9.1/)
 
-### Installing python-otter
+### Installing pyotter
 
-To install `python-otter` from github:
+To install pyotter from github:
 
 ```bash
-git clone https://github.com/adamtuft/python-otter.git && cd python-otter
+git clone https://github.com/adamtuft/pyotter.git && cd pyotter
 git checkout main
 pip install .
 ```
 
-### Using python-otter
+To install from PyPi:
+
+```
+pip install pyotter
+```
+
+### Using pyotter
 
 A trace recorded by Otter can be converted into a graph in `graph.dot` with:
 
@@ -51,11 +57,11 @@ Please post any of the above [in the main Otter repo](https://github.com/adamtuf
 
 ## Licensing
 
-python-otter is released under the BSD 3-clause license. See [LICENSE](LICENSE) for details.
+pyotter is released under the BSD 3-clause license. See [LICENSE](LICENSE) for details.
 
 Copyright (c) 2021, Adam Tuft
 All rights reserved.
 
 ## Acknowledgements
 
-Otter was conceived and developed as the subject of a final project and dissertation for the the [Scientific Computing and Data Analysis MSc](https://miscada.phyip3.dur.ac.uk/) (MISCADA) at Durham University, UK. The author is grateful for the guidance and support of his supervisor Prof. Tobias Weinzierl and for the invaluable assistance provided by Dr. Holger Schulz.
+pyotter was conceived and developed as the subject of a final project and dissertation for the the [Scientific Computing and Data Analysis MSc](https://miscada.phyip3.dur.ac.uk/) (MISCADA) at Durham University, UK. The author is grateful for the guidance and support of his supervisor Prof. Tobias Weinzierl and for the invaluable assistance provided by Dr. Holger Schulz.
