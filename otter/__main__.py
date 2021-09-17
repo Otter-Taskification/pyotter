@@ -42,34 +42,15 @@ def main():
     print(f"loading OTF2 anchor file: {anchorfile}")
     print("generating chunks from event stream...")
     with otf2.reader.open(anchorfile) as tr:
-        # attr = AttributeLookup(tr.definitions.attributes)
-        # regions = RegionLookup(tr.definitions.regions)
-        # results = (process_chunk(chunk, verbose=args.verbose) for chunk in yield_chunks(tr))
-        # items = zip(*results)
-        # chunk_types = next(items)
-        # chain_sort_next = lambda x: sorted(chain(*next(x)), key=lambda t: t[0])
-        # task_links, task_crt_ts, task_leave_ts = (chain_sort_next(items) for _ in range(3))
-        # g_list = next(items)
-        ChunkGen = ChunkGenerator(tr, verbose=args.verbose)
-        gen = [chunk for chunk in ChunkGen]
-
-    # def print_events():
-    #     for location, event in ChunkGen.events:
-    #         print(event.time, type(event))
-    #         print("\n".join(list(str((k, v)) for k, v in event.attributes.items() if k.name in ["region_type", "event_type", "encountering_task_id"])) + ("<<<" if event_defines_new_task_fragment(event, ChunkGen.attr) and type(event) in [Enter, Leave] else ""))
-    #         print("")
-
-    def print_events(es, attr):
-        print("\n".join(fmt_event(e, attr) for _, e in es))
-
-    # for c in gen:
-    #     print(c)
-
-    tr = otf2.reader.open(anchorfile).__enter__()
-    events = list(tr.events)
-    attr = AttributeLookup(tr.definitions.attributes)
-
-    pdb.set_trace()
+        chunkGen = ChunkGenerator(tr, verbose=args.verbose)
+        attr = ChunkGen.attr
+        regions = RegionLookup(tr.definitions.regions)
+        results = (process_chunk(chunk, verbose=args.verbose) for chunk in chunkGen)
+        items = zip(*results)
+        chunk_types = next(items)
+        chain_sort_next = lambda x: sorted(chain(*next(x)), key=lambda t: t[0])
+        task_links, task_crt_ts, task_leave_ts = (chain_sort_next(items) for _ in range(3))
+        g_list = next(items)
 
     # Make function for looking up event attributes
     event_attr = attr_getter(attr)
