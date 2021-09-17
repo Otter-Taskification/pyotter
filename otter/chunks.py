@@ -5,6 +5,7 @@ from otter.definitions import EventType, RegionType, TaskStatus, TaskType, Endpo
 from otter.trace import AttributeLookup, event_defines_new_chunk
 from otf2.events import Enter, Leave, ThreadTaskCreate, ThreadTaskSwitch, ThreadTaskComplete, ThreadBegin, ThreadEnd
 
+
 class Chunk:
     """A sequence of events delineated by events at which the execution flow may diverge. Contains a reference to an
     AttributeLookup for looking up event attributes by name."""
@@ -54,13 +55,8 @@ class Chunk:
     def kind(self):
         return None if len(self.events) == 0 else event.attributes[self.events[0].attributes[self.attr['region_type']]]
 
-
-def event_defines_new_task_fragment(e: otf2.events._EventMeta, a: AttributeLookup) -> bool:
-    return (
-        (type(e) in [ThreadTaskSwitch]) or
-        (type(e) in [Enter, Leave] and e.attributes.get(a['region_type'], None) in
-            [RegionType.parallel, RegionType.initial_task, RegionType.implicit_task, RegionType.single_executor, RegionType.master])
-    )
+    def items(self):
+        return (None, self.events)
 
 
 class ChunkGenerator:
@@ -258,6 +254,7 @@ class ChunkGenerator:
                 self[encountering_task].append(event)
         print("")
 
+
 def fmt_event(e, attr):
     s = ""
     try:
@@ -272,3 +269,11 @@ def fmt_event(e, attr):
         print(err)
         print(type(e))
     return s
+
+
+def event_defines_new_task_fragment(e: otf2.events._EventMeta, a: AttributeLookup) -> bool:
+    return (
+        (type(e) in [ThreadTaskSwitch]) or
+        (type(e) in [Enter, Leave] and e.attributes.get(a['region_type'], None) in
+            [RegionType.parallel, RegionType.initial_task, RegionType.implicit_task, RegionType.single_executor, RegionType.master])
+    )
