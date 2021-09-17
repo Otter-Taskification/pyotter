@@ -1,4 +1,5 @@
 import otf2
+import igraph as ig
 from typing import Iterable
 from collections import deque, defaultdict
 from otter.definitions import EventType, RegionType, TaskStatus, TaskType, Endpoint, EdgeType
@@ -71,6 +72,11 @@ class ChunkGenerator:
         self.verbose = verbose
         self.nChunks = 0
         self.events_consumed = 0
+        self.task_links = deque()
+        self.task_type = dict()
+        self.task_crt_ts = dict()
+        self.task_end_ts = dict()
+        self.task_switch_events = defaultdict(deque)
 
     def __getitem__(self, key):
         return self._task_chunk_map[key]
@@ -82,6 +88,22 @@ class ChunkGenerator:
 
     def keys(self):
         return self._task_chunk_map.keys()
+
+    def make_task_tree(self):
+        start_time = self.task_crt_ts[0]
+        last_time = max(self.task_end_ts.values())
+        duration = last_time - start_time
+        task_ids = list(self.task_type.keys())
+        task_tree = ig.Graph(n=len(task_ids), directed=True)
+        task_tree.vs['name'] = task_ids
+        task_tree.vs['task_type'] = [self.task_type[k] for k in task_ids]
+        task_tree.vs['crt_ts'] = [self.task_crt_ts[k] for k in task_ids]
+        task_tree.vs['end_ts'] = [self.task_end_ts[k] for k in task_ids]
+        for parent, child in self.task_links:
+            if child == 0:
+                continue
+            task_tree.add_edge(parent, child)
+        return task_tree
 
     def yield_chunk(self, chunk_key):
         if self.verbose:
@@ -103,9 +125,6 @@ class ChunkGenerator:
 
         # Record the enclosing chunk when an event indicates a nested chunk
         chunk_stack = defaultdict(deque)
-
-        # Not sure this is required anymore
-        enclosing_task = dict()
 
         if self.verbose:
             print("yielding chunks:", end="\n", flush=True)
@@ -135,6 +154,21 @@ class ChunkGenerator:
 
             # default:
             chunk_key = encountering_task
+
+            # Record task links, creation time and task-switch events for later extraction of timing data
+            if (type(event) == ThreadTaskCreate) or (type(event) == Enter and event.attributes[self.attr['region_type']] in [RegionType.initial_task, RegionType.implicit_task]):
+                self.task_links.append((encountering_task, unique_id))
+                self.task_type[unique_id] = event.attributes[self.attr['region_type']]
+                self.task_crt_ts[unique_id] = event.time
+            elif (type(event) == ThreadTaskSwitch):
+                print(f">> Switch {encountering_task} -> {unique_id}")
+                self.task_switch_events[encountering_task].append(event)
+                self.task_switch_events[unique_id].append(event)
+                prior_task_status = event.attributes[self.attr['prior_task_status']]
+                if prior_task_status == TaskStatus.complete:
+                    self.task_end_ts[encountering_task] = event.time
+            elif type(event) == Leave and event.attributes[self.attr['region_type']] in [RegionType.initial_task, RegionType.implicit_task]:
+                self.task_end_ts[unique_id] = event.time
 
             if event_defines_new_task_fragment(event, self.attr):
 
