@@ -94,15 +94,16 @@ class LocationEventMap:
         s = ""
         for l, q in self._map.items():
             s += l.name + "\n"
-            s += "  {:18s} {:10s} {:20s} {:20s} {:18s} {}\n".format("Time", "Endpoint", "Region Type", "Event Type", "Region ID/Name", "CPU")
+            s += "  {:18s} {:10s} {:20s} {:20s} {:18s} {:3s} {}\n".format("Time", "Endpoint", "Region Type", "Event Type", "Region ID/Name", "CPU", "Encountering Task")
             for e in q:
-                s += "  {:<18d} {:10s} {:20s} {:20s} {:18s} {}\n".format(
+                s += "  {:<18d} {:10s} {:20s} {:20s} {:18s} {:3d} {}\n".format(
                     e.time,
                     e.attributes[self.attr['endpoint']],
                     e.attributes.get(self.attr['region_type'], ""),
                     e.attributes[self.attr['event_type']],
                     str(e.attributes[self.attr['unique_id']]) if self.attr['unique_id'] in e.attributes else e.region.name,
-                    e.attributes[self.attr['cpu']])
+                    e.attributes[self.attr['cpu']],
+                    e.attributes[self.attr['encountering_task_id']])
         return s
 
     def __getitem__(self, location):
