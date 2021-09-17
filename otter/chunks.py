@@ -68,11 +68,10 @@ def event_defines_new_task_fragment(e: otf2.events._EventMeta, a: AttributeLooku
 class ChunkGenerator:
     """Yields a sequence of Chunks by consuming the sequence of events in a trace."""
 
-    def __init__(self, trace, key: str = None, verbose: bool = False):
+    def __init__(self, trace, verbose: bool = False):
         self.events = trace.events
         self.attr = AttributeLookup(trace.definitions.attributes)
         self.strings = trace.definitions.strings
-        self.key = key or "encountering_task_id"
         self._chunk_dict = defaultdict(lambda : Chunk(list(), self.attr))
         self._task_chunk_map = defaultdict(lambda : Chunk(list(), self.attr))
         self.verbose = verbose
@@ -113,7 +112,8 @@ class ChunkGenerator:
         # Not sure this is required anymore
         enclosing_task = dict()
 
-        print("yielding chunks:", end="\n", flush=True)
+        if self.verbose:
+            print("yielding chunks:", end="\n", flush=True)
 
         # Encountering task interpretation:
         # enter/leave:        the task that encountered the region associated with the event
@@ -158,7 +158,7 @@ class ChunkGenerator:
                         location_key = (location.name, encountering_task)
                         current_parallel_region[location.name].append(unique_id)
                         # if master thread: (does the key (thread ID, encountering_task) exist in self.keys())
-                        if location_key in self.keys()
+                        if location_key in self.keys():
                             # append event to current chunk for key (thread ID, encountering_task)
                             self[(location.name, encountering_task, 't')].append(event)
                             # assign a reference to this chunk to key (thread ID, parallel ID)
@@ -181,7 +181,7 @@ class ChunkGenerator:
                         # Ensure implicit-task-id points to this chunk for later events in this task
                         self[unique_id] = self[chunk_key]
 
-                    elif region_type in [RegionType.single_executor, RegionType.master]
+                    elif region_type in [RegionType.single_executor, RegionType.master]:
                         # do the stack-push thing
                         self[chunk_key].append(event)
                         chunk_stack[chunk_key].append(self[chunk_key])
@@ -205,7 +205,7 @@ class ChunkGenerator:
                         current_parallel_region[location.name].pop()
                         location_key = (location.name, encountering_task)
                         # if master thread: (does the key (thread ID, encountering_task) exist in self.keys())
-                        if location_key in self.keys()
+                        if location_key in self.keys():
                             # append event to chunk for key (thread ID, parallel ID)
                             self[(location.name, unique_id, 'p')].append(event)
                             # yield this chunk
@@ -227,7 +227,7 @@ class ChunkGenerator:
                         self[unique_id].append(event)
                         # continue - don't yield until parallel-end
 
-                    elif region_type in [RegionType.single_executor, RegionType.master]
+                    elif region_type in [RegionType.single_executor, RegionType.master]:
                         # do the stack-pop thing
                         self[chunk_key].append(event)
                         # yield chunk
@@ -246,8 +246,6 @@ class ChunkGenerator:
                     next_task_id = event.attributes[self.attr['next_task_id']]
                     self[chunk_key].append(event)
                     if prior_task_status in [TaskStatus.complete]:
-                        print(f">> Yielding chunk (task {prior_task_id} complete):")
-                        print(self[chunk_key])
                         yield from self.yield_chunk(chunk_key)
                     self[next_task_id].append(event)
 
