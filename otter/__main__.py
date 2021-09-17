@@ -50,7 +50,7 @@ def main():
         # chain_sort_next = lambda x: sorted(chain(*next(x)), key=lambda t: t[0])
         # task_links, task_crt_ts, task_leave_ts = (chain_sort_next(items) for _ in range(3))
         # g_list = next(items)
-        ChunkGen = ChunkGenerator(tr)
+        ChunkGen = ChunkGenerator(tr, verbose=args.verbose)
         gen = [chunk for chunk in ChunkGen]
 
     # def print_events():
