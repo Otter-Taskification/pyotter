@@ -14,7 +14,8 @@ class Chunk:
         self.events = deque(events)
 
     def __repr__(self):
-        s = "  {:18s} {:10s} {:20s} {:20s} {:18s} {}\n".format("Time", "Endpoint", "Region Type", "Event Type", "Region ID/Name", "Encountering Task")
+        s = "Chunk with {} events:\n".format(len(self.events))
+        s += "  {:18s} {:10s} {:20s} {:20s} {:18s} {}\n".format("Time", "Endpoint", "Region Type", "Event Type", "Region ID/Name", "Encountering Task")
         for e in self.events:
             try:
                 s += "  {:<18d} {:10s} {:20s} {:20s} {:18s} {}\n".format(
@@ -60,9 +61,6 @@ def event_defines_new_task_fragment(e: otf2.events._EventMeta, a: AttributeLooku
         (type(e) in [Enter, Leave] and e.attributes.get(a['region_type'], None) in
             [RegionType.parallel, RegionType.initial_task, RegionType.implicit_task, RegionType.single_executor, RegionType.master])
     )
-    # return type(e) in [Enter, Leave, ThreadTaskSwitch]
-    # return (e.attributes.get(a['region_type'], None) in ['parallel',
-    #     'explicit_task', 'initial_task', 'single_executor', 'master'])
 
 
 class ChunkGenerator:
@@ -76,6 +74,7 @@ class ChunkGenerator:
         self._task_chunk_map = defaultdict(lambda : Chunk(list(), self.attr))
         self.verbose = verbose
         self.nChunks = 0
+        self.events_consumed = 0
 
     def __getitem__(self, key):
         return self._task_chunk_map[key]
@@ -121,6 +120,7 @@ class ChunkGenerator:
         # task-create:        the parent task of the created task
 
         for location, event in self.events:
+            self.events_consumed += 1
 
             # Ignore thread-begin/end entirely
             if type(event) in [ThreadBegin, ThreadEnd]:
@@ -146,7 +146,7 @@ class ChunkGenerator:
 
                     # For initial-task-begin, chunk key is (thread ID, initial task unique_id)
                     if region_type == RegionType.initial_task:
-                        chunk_key = (location.name, unique_id)
+                        chunk_key = (location.name, unique_id, 't')
                         self[chunk_key].append(event)
 
                     # For parallel-begin, chunk_key is (thread ID, parallel ID)
@@ -155,22 +155,23 @@ class ChunkGenerator:
                     # worker thread treats it as a new chunk (i.e. it is not a nested chunk)
                     # Record parallel ID as the current parallel region for this thread
                     elif region_type == RegionType.parallel:
-                        location_key = (location.name, encountering_task)
+                        encountering_task_key = (location.name, encountering_task, 't')
+                        parallel_region_key = (location.name, unique_id, 'p')
                         current_parallel_region[location.name].append(unique_id)
                         # if master thread: (does the key (thread ID, encountering_task) exist in self.keys())
-                        if location_key in self.keys():
+                        if encountering_task_key in self.keys():
                             # append event to current chunk for key (thread ID, encountering_task)
-                            self[(location.name, encountering_task, 't')].append(event)
+                            self[encountering_task_key].append(event)
                             # assign a reference to this chunk to key (thread ID, parallel ID)
-                            self[(location.name, unique_id, 'p')] = self[(location.name, encountering_task, 't')]
+                            self[parallel_region_key] = self[encountering_task_key]
                             # push reference to this chunk onto chunk_stack at key (thread ID, parallel ID)
-                            chunk_stack[(location.name, unique_id, 'p')].append(self[(location.name, unique_id, 'p')])
+                            chunk_stack[parallel_region_key].append(self[parallel_region_key])
                             # append event to NEW chunk for key (thread ID, parallel ID)
-                            self[(location.name, unique_id, 'p')] = Chunk((event,), self.attr)
+                            self[parallel_region_key] = Chunk((event,), self.attr)
 
                         else:
                             # append event to NEW chunk with key (thread ID, parallel ID)
-                            self[(location.name, unique_id, 'p')].append(event)
+                            self[parallel_region_key].append(event)
 
                     # For implicit-task-enter, chunk_key is encountering_task_id but this must be made to refer to the same chunk as (thread ID, parallel ID)
                     # so that later events in this task are recorded against the same chunk
@@ -195,33 +196,33 @@ class ChunkGenerator:
                 elif isinstance(event, Leave):
 
                     if region_type == RegionType.initial_task:
-                        chunk_key = (location.name, unique_id)
+                        chunk_key = (location.name, unique_id, 't')
                         # append event
                         self[chunk_key].append(event)
                         # yield chunk
                         yield from self.yield_chunk(chunk_key)
 
                     elif region_type == RegionType.parallel:
+                        encountering_task_key = (location.name, encountering_task, 't')
+                        parallel_region_key = (location.name, unique_id, 'p')
                         current_parallel_region[location.name].pop()
-                        location_key = (location.name, encountering_task)
                         # if master thread: (does the key (thread ID, encountering_task) exist in self.keys())
-                        if location_key in self.keys():
+                        if encountering_task_key in self.keys():
                             # append event to chunk for key (thread ID, parallel ID)
-                            self[(location.name, unique_id, 'p')].append(event)
+                            self[parallel_region_key].append(event)
                             # yield this chunk
-                            yield from self.yield_chunk((location.name, unique_id, 'p'))
+                            yield from self.yield_chunk(parallel_region_key)
                             # pop from chunk_stack at key (thread ID, parallel ID) and overwrite at this key in self[(thread ID, parallel ID)]
-                            self[(location.name, unique_id, 'p')] = chunk_stack[(location.name, unique_id, 'p')].pop()
+                            self[parallel_region_key] = chunk_stack[parallel_region_key].pop()
                             # append event to now-popped chunk for key (thread ID, parallel ID) which is the one containing the enclosing initial task events
-                            self[(location.name, unique_id, 'p')].append(event)
+                            self[parallel_region_key].append(event)
                             # update self[(thread ID, encountering task ID)] to refer to the same chunk as self[(thread ID, parallel ID)]
-                            self[(location.name, encountering_task, 't')] = self[(location.name, unique_id, 'p')]
+                            self[encountering_task_key] = self[parallel_region_key]
                         else:
                             # append event
-                            self[(location.name, unique_id, 'p')].append(event)
+                            self[parallel_region_key].append(event)
                             # yield chunk
-                            
-                            yield from self.yield_chunk((location.name, unique_id, 'p'))
+                            yield from self.yield_chunk(parallel_region_key)
 
                     elif region_type == RegionType.implicit_task:
                         self[unique_id].append(event)
@@ -233,6 +234,7 @@ class ChunkGenerator:
                         # yield chunk
                         yield from self.yield_chunk(chunk_key)
                         self[chunk_key] = chunk_stack[chunk_key].pop()
+                        self[chunk_key].append(event)
 
                     else:
                         # Nothing should get here
