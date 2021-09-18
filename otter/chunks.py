@@ -17,8 +17,7 @@ class Chunk:
         self.events = deque(events)
         self._graph = None
 
-    # TODO: also print self.kind, type(self.first), type(self.last) etc as useful summary info
-    # TODO@ and perhaps self._graph stats e.g. #nodes, #edges...
+    # TODO: also print self._graph stats e.g. #nodes, #edges...
     def __repr__(self):
         s = "Chunk with {} events:\n".format(len(self.events))
         s += "kind: {}\n".format(self.kind)
@@ -79,6 +78,13 @@ class Chunk:
         else:
             raise TypeError(f"unexpected type: {type(event)}")
 
+    def events_bridge_region(self, previous, current, region_types):
+        """Used to check for certain enter-leave event sequences"""
+        return (self.get_attr(previous, 'region_type') in region_types
+                and self.get_attr(previous, 'endpoint') == Endpoint.enter
+                and self.get_attr(current, 'region_type') in region_types
+                and self.get_attr(current, 'endpoint') == Endpoint.leave)
+
     def as_graph(self, verbose: bool=False):
         """Convert a chunk to a DAG representation"""
 
@@ -104,6 +110,8 @@ class Chunk:
             parallel_id = self.get_attr(self.first, 'unique_id')
             parallel_endpoint = self.get_attr(self.first, 'endpoint')
             prior_node["parallel_sequence_id"] = (parallel_id, parallel_endpoint)
+        elif self.kind == RegionType.explicit_task:
+            prior_node['is_task_enter_node'] = True
 
         k = 1
         for event in islice(self.events, 1, None):
@@ -111,8 +119,16 @@ class Chunk:
             if self.get_attr(event, 'region_type') in [RegionType.implicit_task]:
                 continue
 
+            if type(event) is ThreadTaskSwitch and event is not self.last:
+                continue
+
             # The node representing this event
             node = g.add_vertex(event=event)
+
+            try:
+                unique_id_attr = self.get_attr(event, 'unique_id')
+            except KeyError:
+                unique_id_attr = None
 
             # Match taskgroup-enter/-leave events
             if self.get_attr(event, 'region_type') in [RegionType.taskgroup]:
@@ -137,41 +153,40 @@ class Chunk:
             # Label nodes in a parallel chunk by their position for easier merging
             # TODO: update to work with new event types e.g. ThreadTaskSwitch
             if (self.kind == RegionType.parallel
-                    and type(event) not in [ThreadTaskCreate] # TODO: probably want ThreadTaskSwitch in here too
+                    and type(event) in [Enter, Leave]
                     and self.get_attr(event, 'region_type') != RegionType.master):
                 node["parallel_sequence_id"] = (parallel_id, k)
                 k += 1
 
             if self.get_attr(event, 'region_type') == RegionType.parallel:
                 # Label nested parallel regions for easier merging...
+                event_endpoint = self.get_attr(event, 'endpoint')
                 if event is not self.last:
-                    node["parallel_sequence_id"] = (self.get_attr(event, 'unique_id'), self.get_attr(event, 'endpoint'))
+                    node["parallel_sequence_id"] = (unique_id_attr, event_endpoint)
                 # ... but distinguish from a parallel chunk's terminating parallel-end event
                 else:
-                    node["parallel_sequence_id"] = (parallel_id, self.get_attr(event, 'endpoint'))
+                    node["parallel_sequence_id"] = (parallel_id, event_endpoint)
 
-            # Add edge except for (single begin -> single end) and (parallel N begin -> parallel N end)
-            # TODO: update events_bridge_region to be method of chunk
-            if events_bridge_region(prior_node['event'], node['event'], [RegionType.single_executor, RegionType.single_other, RegionType.master], get_attr) \
-                or (events_bridge_region(prior_node['event'], node['event'], [RegionType.parallel], get_attr)
-                    and get_attr(node['event'], 'unique_id') == get_attr(prior_node['event'], 'unique_id')):
+            # Add edge except for (single/master begin -> end) and (parallel N begin -> parallel N end)
+            events_bridge_single_master = self.events_bridge_region(prior_node['event'], node['event'], [RegionType.single_executor, RegionType.single_other, RegionType.master])
+            events_bridge_parallel = self.events_bridge_region(prior_node['event'], node['event'], [RegionType.parallel])
+            events_have_same_id = self.get_attr(node['event'], 'unique_id') == self.get_attr(prior_node['event'], 'unique_id') if events_bridge_parallel else False
+            if (events_bridge_single_master or (events_bridge_parallel and events_have_same_id)):
                 pass
             else:
                 g.add_edge(prior_node, node)
 
             # For task_create add dummy nodes for easier merging
             if type(event) is ThreadTaskCreate:
-                # TODO: update how task dummy nodes are labelled to work with new ThreadTaskSwitch events
-                node['task_cluster_id'] = (self.get_attr(event, 'unique_id'), Endpoint.enter)
-                dummy_node = g.add_vertex(event=event, task_cluster_id=(self.get_attr(event, 'unique_id'), Endpoint.leave))
-                task_create_nodes.append(dummy_node)
+                node['task_cluster_id'] = (unique_id_attr, Endpoint.enter)
+                dummy_node = g.add_vertex(event=event, task_cluster_id=(unique_id_attr, Endpoint.leave))
                 continue
-            elif len(task_create_nodes) > 0:
-                task_create_nodes = deque()
+
+            if event is self.last and self.kind == RegionType.explicit_task:
+                node['is_task_leave_node'] = True
 
             prior_node = node
 
-        # TODO: update self.kind to correctly detect explicit task chunks by ThreadTaskSwitch as the enclosing events
         if self.kind == RegionType.explicit_task and len(self.events) <= 2:
             g.delete_edges([0])
 
@@ -228,6 +243,7 @@ class ChunkGenerator:
             if child == 0:
                 continue
             task_tree.add_edge(parent, child)
+            task_tree.vs.find(child)['parent_index'] = parent
         return task_tree
 
     def yield_chunk(self, chunk_key):
