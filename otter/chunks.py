@@ -66,10 +66,6 @@ class Chunk:
         else:
             raise TypeError(f"Unhandled first event type: {type(self.first)}")
 
-    def items(self):
-        # TODO: deprecated -> remove
-        return (None, self.events)
-
     def get_attr(self, event, attr_name, default=None):
         """Lookup the attribute of an event or list of events by attribute name"""
         if type(event) is list:
