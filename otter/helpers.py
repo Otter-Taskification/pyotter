@@ -1,6 +1,6 @@
 from itertools import chain, count
 from collections import defaultdict
-from otf2.events import Enter, Leave, ThreadTaskCreate
+from otf2.events import Enter, Leave, ThreadTaskCreate, ThreadTaskSwitch
 
 """
 Contains assorted helper functions for __main__.py and trace.py
@@ -13,7 +13,7 @@ def attr_getter(attr_lookup):
         if type(evt) is list:
             result, = set([e.attributes[attr_lookup[name]] for e in evt])
             return result
-        elif type(evt) in [Enter, Leave, ThreadTaskCreate]:
+        elif type(evt) in [Enter, Leave, ThreadTaskCreate, ThreadTaskSwitch]:
             return evt.attributes[attr_lookup[name]]
         else:
             raise TypeError(f"unexpected type: {type(evt)}")
@@ -83,6 +83,8 @@ def attr_handler(events=pass_single_executor, ints=min, lists=chain_lists, tuple
                 return tuples(args)
             elif all([type(obj) in [Enter, Leave, ThreadTaskCreate] for obj in args]):
                 return events(args, **kw)
+            elif all([isinstance(obj, bool) for obj in args]):
+                return args
             else:
                 return args[0]
     return attr_combiner
