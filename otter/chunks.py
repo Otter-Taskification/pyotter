@@ -2,6 +2,7 @@ import otf2
 import igraph as ig
 from typing import Iterable
 from collections import deque, defaultdict
+from itertools import islice
 from otter.definitions import EventType, RegionType, TaskStatus, TaskType, Endpoint, EdgeType
 from otter.trace import AttributeLookup, event_defines_new_chunk
 from otf2.events import Enter, Leave, ThreadTaskCreate, ThreadTaskSwitch, ThreadTaskComplete, ThreadBegin, ThreadEnd
@@ -20,10 +21,12 @@ class Chunk:
     # TODO@ and perhaps self._graph stats e.g. #nodes, #edges...
     def __repr__(self):
         s = "Chunk with {} events:\n".format(len(self.events))
-        s += "  {:18s} {:10s} {:20s} {:20s} {:18s} {}\n".format("Time", "Endpoint", "Region Type", "Event Type", "Region ID/Name", "Encountering Task")
-        for e in self.events:
+        s += "kind: {}\n".format(self.kind)
+        s += "     {:18s} {:10s} {:20s} {:20s} {:18s} {}\n".format("Time", "Endpoint", "Region Type", "Event Type", "Region ID/Name", "Encountering Task")
+        for j, e in enumerate(self.events):
             try:
-                s += "  {:<18d} {:10s} {:20s} {:20s} {:18s} {}\n".format(
+                s += "{:>3d}  {:<18d} {:10s} {:20s} {:20s} {:18s} {}\n".format(
+                    j,
                     e.time,
                     e.attributes[self.attr['endpoint']],
                     e.attributes.get(self.attr['region_type'], ""),
@@ -103,7 +106,7 @@ class Chunk:
             prior_node["parallel_sequence_id"] = (parallel_id, parallel_endpoint)
 
         k = 1
-        for event in self.events[1:]:
+        for event in islice(self.events, 1, None):
 
             if self.get_attr(event, 'region_type') in [RegionType.implicit_task]:
                 continue
@@ -187,6 +190,8 @@ class ChunkGenerator:
         self.events = trace.events
         self.attr = AttributeLookup(trace.definitions.attributes)
         self.strings = trace.definitions.strings
+        self._chunks = deque()
+        self._generated = False
         self._chunk_dict = defaultdict(lambda : Chunk(list(), self.attr))
         self._task_chunk_map = defaultdict(lambda : Chunk(list(), self.attr))
         self.verbose = verbose
@@ -240,14 +245,16 @@ class ChunkGenerator:
 
     def __iter__(self):
 
+        if self._generated and self.verbose:
+            print("Yielding previously generated chunks")
+            yield from self._chunks
+            return
+
         # Map thread ID -> ID of current parallel region at top of deque
         current_parallel_region = defaultdict(deque)
 
         # Record the enclosing chunk when an event indicates a nested chunk
         chunk_stack = defaultdict(deque)
-
-        if self.verbose:
-            print("yielding chunks:", end="\n", flush=True)
 
         # Encountering task interpretation:
         # enter/leave:        the task that encountered the region associated with the event
@@ -281,7 +288,6 @@ class ChunkGenerator:
                 self.task_type[unique_id] = event.attributes[self.attr['region_type']]
                 self.task_crt_ts[unique_id] = event.time
             elif (type(event) == ThreadTaskSwitch):
-                print(f">> Switch {encountering_task} -> {unique_id}")
                 self.task_switch_events[encountering_task].append(event)
                 self.task_switch_events[unique_id].append(event)
                 prior_task_status = event.attributes[self.attr['prior_task_status']]
@@ -350,6 +356,7 @@ class ChunkGenerator:
                         # append event
                         self[chunk_key].append(event)
                         # yield chunk
+                        self._chunks.append(self[chunk_key])
                         yield from self.yield_chunk(chunk_key)
 
                     elif region_type == RegionType.parallel:
@@ -361,6 +368,7 @@ class ChunkGenerator:
                             # append event to chunk for key (thread ID, parallel ID)
                             self[parallel_region_key].append(event)
                             # yield this chunk
+                            self._chunks.append(self[parallel_region_key])
                             yield from self.yield_chunk(parallel_region_key)
                             # pop from chunk_stack at key (thread ID, parallel ID) and overwrite at this key in self[(thread ID, parallel ID)]
                             self[parallel_region_key] = chunk_stack[parallel_region_key].pop()
@@ -372,6 +380,7 @@ class ChunkGenerator:
                             # append event
                             self[parallel_region_key].append(event)
                             # yield chunk
+                            self._chunks.append(self[parallel_region_key])
                             yield from self.yield_chunk(parallel_region_key)
 
                     elif region_type == RegionType.implicit_task:
@@ -382,6 +391,7 @@ class ChunkGenerator:
                         # do the stack-pop thing
                         self[chunk_key].append(event)
                         # yield chunk
+                        self._chunks.append(self[chunk_key])
                         yield from self.yield_chunk(chunk_key)
                         self[chunk_key] = chunk_stack[chunk_key].pop()
                         self[chunk_key].append(event)
@@ -398,6 +408,7 @@ class ChunkGenerator:
                     next_task_id = event.attributes[self.attr['next_task_id']]
                     self[chunk_key].append(event)
                     if prior_task_status in [TaskStatus.complete]:
+                        self._chunks.append(self[chunk_key])
                         yield from self.yield_chunk(chunk_key)
                     self[next_task_id].append(event)
 
@@ -407,6 +418,7 @@ class ChunkGenerator:
             else:
                 self[encountering_task].append(event)
         print("")
+        self._generated = True
 
 
 def fmt_event(e, attr):
