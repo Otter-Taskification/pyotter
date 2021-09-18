@@ -245,8 +245,7 @@ class ChunkGenerator:
 
     def __iter__(self):
 
-        if self._generated and self.verbose:
-            print("Yielding previously generated chunks")
+        if self._generated:
             yield from self._chunks
             return
 
