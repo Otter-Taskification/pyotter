@@ -57,8 +57,14 @@ class Chunk:
 
     @property
     def kind(self):
-        # TODO: no longer reflects correct type e.g. for explicit tasks with ThreadTaskSwitch in place of explicit-task-enter/leave
-        return None if len(self.events) == 0 else self.events[0].attributes[self.attr['region_type']]
+        if len(self.events) == 0:
+            return None
+        if type(self.first) == Enter:
+            return self.first.attributes[self.attr['region_type']]
+        elif type(self.first) == ThreadTaskSwitch:
+            return self.last.attributes[self.attr['region_type']]
+        else:
+            raise TypeError(f"Unhandled first event type: {type(self.first)}")
 
     def items(self):
         # TODO: deprecated -> remove
