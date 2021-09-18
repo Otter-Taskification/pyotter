@@ -14,7 +14,10 @@ class Chunk:
     def __init__(self, events: Iterable, attr: AttributeLookup):
         self.attr = attr
         self.events = deque(events)
+        self._graph = None
 
+    # TODO: also print self.kind, type(self.first), type(self.last) etc as useful summary info
+    # TODO@ and perhaps self._graph stats e.g. #nodes, #edges...
     def __repr__(self):
         s = "Chunk with {} events:\n".format(len(self.events))
         s += "  {:18s} {:10s} {:20s} {:20s} {:18s} {}\n".format("Time", "Endpoint", "Region Type", "Event Type", "Region ID/Name", "Encountering Task")
@@ -32,6 +35,9 @@ class Chunk:
                 raise
         return s
 
+    def __len__(self):
+        return len(self.events)
+
     def append(self, item):
         if type(item) is Chunk:
             raise TypeError()
@@ -45,19 +51,131 @@ class Chunk:
     def last(self):
         return None if len(self.events) == 0 else self.events[-1]
 
-    def __len__(self):
-        return len(self.events)
-
     @property
     def len(self):
         return len(self.events)
 
     @property
     def kind(self):
-        return None if len(self.events) == 0 else event.attributes[self.events[0].attributes[self.attr['region_type']]]
+        # TODO: no longer reflects correct type e.g. for explicit tasks with ThreadTaskSwitch in place of explicit-task-enter/leave
+        return None if len(self.events) == 0 else self.events[0].attributes[self.attr['region_type']]
 
     def items(self):
+        # TODO: deprecated -> remove
         return (None, self.events)
+
+    def get_attr(self, event, attr_name, default=None):
+        """Lookup the attribute of an event or list of events by attribute name"""
+        if type(event) is list:
+            result, = set([e.attributes[self.attr[attr_name]] for e in event])
+            return result
+        elif type(event) in [Enter, Leave, ThreadTaskCreate, ThreadTaskSwitch]:
+            return event.attributes[self.attr[attr_name]]
+        else:
+            raise TypeError(f"unexpected type: {type(event)}")
+
+    def as_graph(self, verbose: bool=False):
+        """Convert a chunk to a DAG representation"""
+
+        if self._graph is not None:
+            return self._graph
+
+        # TODO: update this function to work with new chunk event logic e.g. ThreadTaskSwitch instead of Enter-Leave for explicit tasks, etc...
+
+        if verbose and len(self.events) > 2:
+            print(self)
+
+        g = ig.Graph(directed=True)
+        self._graph = g
+        prior_node = g.add_vertex(event=self.first)
+
+        # Used to save taskgroup-enter event to match to taskgroup-leave event
+        taskgroup_enter_event = None
+
+        # Match master-enter event to corresponding master-leave
+        master_enter_event = self.first if self.get_attr(self.first, 'region_type') == RegionType.master else None
+
+        if self.kind == RegionType.parallel:
+            parallel_id = self.get_attr(self.first, 'unique_id')
+            parallel_endpoint = self.get_attr(self.first, 'endpoint')
+            prior_node["parallel_sequence_id"] = (parallel_id, parallel_endpoint)
+
+        k = 1
+        for event in self.events[1:]:
+
+            if self.get_attr(event, 'region_type') in [RegionType.implicit_task]:
+                continue
+
+            # The node representing this event
+            node = g.add_vertex(event=event)
+
+            # Match taskgroup-enter/-leave events
+            if self.get_attr(event, 'region_type') in [RegionType.taskgroup]:
+                if type(event) is Enter:
+                    taskgroup_enter_event = event
+                elif type(event) is Leave:
+                    if taskgroup_enter_event is None:
+                        raise ValueError("taskgroup-enter event was None")
+                    node['taskgroup_enter_event'] = taskgroup_enter_event
+                    taskgroup_enter_event = None
+
+            # Match master-enter/-leave events
+            elif self.get_attr(event, 'region_type') in [RegionType.master]:
+                if type(event) is Enter:
+                    master_enter_event = event
+                elif type(event) is Leave:
+                    if master_enter_event is None:
+                        raise ValueError("master-enter event was None")
+                    node['master_enter_event'] = master_enter_event
+                    master_enter_event = None
+
+            # Label nodes in a parallel chunk by their position for easier merging
+            # TODO: update to work with new event types e.g. ThreadTaskSwitch
+            if (self.kind == RegionType.parallel
+                    and type(event) not in [ThreadTaskCreate] # TODO: probably want ThreadTaskSwitch in here too
+                    and self.get_attr(event, 'region_type') != RegionType.master):
+                node["parallel_sequence_id"] = (parallel_id, k)
+                k += 1
+
+            if self.get_attr(event, 'region_type') == RegionType.parallel:
+                # Label nested parallel regions for easier merging...
+                if event is not self.last:
+                    node["parallel_sequence_id"] = (self.get_attr(event, 'unique_id'), self.get_attr(event, 'endpoint'))
+                # ... but distinguish from a parallel chunk's terminating parallel-end event
+                else:
+                    node["parallel_sequence_id"] = (parallel_id, self.get_attr(event, 'endpoint'))
+
+            # Add edge except for (single begin -> single end) and (parallel N begin -> parallel N end)
+            # TODO: update events_bridge_region to be method of chunk
+            if events_bridge_region(prior_node['event'], node['event'], [RegionType.single_executor, RegionType.single_other, RegionType.master], get_attr) \
+                or (events_bridge_region(prior_node['event'], node['event'], [RegionType.parallel], get_attr)
+                    and get_attr(node['event'], 'unique_id') == get_attr(prior_node['event'], 'unique_id')):
+                pass
+            else:
+                g.add_edge(prior_node, node)
+
+            # For task_create add dummy nodes for easier merging
+            if type(event) is ThreadTaskCreate:
+                # TODO: update how task dummy nodes are labelled to work with new ThreadTaskSwitch events
+                node['task_cluster_id'] = (self.get_attr(event, 'unique_id'), Endpoint.enter)
+                dummy_node = g.add_vertex(event=event, task_cluster_id=(self.get_attr(event, 'unique_id'), Endpoint.leave))
+                task_create_nodes.append(dummy_node)
+                continue
+            elif len(task_create_nodes) > 0:
+                task_create_nodes = deque()
+
+            prior_node = node
+
+        # TODO: update self.kind to correctly detect explicit task chunks by ThreadTaskSwitch as the enclosing events
+        if self.kind == RegionType.explicit_task and len(self.events) <= 2:
+            g.delete_edges([0])
+
+        # Require at least 1 edge between start and end nodes if there are no internal nodes, except for empty explicit
+        # task chunks
+        if self.kind != RegionType.explicit_task and len(self.events) <= 2 and g.ecount() == 0:
+            g.add_edge(g.vs[0], g.vs[1])
+
+        return self._graph
 
 
 class ChunkGenerator:
