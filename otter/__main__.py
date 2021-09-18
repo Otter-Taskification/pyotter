@@ -28,6 +28,8 @@ def main():
                         help='drop to an interactive shell upon completion')
     parser.add_argument('-ns', '--no-style', action='store_true', default=False, dest='nostyle',
                         help='do not apply any styling to the graph nodes')
+    parser.add_argument('-d', '--debug', action='store_true', default=False, dest='debug',
+                        help='step through the code with pdb.set_trace()')
     args = parser.parse_args()
 
     if args.output is None and not args.interact:
@@ -42,45 +44,32 @@ def main():
     print(f"loading OTF2 anchor file: {anchorfile}")
     print("generating chunks from event stream...")
     with otf2.reader.open(anchorfile) as tr:
-        chunkGen = ChunkGenerator(tr, verbose=args.verbose)
-        attr = ChunkGen.attr
         regions = RegionLookup(tr.definitions.regions)
-        results = (process_chunk(chunk, verbose=args.verbose) for chunk in chunkGen)
-        items = zip(*results)
-        chunk_types = next(items)
-        chain_sort_next = lambda x: sorted(chain(*next(x)), key=lambda t: t[0])
-        task_links, task_crt_ts, task_leave_ts = (chain_sort_next(items) for _ in range(3))
-        g_list = next(items)
-
-    # Make function for looking up event attributes
-    event_attr = attr_getter(attr)
-
-    task_types, *_, task_ids = zip(*[r.name.split() for r in regions.values() if r.region_role == otf2.RegionRole.TASK])
-    task_types, task_ids = (zip(*sorted(zip(task_types, map(int, task_ids)), key=lambda t: t[1])))
-
-    # Gather last leave times per explicit task
-    task_end_ts = {k: max(u[1] for u in v) for k, v in groupby(task_leave_ts, key=lambda t: t[0])}
-
-    # Task tree showing parent-child links
-    task_tree = ig.Graph(edges=task_links, directed=True)
-    task_tree.vs['unique_id'] = task_ids
-    task_tree.vs['crt_ts'] = [t[1] for t in task_crt_ts]
-    task_tree.vs['end_ts'] = [task_end_ts[node.index] if node.index in task_end_ts else None for node in task_tree.vs]
-    task_tree.vs['parent_index'] = list(chain((None,), list(zip(*sorted(task_links, key=lambda t: t[1])))[0]))
-    task_tree.vs['task_type'] = task_types
+        chunk_gen = ChunkGenerator(tr, verbose=args.verbose)
+        chunk_graphs = [c.as_graph(verbose=args.verbose) for c in chunk_gen]
+        chunk_types = [c.kind for c in chunk_gen]
+        task_tree = chunk_gen.make_task_tree()
+        event_attr = attr_getter(chunk_gen.attr)
+    
     if not args.nostyle:
         task_tree.vs['style'] = 'filled'
-        task_tree.vs['color'] = ['red' if v['task_type'] == 'implicit' else 'gray' for v in task_tree.vs]
+        task_tree.vs['color'] = ['red' if v['task_type'] == RegionType.implicit_task else 'gray' for v in task_tree.vs]
     tt_layout = task_tree.layout_reingold_tilford()
+
+    if args.debug:
+        pdb.set_trace()
 
     # Count chunks by type
     print("graph chunks created:")
     for k, v in Counter(chunk_types).items():
         print(f"  {k:18s} {v:8d}")
 
+    if args.debug:
+        pdb.set_trace()
+
     # Collect all chunks
     print("combining chunks")
-    g = ig.disjoint_union(g_list)
+    g = ig.disjoint_union(chunk_graphs)
     num_nodes = g.vcount()
 
     print("{:20s} {:6d}".format("nodes created", num_nodes))
@@ -89,13 +78,19 @@ def main():
         g.vs['task_cluster_id'] = None
     g.vs['sync_cluster_id'] = None
 
+    if args.debug:
+        pdb.set_trace()
+
     # Collapse by parallel sequence ID
     print("contracting by parallel sequence ID")
     g.vs['cluster'] = label_clusters(g.vs, lambda v: v['parallel_sequence_id'] is not None, 'parallel_sequence_id')
     nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(attr=attr))
+    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(attr=chunk_gen.attr))
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
+
+    if args.debug:
+        pdb.set_trace()
 
     # Collapse by single-begin/end event
     def is_single_executor(v):
@@ -103,9 +98,12 @@ def main():
     print("contracting by single-begin/end event")
     g.vs['cluster'] = label_clusters(g.vs, is_single_executor, 'event')
     nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(attr=attr))
+    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(attr=chunk_gen.attr))
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
+
+    if args.debug:
+        pdb.set_trace()
 
     # Collapse by master-begin/end event
     def is_master(v):
@@ -113,9 +111,12 @@ def main():
     print("contracting by master-begin/end event")
     g.vs['cluster'] = label_clusters(g.vs, is_master, 'event')
     nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(events=pass_master_event, attr=attr))
+    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(events=pass_master_event, attr=chunk_gen.attr))
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
+
+    if args.debug:
+        pdb.set_trace()
 
     # Itermediate clean-up: for each master region, remove edges that connect 
     # the same nodes as the master region
@@ -132,34 +133,45 @@ def main():
     print(f"deleting redundant edges due to master regions: {len(redundant_edges)}")
     g.delete_edges(redundant_edges)
 
+    if args.debug:
+        pdb.set_trace()
+
     # Collapse by (task-ID, endpoint) to get 1 subgraph per task
     for v in g.vs:
-        if type(v['event']) in [Enter, Leave] and event_attr(v['event'], 'region_type') == RegionType.explicit_task:
-            v['task_cluster_id'] = (event_attr(v['event'], 'unique_id'), event_attr(v['event'], 'endpoint'))
+        if v['is_task_enter_node']:
+            v['task_cluster_id'] = (event_attr(v['event'], 'unique_id'), Endpoint.enter)
+        elif v['is_task_leave_node']:
+            v['task_cluster_id'] = (event_attr(v['event'], 'unique_id'), Endpoint.leave)
     print("contracting by task ID & endpoint")
     g.vs['cluster'] = label_clusters(g.vs, lambda v: v['task_cluster_id'] is not None, 'task_cluster_id')
     nodes_before = num_nodes
     g.contract_vertices(g.vs['cluster'],
-                        combine_attrs=attr_handler(events=reject_task_create, tuples=set_tuples, attr=attr))
+                        combine_attrs=attr_handler(events=reject_task_create, tuples=set_tuples, attr=chunk_gen.attr))
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
+
+    if args.debug:
+        pdb.set_trace()
 
     # Collapse by task ID where there are no links between to combine task nodes with nothing nested within
     def is_empty_task_region(v):
         if v['task_cluster_id'] is None:
             return False
-        if type(v['event']) in [Enter, Leave]:
-            return (type(v['event']) is Leave and v.indegree() == 0) or \
-                   (type(v['event']) is Enter and v.outdegree() == 0)
-        if type(v['event']) is list and set(map(type, v['event'])) in [{Enter}, {Leave}]:
-            return (set(map(type, v['event'])) == {Leave} and v.indegree() == 0) or \
-                   (set(map(type, v['event'])) == {Enter} and v.outdegree() == 0)
+        if v['is_task_enter_node'] or v['is_task_leave_node']:
+            return ((v['is_task_leave_node'] and v.indegree() == 0) or 
+                    (v['is_task_enter_node'] and v.outdegree() == 0))
+        if type(v['event']) is list and set(map(type, v['event'])) in [{ThreadTaskSwitch}]:
+            return ((all(v['is_task_leave_node']) and v.indegree() == 0) or 
+                    (all(v['is_task_enter_node']) and v.outdegree() == 0))
     print("contracting by task ID where there are no nested nodes")
     g.vs['cluster'] = label_clusters(g.vs, is_empty_task_region, lambda v: v['task_cluster_id'][0])
     nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(events=reject_task_create, tuples=set_tuples, attr=attr))
+    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(events=reject_task_create, tuples=set_tuples, attr=chunk_gen.attr))
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
+
+    if args.debug:
+        pdb.set_trace()
 
     # Collapse redundant sync-enter/leave node pairs by labelling unique pairs of nodes identified by their shared edge
     dummy_counter = count()
@@ -171,17 +183,20 @@ def main():
             else:
                 for event in v['event']:
                     node_types.add(event_attr(event, 'region_type'))
-        if node_types in [{RegionType.barrier_implicit}, {RegionType.barrier_explicit}, {RegionType.taskwait}, {RegionType.loop}] and \
-                e.source_vertex.attributes().get('sync_cluster_id', None) is None and \
-                e.target_vertex.attributes().get('sync_cluster_id', None) is None:
+        if (node_types in [{RegionType.barrier_implicit}, {RegionType.barrier_explicit}, {RegionType.taskwait}, {RegionType.loop}] and
+                e.source_vertex.attributes().get('sync_cluster_id', None) is None and
+                e.target_vertex.attributes().get('sync_cluster_id', None) is None):
             value = next(dummy_counter)
             e.source_vertex['sync_cluster_id'] = e.target_vertex['sync_cluster_id'] = value
     print("contracting redundant sync-enter/leave node pairs")
     g.vs['cluster'] = label_clusters(g.vs, lambda v: v['sync_cluster_id'] is not None, 'sync_cluster_id')
     nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(tuples=set_tuples, attr=attr))
+    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(tuples=set_tuples, attr=chunk_gen.attr))
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
+
+    if args.debug:
+        pdb.set_trace()
 
     # Unpack the region_type attribute
     for v in g.vs:
@@ -194,19 +209,25 @@ def main():
         if type(v['endpoint']) is set and len(v['endpoint']) == 1:
             v['endpoint'], = v['endpoint']
 
+    if args.debug:
+        pdb.set_trace()
+
     # Apply taskwait synchronisation
     print("applying taskwait synchronisation")
     for twnode in g.vs.select(lambda v: v['region_type'] == RegionType.taskwait):
-        parents = set(task_tree.vs[event_attr(e, 'encountering_task_id')] for e in twnode['event'])
+        parents = set(task_tree.vs.find(event_attr(e, 'encountering_task_id')) for e in twnode['event'])
         tw_encounter_ts = {event_attr(e, 'encountering_task_id'): e.time for e in twnode['event'] if type(e) is Enter}
         children = [c.index for c in chain(*[p.neighbors(mode='out') for p in parents])
                     if c['crt_ts'] < tw_encounter_ts[c['parent_index']] < c['end_ts']]
         nodes = [v for v in g.vs if v['region_type'] == RegionType.explicit_task
                                  and event_attr(v['event'], 'unique_id') in children
-                                 and v['endpoint'] != Endpoint.enter]
+                                 and v['is_task_leave_node']]
         ecount = g.ecount()
         g.add_edges([(v.index, twnode.index) for v in nodes])
         g.es[ecount:]['type'] = EdgeType.taskwait
+
+    if args.debug:
+        pdb.set_trace()
 
     def event_time_per_task(event):
         """Return the map: encountering task id -> event time for all encountering tasks in the event"""
@@ -219,16 +240,19 @@ def main():
     for tgnode in g.vs.select(lambda v: v['region_type'] == RegionType.taskgroup and v['endpoint'] == Endpoint.leave):
         tg_enter_ts = event_time_per_task(tgnode['taskgroup_enter_event'])
         tg_leave_ts = event_time_per_task(tgnode['event'])
-        parents = [task_tree.vs[k] for k in tg_enter_ts]
+        parents = [task_tree.vs.find(k) for k in tg_enter_ts]
         children = [c for c in chain(*[p.neighbors(mode='out') for p in parents])
                     if tg_enter_ts[c['parent_index']] < c['crt_ts'] < tg_leave_ts[c['parent_index']]]
-        descendants = list(chain(*[descendants_if(c, cond=lambda x: x['task_type'] != 'implicit') for c in children]))
+        descendants = list(chain(*[descendants_if(c, cond=lambda x: x['task_type'] != RegionType.implicit_task) for c in children]))
         nodes = [v for v in g.vs if v['region_type'] == RegionType.explicit_task
                                  and event_attr(v['event'], 'unique_id') in descendants
-                                 and v['endpoint'] != Endpoint.enter]
+                                 and v['is_task_leave_node']]
         ecount = g.ecount()
         g.add_edges([(v.index, tgnode.index) for v in nodes])
         g.es[ecount:]['type'] = EdgeType.taskgroup
+        
+    if args.debug:
+        pdb.set_trace()
 
     # Apply styling if desired
     if not args.nostyle:
