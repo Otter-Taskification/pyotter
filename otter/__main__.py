@@ -5,13 +5,21 @@ import igraph as ig
 import otf2
 from itertools import chain, count, groupby
 from collections import Counter
-from otf2.events import Enter, Leave
+from otf2.events import Enter, Leave, ThreadTaskSwitch
 from otter.definitions import EventType, Endpoint, RegionType, TaskStatus, TaskType, EdgeType
 from otter.trace import AttributeLookup, RegionLookup, yield_chunks, process_chunk, event_defines_new_chunk
 from otter.styling import colormap_region_type, colormap_edge_type, shapemap_region_type
 from otter.helpers import set_tuples, reject_task_create, attr_handler, label_clusters, descendants_if, attr_getter, pass_master_event
 
 from otter.chunks import Chunk, ChunkGenerator, event_defines_new_task_fragment, fmt_event
+
+# TODO: move function into separate file and import
+def apply_styling(graph):
+        print("applying node and edge styline")
+        graph.vs['color'] = [colormap_region_type[v['region_type']] for v in graph.vs]
+        graph.vs['style'] = 'filled'
+        graph.vs['shape'] = [shapemap_region_type[v['region_type']] for v in graph.vs]
+        graph.es['color'] = [colormap_edge_type[e.attributes().get('type', None)] for e in graph.es]
 
 
 def main():
@@ -77,6 +85,7 @@ def main():
     if 'task_cluster_id' not in g.vs.attribute_names():
         g.vs['task_cluster_id'] = None
     g.vs['sync_cluster_id'] = None
+    g.vs['region_type'] = None
 
     if args.debug:
         pdb.set_trace()
@@ -141,7 +150,7 @@ def main():
         if v['is_task_enter_node']:
             v['task_cluster_id'] = (event_attr(v['event'], 'unique_id'), Endpoint.enter)
         elif v['is_task_leave_node']:
-            v['task_cluster_id'] = (event_attr(v['event'], 'unique_id'), Endpoint.leave)
+            v['task_cluster_id'] = (event_attr(v['event'], 'encountering_task_id'), Endpoint.leave)
     print("contracting by task ID & endpoint")
     g.vs['cluster'] = label_clusters(g.vs, lambda v: v['task_cluster_id'] is not None, 'task_cluster_id')
     nodes_before = num_nodes
@@ -169,6 +178,12 @@ def main():
     g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(events=reject_task_create, tuples=set_tuples, attr=chunk_gen.attr))
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
+
+    # Label contracted task nodes for easier identification
+    for v in g.vs:
+        if v['is_task_enter_node'] and v['is_task_leave_node']:
+            v['is_contracted_task_node'] = True
+            v['task_id'] = event_attr(v['event'], 'unique_id')
 
     if args.debug:
         pdb.set_trace()
@@ -203,6 +218,15 @@ def main():
         if type(v['event']) is list:
             v['region_type'], = set([event_attr(e, 'region_type') for e in v['event']])
             v['endpoint'] = set([event_attr(e, 'endpoint') for e in v['event']])
+        elif type(v['event']) in [Enter, Leave]:
+            v['region_type'] = event_attr(v['event'], 'region_type')
+            v['endpoint'] = event_attr(v['event'], 'endpoint')
+        elif type(v['event']) in [ThreadTaskSwitch] and v['is_task_enter_node']:
+            v['region_type'] = task_tree.vs.find(event_attr(v['event'], 'unique_id'))['task_type']
+            v['endpoint'] = Endpoint.enter
+        elif type(v['event']) in [ThreadTaskSwitch] and v['is_task_leave_node']:
+            v['region_type'] = task_tree.vs.find(event_attr(v['event'], 'encountering_task_id'))['task_type']
+            v['endpoint'] = Endpoint.leave
         else:
             v['region_type'] = event_attr(v['event'], 'region_type')
             v['endpoint'] = event_attr(v['event'], 'endpoint')
@@ -217,11 +241,16 @@ def main():
     for twnode in g.vs.select(lambda v: v['region_type'] == RegionType.taskwait):
         parents = set(task_tree.vs.find(event_attr(e, 'encountering_task_id')) for e in twnode['event'])
         tw_encounter_ts = {event_attr(e, 'encountering_task_id'): e.time for e in twnode['event'] if type(e) is Enter}
+        tw_complete_ts = {event_attr(e, 'encountering_task_id'): e.time for e in twnode['event'] if type(e) is Leave}
         children = [c.index for c in chain(*[p.neighbors(mode='out') for p in parents])
-                    if c['crt_ts'] < tw_encounter_ts[c['parent_index']] < c['end_ts']]
-        nodes = [v for v in g.vs if v['region_type'] == RegionType.explicit_task
-                                 and event_attr(v['event'], 'unique_id') in children
-                                 and v['is_task_leave_node']]
+                    if c['crt_ts'] < tw_encounter_ts[c['parent_index']] and c['end_ts'] < tw_complete_ts[c['parent_index']]]
+        nodes = [v for v in g.vs
+            if (v['is_contracted_task_node'] and v['task_id'] in children)
+            or (not v['is_contracted_task_node'] 
+                and v['region_type'] == RegionType.explicit_task
+                and event_attr(v['event'], 'encountering_task_id') in children
+                and event_attr(v['event'], 'prior_task_status') not in [TaskStatus.switch])
+        ]
         ecount = g.ecount()
         g.add_edges([(v.index, twnode.index) for v in nodes])
         g.es[ecount:]['type'] = EdgeType.taskwait
@@ -250,19 +279,29 @@ def main():
         ecount = g.ecount()
         g.add_edges([(v.index, tgnode.index) for v in nodes])
         g.es[ecount:]['type'] = EdgeType.taskgroup
-        
+
     if args.debug:
         pdb.set_trace()
 
     # Apply styling if desired
     if not args.nostyle:
-        print("applying node and edge styline")
-        g.vs['color'] = [colormap_region_type[v['region_type']] for v in g.vs]
-        g.vs['style'] = 'filled'
-        g.vs['shape'] = [shapemap_region_type[v['region_type']] for v in g.vs]
-        g.es['color'] = [colormap_edge_type[e.attributes().get('type', None)] for e in g.es]
-    g.vs['label'] = ["{}".format(event_attr(v['event'], 'unique_id'))
-                     if any(s in v['region_type'] for s in ['explicit', 'initial', 'parallel']) else " " for v in g.vs]
+        apply_styling(g)
+
+    # Determine labels for task and parallel nodes
+    for v in g.vs:
+        if v['region_type'] == RegionType.explicit_task:
+            if v['is_contracted_task_node']:
+                v['label'] = str(v['task_id'])
+            elif v['is_task_enter_node']:
+                v['label'] = str(event_attr(v['event'], 'unique_id'))
+            elif v['is_task_leave_node']:
+                v['label'] = str(event_attr(v['event'], 'encountering_task_id'))
+            else:
+                v['label'] = " "
+        elif v['region_type'] == RegionType.parallel:
+            v['label'] = str(event_attr(v['event'], 'unique_id'))
+        else:
+            v['label'] = " "
 
     g.simplify(combine_edges='first')
 
