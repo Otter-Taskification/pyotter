@@ -83,8 +83,9 @@ def attr_handler(events=pass_single_executor, ints=min, lists=chain_lists, tuple
                 return tuples(args)
             elif all([type(obj) in [Enter, Leave, ThreadTaskCreate] for obj in args]):
                 return events(args, **kw)
-            elif all([isinstance(obj, bool) for obj in args]):
-                return args
+            elif set(map(type, args)) == {bool, type(None)}:
+                A, B = set(args)
+                return A if B is None else B
             else:
                 return args[0]
     return attr_combiner
