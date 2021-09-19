@@ -2,5 +2,6 @@
 *.egg-info/
 __pycache__/
 /*.dot
+/*.svg
 otter.egg-info/
 workspace.code-workspace
