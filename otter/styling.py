@@ -5,7 +5,7 @@ Styling dictionaries for __main__.py
 """
 
 # Map region type to node color
-colormap_region_type = defaultdict(lambda: 'white', **{
+colormap_region_type = defaultdict(lambda: 'grey', **{
     'initial_task': 'green',
     'implicit_task': 'fuchsia',
     'explicit_task': 'cyan',
