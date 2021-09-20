@@ -1,6 +1,7 @@
 from itertools import chain, count
 from collections import defaultdict
 from otf2.events import Enter, Leave, ThreadTaskCreate, ThreadTaskSwitch
+import pdb
 
 """
 Contains assorted helper functions for __main__.py and trace.py
@@ -11,8 +12,18 @@ def attr_getter(attr_lookup):
     """Make a function to lookup an attribute of some event by its name"""
     def event_attr_getter(evt, name):
         if type(evt) is list:
-            result, = set([e.attributes[attr_lookup[name]] for e in evt])
-            return result
+            try:
+                result, = set([e.attributes.get(attr_lookup[name], None) for e in evt])
+            except (ValueError, KeyError) as err:
+                print("Error processing event list:")
+                print(f"{str(err)} {name=}")
+                for e in evt:
+                    print(e)
+                    print(e.attributes)
+                    print("")
+                pdb.set_trace()
+            else:
+                return result
         elif type(evt) in [Enter, Leave, ThreadTaskCreate, ThreadTaskSwitch]:
             return evt.attributes[attr_lookup[name]]
         else:
@@ -62,11 +73,29 @@ def pass_master_event(events, **kw):
 
 def reject_task_create(events, **kw):
     """Possible argument to attr_handler()"""
-    events = [e for e in events if type(e) is not ThreadTaskCreate]
-    if len(events) == 1:
+    events_filtered = [e for e in events if type(e) is not ThreadTaskCreate]
+    if len(events_filtered) == 1:
+        return events_filtered[0]
+    elif len(events_filtered) == 0:
+        raise ValueError("No events remain after filtering")
+    else:
+        return events_filtered
+
+
+def suppress_task_create(events, **kw):
+    """Possible argument to attr_handler()"""
+    if len(events) == 0:
+        raise ValueError("Expected at least 1 event")
+    elif len(events) == 1:
         return events[0]
     else:
-        return events
+        events_filtered = [e for e in events if type(e) is not ThreadTaskCreate]
+        if len(events_filtered) > 1:
+            return events_filtered
+        elif len(events_filtered) == 1:
+            return events_filtered[0]
+        else:
+            return events
 
 
 def attr_handler(events=pass_single_executor, ints=min, lists=chain_lists, tuples=set, **kw):
