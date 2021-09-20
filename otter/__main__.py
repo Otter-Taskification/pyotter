@@ -9,7 +9,7 @@ from otf2.events import Enter, Leave, ThreadTaskSwitch
 from otter.definitions import EventType, Endpoint, RegionType, TaskStatus, TaskType, EdgeType
 from otter.trace import AttributeLookup, RegionLookup, yield_chunks, process_chunk, event_defines_new_chunk
 from otter.styling import colormap_region_type, colormap_edge_type, shapemap_region_type
-from otter.helpers import set_tuples, reject_task_create, attr_handler, label_clusters, descendants_if, attr_getter, pass_master_event
+from otter.helpers import set_tuples, reject_task_create, suppress_task_create, attr_handler, label_clusters, descendants_if, attr_getter, pass_master_event
 
 from otter.chunks import Chunk, ChunkGenerator, event_defines_new_task_fragment, fmt_event
 
@@ -175,15 +175,19 @@ def main():
     print("contracting by task ID where there are no nested nodes")
     g.vs['cluster'] = label_clusters(g.vs, is_empty_task_region, lambda v: v['task_cluster_id'][0])
     nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(events=reject_task_create, tuples=set_tuples, attr=chunk_gen.attr))
+    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(events=suppress_task_create, tuples=set_tuples, attr=chunk_gen.attr))
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
 
-    # Label contracted task nodes for easier identification
+    # Label (contracted) task nodes for easier identification
     for v in g.vs:
         if v['is_task_enter_node'] and v['is_task_leave_node']:
             v['is_contracted_task_node'] = True
+            if type(v['event']) is list and len(v['event']) == 0:
+                pdb.set_trace()
             v['task_id'] = event_attr(v['event'], 'unique_id')
+        elif v['is_task_enter_node'] or v['is_task_leave_node']:
+            v['task_id'] = v['task_cluster_id'][0]
 
     if args.debug:
         pdb.set_trace()
@@ -273,9 +277,13 @@ def main():
         children = [c for c in chain(*[p.neighbors(mode='out') for p in parents])
                     if tg_enter_ts[c['parent_index']] < c['crt_ts'] < tg_leave_ts[c['parent_index']]]
         descendants = list(chain(*[descendants_if(c, cond=lambda x: x['task_type'] != RegionType.implicit_task) for c in children]))
-        nodes = [v for v in g.vs if v['region_type'] == RegionType.explicit_task
-                                 and event_attr(v['event'], 'unique_id') in descendants
-                                 and v['is_task_leave_node']]
+        nodes = [v for v in g.vs
+            if (v['is_contracted_task_node'] and v['task_id'] in descendants)
+            or (not v['is_contracted_task_node'] 
+                and v['region_type'] == RegionType.explicit_task
+                and event_attr(v['event'], 'encountering_task_id') in descendants
+                and event_attr(v['event'], 'prior_task_status') not in [TaskStatus.switch])
+        ]
         ecount = g.ecount()
         g.add_edges([(v.index, tgnode.index) for v in nodes])
         g.es[ecount:]['type'] = EdgeType.taskgroup
@@ -290,12 +298,14 @@ def main():
     # Determine labels for task and parallel nodes
     for v in g.vs:
         if v['region_type'] == RegionType.explicit_task:
-            if v['is_contracted_task_node']:
+            if v['is_task_enter_node'] or v['is_task_leave_node']:
                 v['label'] = str(v['task_id'])
-            elif v['is_task_enter_node']:
-                v['label'] = str(event_attr(v['event'], 'unique_id'))
-            elif v['is_task_leave_node']:
-                v['label'] = str(event_attr(v['event'], 'encountering_task_id'))
+            # if v['is_contracted_task_node']:
+            #     v['label'] = str(v['task_id'])
+            # elif v['is_task_enter_node']:
+            #     v['label'] = str(event_attr(v['event'], 'unique_id'))
+            # elif v['is_task_leave_node']:
+            #     v['label'] = str(event_attr(v['event'], 'encountering_task_id'))
             else:
                 v['label'] = " "
         elif v['region_type'] == RegionType.parallel:
