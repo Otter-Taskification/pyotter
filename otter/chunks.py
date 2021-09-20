@@ -111,7 +111,9 @@ class Chunk:
             parallel_endpoint = self.get_attr(self.first, 'endpoint')
             prior_node["parallel_sequence_id"] = (parallel_id, parallel_endpoint)
         elif self.kind == RegionType.explicit_task:
+            task_id = self.get_attr(self.first, 'unique_id')
             prior_node['is_task_enter_node'] = True
+            prior_node['task_cluster_id'] = (task_id, Endpoint.enter)
 
         k = 1
         for event in islice(self.events, 1, None):
@@ -183,7 +185,9 @@ class Chunk:
                 continue
 
             if event is self.last and self.kind == RegionType.explicit_task:
+                task_id = self.get_attr(node['event'], 'encountering_task_id')
                 node['is_task_leave_node'] = True
+                node['task_cluster_id'] = (task_id, Endpoint.leave)
 
             prior_node = node
 
