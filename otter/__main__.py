@@ -86,6 +86,12 @@ def main():
         g.vs['task_cluster_id'] = None
     g.vs['sync_cluster_id'] = None
     g.vs['region_type'] = None
+    g.vs['synchronised_by_taskwait'] = False
+
+    if 'is_task_enter_node' not in g.vs.attribute_names():
+        g.vs['is_task_enter_node'] = None
+    if 'is_task_leave_node' not in g.vs.attribute_names():
+        g.vs['is_task_leave_node'] = None
 
     if args.debug:
         pdb.set_trace()
@@ -248,6 +254,7 @@ def main():
         tw_complete_ts = {event_attr(e, 'encountering_task_id'): e.time for e in twnode['event'] if type(e) is Leave}
         children = [c.index for c in chain(*[p.neighbors(mode='out') for p in parents])
                     if c['crt_ts'] < tw_encounter_ts[c['parent_index']] and c['end_ts'] < tw_complete_ts[c['parent_index']]]
+        print(children)
         nodes = [v for v in g.vs
             if (v['is_contracted_task_node'] and v['task_id'] in children)
             or (not v['is_contracted_task_node'] 
@@ -255,9 +262,15 @@ def main():
                 and event_attr(v['event'], 'encountering_task_id') in children
                 and event_attr(v['event'], 'prior_task_status') not in [TaskStatus.switch])
         ]
+        nodes = [v for v in nodes if not v['synchronised_by_taskwait']]
+        for v in nodes:
+            print(v.index, end=", ")
+        print("")
         ecount = g.ecount()
         g.add_edges([(v.index, twnode.index) for v in nodes])
         g.es[ecount:]['type'] = EdgeType.taskwait
+        for v in nodes:
+            v['synchronised_by_taskwait'] = True
 
     if args.debug:
         pdb.set_trace()
