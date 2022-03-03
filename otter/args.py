@@ -9,7 +9,7 @@ def get_args():
 
     parser.add_argument('anchorfile', help='OTF2 anchor file')
     parser.add_argument('-o', '--output', dest='output', help='output file')
-    parser.add_argument('-r', '--report', dest='report', help='report name')
+    parser.add_argument('-r', '--report', dest='report', help='report path')
     parser.add_argument('-v', '--verbose', action='store_true', dest='verbose',
                         help='print chunks as they are generated')
     parser.add_argument('-i', '--interact', action='store_true', dest='interact',
@@ -26,4 +26,9 @@ def get_args():
     if args.interact:
         print("Otter launched interactively")
 
+    check_args(args)
+
     return args
+
+def check_args(args):
+    pass
