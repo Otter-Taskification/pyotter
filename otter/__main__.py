@@ -1,5 +1,4 @@
 import pdb
-import argparse
 import warnings
 import igraph as ig
 import otf2
@@ -8,44 +7,14 @@ from collections import Counter
 from otf2.events import Enter, Leave, ThreadTaskSwitch
 from otter.definitions import EventType, Endpoint, RegionType, TaskStatus, TaskType, EdgeType
 from otter.trace import AttributeLookup, RegionLookup, yield_chunks, process_chunk, event_defines_new_chunk
-from otter.styling import colormap_region_type, colormap_edge_type, shapemap_region_type
-from otter.helpers import set_tuples, reject_task_create, suppress_task_create, attr_handler, label_clusters, descendants_if, attr_getter, pass_master_event
-
+from otter.helpers import set_tuples, reject_task_create, suppress_task_create, attr_handler, label_clusters, descendants_if, attr_getter, pass_master_event, apply_styling
+from otter.args import get_args
 from otter.chunks import Chunk, ChunkGenerator, event_defines_new_task_fragment, fmt_event
-
-# TODO: move function into separate file and import
-def apply_styling(graph):
-        print("applying node and edge styline")
-        graph.vs['color'] = [colormap_region_type[v['region_type']] for v in graph.vs]
-        graph.vs['style'] = 'filled'
-        graph.vs['shape'] = [shapemap_region_type[v['region_type']] for v in graph.vs]
-        graph.es['color'] = [colormap_edge_type[e.attributes().get('type', None)] for e in graph.es]
-
+from otter.report import write_report
 
 def main():
-    parser = argparse.ArgumentParser(
-        prog="python3 -m otter",
-        description='Convert an Otter OTF2 trace archive to its execution graph representation',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('anchorfile', help='OTF2 anchor file')
-    parser.add_argument('-o', '--output', dest='output', help='output file')
-    parser.add_argument('-v', '--verbose', action='store_true', dest='verbose',
-                        help='print chunks as they are generated')
-    parser.add_argument('-i', '--interact', action='store_true', dest='interact',
-                        help='drop to an interactive shell upon completion')
-    parser.add_argument('-ns', '--no-style', action='store_true', default=False, dest='nostyle',
-                        help='do not apply any styling to the graph nodes')
-    parser.add_argument('-d', '--debug', action='store_true', default=False, dest='debug',
-                        help='step through the code with pdb.set_trace()')
-    args = parser.parse_args()
-
-    if args.output is None and not args.interact:
-        parser.error("must select at least one of -[o|i]")
-
-    if args.interact:
-        print("Otter launched interactively")
-
+    args = get_args()
     anchorfile = args.anchorfile
 
     # Convert event stream into graph chunks
@@ -344,6 +313,9 @@ def main():
                 print(f"igraph error: {oserr}")
                 print(f"failed to write to file '{args.output}'")
 
+    if args.report:
+        write_report(args, g, task_tree)
+
     if args.interact:
         import atexit
         import code
@@ -372,8 +344,7 @@ def main():
             if g is v:
                 break
 
-        banner = \
-f"""
+        banner = f"""
 Graph '{k}' has {g.vcount()} nodes and {g.ecount()} edges
 
 Entering interactive mode, use:

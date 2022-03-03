@@ -1,6 +1,7 @@
 from itertools import chain, count
 from collections import defaultdict
 from otf2.events import Enter, Leave, ThreadTaskCreate, ThreadTaskSwitch
+from otter.styling import colormap_region_type, colormap_edge_type, shapemap_region_type
 import pdb
 
 """
@@ -156,3 +157,10 @@ def events_bridge_region(previous, current, types, getter):
             and getter(previous, 'endpoint') == 'enter'
             and getter(current, 'region_type') in types
             and getter(current, 'endpoint') == 'leave')
+
+def apply_styling(graph):
+    print("applying node and edge styline")
+    graph.vs['color'] = [colormap_region_type[v['region_type']] for v in graph.vs]
+    graph.vs['style'] = 'filled'
+    graph.vs['shape'] = [shapemap_region_type[v['region_type']] for v in graph.vs]
+    graph.es['color'] = [colormap_edge_type[e.attributes().get('type', None)] for e in graph.es]
