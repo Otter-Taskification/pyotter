@@ -15,6 +15,7 @@ setup(name="pyotter",
     license="https://github.com/adamtuft/pyotter/blob/main/LICENSE",
     url="https://github.com/adamtuft/pyotter",
     packages=find_packages(),
+    package_data={'otter': ['templates/*']},
     install_requires=[
         'python-igraph==0.9.1'
     ],
