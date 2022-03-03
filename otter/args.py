@@ -1,4 +1,5 @@
 import argparse
+import os
 
 def get_args():
 
@@ -26,9 +27,25 @@ def get_args():
     if args.interact:
         print("Otter launched interactively")
 
-    check_args(args)
+    try:
+        check_args(args)
+    except FileNotFoundError as E:
+        print(f"File not found: {E}")
+        quit()
+    except FileExistsError as E:
+        print(f"File already exists: {E}")
+        quit()
 
     return args
 
 def check_args(args):
-    pass
+
+    # Anchorfile must exist
+    if not os.path.isfile(args.anchorfile):
+        raise FileNotFoundError(f"{args.anchorfile}")
+
+    # Report path must not exist
+    if os.path.isdir(args.report):
+        raise FileExistsError(f"{args.report}")
+
+    return
