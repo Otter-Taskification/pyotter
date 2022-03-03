@@ -29,7 +29,6 @@ def write_report(args, graph, task_tree):
         report = args.report
 
     report = os.path.normpath(report)
-    print(f"Report path: {report}")
 
     # Create report directory
     try:
@@ -43,27 +42,31 @@ def write_report(args, graph, task_tree):
     for s in subdirs:
         os.mkdir(os.path.join(report, s))
 
-    # Write graph as dotfile to data/
-    dotfile = os.path.join(report, "data/graph.dot")
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        try:
-            graph.write(dotfile)
-        except OSError as oserr:
-            print(f"igraph error: {oserr}")
-            print(f"failed to write to file '{args.output}'")
+    file_names = [("graph", graph), ("tree", task_tree)]
 
-    # Create command to convert .dot to .svg
-    svgfile = os.path.join(report, "img/graph.svg")
-    convert = f"dot -Tsvg -o {svgfile} -Gpad=1 -Nfontsize=10 {dotfile}"
-    print(convert)
-    proc = subprocess.run(convert, shell=True)
-    if proc.returncode != 0:
-        raise RuntimeError("error converting .dot to .svg")
+    # Create dotfiles and convert each to svg
+    for prefix, obj in file_names:
+        dotfile = os.path.join(report, "data", prefix + ".dot")
+        svgfile = os.path.join(report, "img", prefix + ".svg")
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            try:
+                obj.write(dotfile)
+            except OSError as oserr:
+                print(f"igraph error: {oserr}")
+                print(f"failed to write to dotfile")
+        conversion = f"dot -Tsvg -o {svgfile} -Gpad=1 -Nfontsize=10 {dotfile}"
+        print(conversion)
+        proc = subprocess.run(conversion, shell=True)
+        if proc.returncode != 0:
+            raise RuntimeError("error converting .dot to .svg")
 
     # Substitute variables in HTML template
     html = pkg_resources.read_text(templates, 'report.html')
-    src = Template(html).safe_substitute(GRAPH_SVG="img/graph.svg")
+    src = Template(html).safe_substitute(
+        GRAPH_SVG="img/graph.svg",
+        TREE_SVG="img/tree.svg"
+    )
 
     # Write HTML report
     reportfile = os.path.join(report, "report.html")
