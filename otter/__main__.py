@@ -33,16 +33,16 @@ def main():
         task_tree.vs['color'] = ['red' if v['task_type'] == RegionType.implicit_task else 'gray' for v in task_tree.vs]
     tt_layout = task_tree.layout_reingold_tilford()
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace = lambda : pdb.set_trace() if args.debug else None
+
+    set_trace()
 
     # Count chunks by type
     print("graph chunks created:")
     for k, v in Counter(chunk_types).items():
         print(f"  {k:18s} {v:8d}")
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     # Collect all chunks
     print("combining chunks")
@@ -62,8 +62,7 @@ def main():
     if 'is_task_leave_node' not in g.vs.attribute_names():
         g.vs['is_task_leave_node'] = None
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     # Collapse by parallel sequence ID
     print("contracting by parallel sequence ID")
@@ -73,8 +72,7 @@ def main():
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     # Collapse by single-begin/end event
     def is_single_executor(v):
@@ -86,8 +84,7 @@ def main():
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     # Collapse by master-begin/end event
     def is_master(v):
@@ -99,8 +96,7 @@ def main():
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     # Itermediate clean-up: for each master region, remove edges that connect 
     # the same nodes as the master region
@@ -117,8 +113,7 @@ def main():
     print(f"deleting redundant edges due to master regions: {len(redundant_edges)}")
     g.delete_edges(redundant_edges)
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     # Collapse by (task-ID, endpoint) to get 1 subgraph per task
     for v in g.vs:
@@ -134,8 +129,7 @@ def main():
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     # Collapse by task ID where there are no links between to combine task nodes with nothing nested within
     def is_empty_task_region(v):
@@ -164,8 +158,7 @@ def main():
         elif v['is_task_enter_node'] or v['is_task_leave_node']:
             v['task_id'] = v['task_cluster_id'][0]
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     # Collapse redundant sync-enter/leave node pairs by labelling unique pairs of nodes identified by their shared edge
     dummy_counter = count()
@@ -189,8 +182,7 @@ def main():
     num_nodes = g.vcount()
     print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     # Unpack the region_type attribute
     for v in g.vs:
@@ -212,8 +204,7 @@ def main():
         if type(v['endpoint']) is set and len(v['endpoint']) == 1:
             v['endpoint'], = v['endpoint']
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     # Apply taskwait synchronisation
     print("applying taskwait synchronisation")
@@ -241,8 +232,7 @@ def main():
         for v in nodes:
             v['synchronised_by_taskwait'] = True
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     def event_time_per_task(event):
         """Return the map: encountering task id -> event time for all encountering tasks in the event"""
@@ -270,8 +260,7 @@ def main():
         g.add_edges([(v.index, tgnode.index) for v in nodes])
         g.es[ecount:]['type'] = EdgeType.taskgroup
 
-    if args.debug:
-        pdb.set_trace()
+    set_trace()
 
     # Apply styling if desired
     if not args.nostyle:
