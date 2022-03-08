@@ -45,7 +45,7 @@ def check_args(args):
         raise FileNotFoundError(f"{args.anchorfile}")
 
     # Report path must not exist
-    if os.path.isdir(args.report):
+    if args.report is not None and os.path.isdir(args.report):
         raise FileExistsError(f"{args.report}")
 
     return
