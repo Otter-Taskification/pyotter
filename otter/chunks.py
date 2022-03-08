@@ -4,7 +4,7 @@ from typing import Iterable
 from collections import deque, defaultdict
 from itertools import islice
 from otter.definitions import EventType, RegionType, TaskStatus, TaskType, Endpoint, EdgeType
-from otter.trace import AttributeLookup, event_defines_new_chunk
+from otter.trace import AttributeLookup
 from otf2.events import Enter, Leave, ThreadTaskCreate, ThreadTaskSwitch, ThreadTaskComplete, ThreadBegin, ThreadEnd
 
 
