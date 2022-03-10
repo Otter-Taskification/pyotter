@@ -2,19 +2,19 @@ import pdb
 import warnings
 import igraph as ig
 import otf2
+import otter
 from itertools import chain, count, groupby
 from collections import Counter
 from otf2.events import Enter, Leave, ThreadTaskSwitch
 from otter.definitions import EventType, Endpoint, RegionType, TaskStatus, TaskType, EdgeType
 from otter.trace import AttributeLookup, RegionLookup
 from otter.helpers import set_tuples, reject_task_create, suppress_task_create, attr_handler, label_clusters, descendants_if, attr_getter, pass_master_event, apply_styling
-from otter.args import get_args
 from otter.chunks import Chunk, ChunkGenerator, event_defines_new_task_fragment, fmt_event
 from otter.report import write_report
 
 def main():
 
-    args = get_args()
+    args = otter.get_args()
     anchorfile = args.anchorfile
 
     # Convert event stream into graph chunks

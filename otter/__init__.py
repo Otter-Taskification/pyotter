@@ -5,3 +5,5 @@ Key functionality:
 - parse loaded trace to determine what graph nodes to create and where edges are required
 - export execution graph to file
 """
+
+from .args import get_args
