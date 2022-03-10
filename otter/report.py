@@ -8,6 +8,7 @@ except ImportError:
     # Try backported to PY<37 `importlib_resources`.
     import importlib_resources as pkg_resources
 
+import pandas as pd
 from . import templates
 
 def write_report(args, graph, task_tree):
@@ -61,11 +62,16 @@ def write_report(args, graph, task_tree):
         if proc.returncode != 0:
             raise RuntimeError("error converting .dot to .svg")
 
+    # Create HTML table of task attributes
+    task_attributes = [v.attributes() for v in task_tree.vs]
+    task_attr_html = pd.DataFrame(task_attributes).to_html()
+
     # Substitute variables in HTML template
     html = pkg_resources.read_text(templates, 'report.html')
     src = Template(html).safe_substitute(
         GRAPH_SVG="img/graph.svg",
-        TREE_SVG="img/tree.svg"
+        TREE_SVG="img/tree.svg",
+        TASK_ATTRIBUTES_TABLE=task_attr_html
     )
 
     # Write HTML report
