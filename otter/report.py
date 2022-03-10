@@ -63,16 +63,18 @@ def write_report(args, graph, task_tree):
             raise RuntimeError("error converting .dot to .svg")
 
     # Create HTML table of task attributes
-    task_attributes = [v.attributes() for v in task_tree.vs]
-    task_attr_html = pd.DataFrame(task_attributes).to_html()
+    task_attributes = pd.DataFrame([v.attributes() for v in task_tree.vs])
 
     # Substitute variables in HTML template
     html = pkg_resources.read_text(templates, 'report.html')
     src = Template(html).safe_substitute(
         GRAPH_SVG="img/graph.svg",
         TREE_SVG="img/tree.svg",
-        TASK_ATTRIBUTES_TABLE=task_attr_html
+        TASK_ATTRIBUTES_TABLE=task_attributes.to_html()
     )
+
+    # Save task data to csv
+    task_attributes.to_csv(os.path.join(report, "data", "task_attributes.csv"))
 
     # Write HTML report
     reportfile = os.path.join(report, "report.html")
