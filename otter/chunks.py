@@ -446,7 +446,6 @@ class ChunkGenerator:
 
             else:
                 self[encountering_task].append(event)
-        print("")
         self._generated = True
 
 
