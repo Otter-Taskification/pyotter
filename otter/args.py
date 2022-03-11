@@ -21,8 +21,8 @@ def get_args():
                         help='step through the code with pdb.set_trace()')
     args = parser.parse_args()
 
-    if args.output is None and not args.interact:
-        parser.error("must select at least one of -[o|i]")
+    if args.output is None and args.report is None and not args.interact:
+        parser.error("must select at least one of -[o|i|r]")
 
     if args.interact:
         print("Otter launched interactively")
@@ -40,9 +40,18 @@ def get_args():
 
 def check_args(args):
 
+    # Ensure report path is normalised
+    if not os.path.isabs(args.report):
+        args.report = os.path.join(os.getcwd(), args.report)
+    args.report = os.path.normpath(args.report)
+
     # Anchorfile must exist
     if not os.path.isfile(args.anchorfile):
-        raise FileNotFoundError(f"{args.anchorfile}")
+        raise FileNotFoundError(args.anchorfile)
+
+    # Report directory must exist
+    if args.report is not None and not os.path.isdir(os.path.dirname(args.report)):
+        raise FileNotFoundError(os.path.dirname(args.report))
 
     # Report path must not exist
     if args.report is not None and os.path.isdir(args.report):
