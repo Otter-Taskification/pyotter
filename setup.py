@@ -17,7 +17,8 @@ setup(name="pyotter",
     packages=find_packages(),
     package_data={'otter': ['templates/*']},
     install_requires=[
-        'python-igraph==0.9.1'
+        'python-igraph==0.9.1',
+        'pandas'
     ],
     dependency_links=['https://perftools.pages.jsc.fz-juelich.de/cicd/otf2/']
 )
