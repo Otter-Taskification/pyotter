@@ -159,7 +159,6 @@ def events_bridge_region(previous, current, types, getter):
             and getter(current, 'endpoint') == 'leave')
 
 def apply_styling(graph):
-    print("applying node and edge styline")
     graph.vs['color'] = [colormap_region_type[v['region_type']] for v in graph.vs]
     graph.vs['style'] = 'filled'
     graph.vs['shape'] = [shapemap_region_type[v['region_type']] for v in graph.vs]
