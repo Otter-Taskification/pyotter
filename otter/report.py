@@ -13,16 +13,6 @@ from . import templates
 
 def write_report(args, graph, task_tree):
 
-    # Create report folder
-    #   - if report is abs path, create as abs path
-    #   - if report not abs path, create relative to cwd
-    # Write graph as .dot in report subfolder
-    # Convert .dot -> svg
-    # Convert task_tree to .dot -> svg
-    # Write HTML to display svg(s)
-    # Produce summary table of tasks
-    # Convert summary table to HTML and paste into report
-
     # Create abs path for new report
     if not os.path.isabs(args.report):
         report = os.path.join(os.getcwd(), args.report)
@@ -78,6 +68,7 @@ def write_report(args, graph, task_tree):
 
     # Write HTML report
     reportfile = os.path.join(report, "report.html")
+    print(f"writing report: {reportfile}")
     with open(reportfile, "w") as f:
         f.write(src)
 
