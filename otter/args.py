@@ -41,9 +41,10 @@ def get_args():
 def check_args(args):
 
     # Ensure report path is normalised
-    if not os.path.isabs(args.report):
-        args.report = os.path.join(os.getcwd(), args.report)
-    args.report = os.path.normpath(args.report)
+    if args.report is not None:
+        if not os.path.isabs(args.report):
+            args.report = os.path.join(os.getcwd(), args.report)
+        args.report = os.path.normpath(args.report)
 
     # Anchorfile must exist
     if not os.path.isfile(args.anchorfile):
