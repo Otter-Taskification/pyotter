@@ -8,7 +8,7 @@ except ImportError:
     # Try backported to PY<37 `importlib_resources`.
     import importlib_resources as pkg_resources
 
-import pandas as pd
+import csv
 from . import templates
 
 def write_report(args, graph, task_tree):
@@ -53,18 +53,49 @@ def write_report(args, graph, task_tree):
             raise RuntimeError("error converting .dot to .svg")
 
     # Create HTML table of task attributes
-    task_attributes = pd.DataFrame([v.attributes() for v in task_tree.vs])
+    # task_attributes = pd.DataFrame([v.attributes() for v in task_tree.vs])
+
+    header = ['name', 'task_type', 'crt_ts', 'end_ts', 'parent_index', 'style', 'color']
+    # Map attribute names to column headers
+    tidy_names = {
+        'name': "Task ID",
+        'task_type': "Task Type",
+        'crt_ts': "Creation time",
+        'end_ts': "End time",
+        'parent_index': "Parent ID",
+        'style': "Style",
+        'color': "Colour"
+    }
+
+    html_table = \
+"""
+<table border="1" class="data-table">
+    <thead>
+    {}
+    </thead>
+    <tbody>
+    {}
+    </tbody>
+</table>
+"""
+
+    html_table_header = "<tr style=\"text-align: right;\">\n" + "\n".join(["<th>{}</th>".format(tidy_names[x]) for x in header]) + "\n</tr>\n"
+
+    html_table_rows = "\n".join(["<tr>\n" + "\n".join(["<td>{}</td>".format(v[key]) for key in header]) + "\n</tr\n>" for v in task_tree.vs])
 
     # Substitute variables in HTML template
     html = pkg_resources.read_text(templates, 'report.html')
     src = Template(html).safe_substitute(
         GRAPH_SVG="img/graph.svg",
         TREE_SVG="img/tree.svg",
-        TASK_ATTRIBUTES_TABLE=task_attributes.to_html()
+        TASK_ATTRIBUTES_TABLE=html_table.format(html_table_header, html_table_rows)
     )
 
     # Save task data to csv
-    task_attributes.to_csv(os.path.join(report, "data", "task_attributes.csv"))
+    with open(os.path.join(report, "data", "task_attributes.csv"), "w") as csvfile:
+        writer = csv.DictWriter(csvfile, header)
+        writer.writerow(tidy_names)
+        writer.writerows([v.attributes() for v in task_tree.vs])
 
     # Write HTML report
     reportfile = os.path.join(report, "report.html")
