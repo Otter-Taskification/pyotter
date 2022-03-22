@@ -6,8 +6,8 @@ Key functionality:
 - export execution graph to file
 """
 
+from . import events
 from .args import get_args
-
 from shutil import which
 
 # Check that the "dot" commandline utility is available
