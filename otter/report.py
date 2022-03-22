@@ -55,13 +55,15 @@ def write_report(args, graph, task_tree):
     # Create HTML table of task attributes
     # task_attributes = pd.DataFrame([v.attributes() for v in task_tree.vs])
 
-    header = ['name', 'task_type', 'crt_ts', 'end_ts', 'parent_index', 'style', 'color']
+    header = ['name', 'task_type', 'crt_ts', 'start_ts', 'end_ts', 'dur', 'parent_index', 'style', 'color']
     # Map attribute names to column headers
     tidy_names = {
         'name': "Task ID",
         'task_type': "Task Type",
-        'crt_ts': "Creation time",
-        'end_ts': "End time",
+        'crt_ts': "Creation Time",
+        'start_ts': "Start Time",
+        'end_ts': "End Time",
+        'dur': 'Duration',
         'parent_index': "Parent ID",
         'style': "Style",
         'color': "Colour"
