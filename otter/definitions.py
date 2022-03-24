@@ -4,6 +4,8 @@ class Attr(str, Enum):
     event_type = "event_type"
     region_type = "region_type"
     endpoint = "endpoint"
+    unique_id = "unique_id"
+    encountering_task_id = "encountering_task_id"
 
 class EventType(str, Enum):
     thread_begin = "thread_begin"
@@ -77,12 +79,3 @@ class EdgeType(str, Enum):
 class TaskEvent(str, Enum):
     CREATE = EventType.task_create.value
     SWITCH = EventType.task_switch.value
-
-ThreadEvents = (EventType.thread_begin, EventType.thread_end)
-ParallelEvents = (EventType.parallel_begin, EventType.parallel_end)
-WorkshareEvents = (EventType.workshare_begin, EventType.workshare_end)
-SyncEvents = (EventType.sync_begin, EventType.sync_end)
-MasterEvents = (EventType.master_begin, EventType.master_end)
-TaskEvents = (EventType.task_enter, EventType.task_leave, EventType.task_create, EventType.task_schedule, EventType.task_switch)
-
-TaskRegionTypes = (RegionType.task, RegionType.initial_task, RegionType.implicit_task, RegionType.explicit_task)

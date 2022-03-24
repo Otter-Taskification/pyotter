@@ -6,7 +6,8 @@ Key functionality:
 - export execution graph to file
 """
 
-from .events import EventStream
+from .EventFactory import EventFactory
+from .tasks import Task, TaskRegistry
 from .args import get_args
 
 def _check_dot():
