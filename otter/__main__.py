@@ -16,4 +16,4 @@ with otf2.reader.open(args.anchorfile) as r:
 print(event_counter)
 print(tr)
 for t in tr:
-    print(t)
+    print(t.id, tuple(t.children))

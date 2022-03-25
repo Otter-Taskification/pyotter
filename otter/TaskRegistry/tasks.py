@@ -15,7 +15,13 @@ class Task:
         self._children = deque()
 
     def __repr__(self):
-        return "{}(id={}, type={}, children=({}))".format(self.__class__, self.id, self.task_type, ", ".join([str(c) for c in self.children]))
+        return "{}(id={}, type={}, parent={}, children=({}))".format(
+            self.__class__,
+            self.id,
+            self.task_type,
+            self.parent_id,
+            ", ".join([str(c) for c in self.children])
+        )
 
     def append_child(self, child: int):
         self._children.append(child)
