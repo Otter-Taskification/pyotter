@@ -10,7 +10,7 @@ class TaskRegistry:
     Maps task ID to task instance, raising KeyError if an unregistered task is requested
     """
 
-    def __init__(self, *args, **attr):
+    def __init__(self):
         self._dict = dict()
 
     def __getitem__(self, uid: int) -> Union[Task, None]:
