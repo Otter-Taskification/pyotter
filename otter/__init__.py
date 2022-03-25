@@ -10,6 +10,7 @@ from .EventFactory import EventFactory, events
 from .TaskRegistry import TaskRegistry, tasks
 from .args import get_args
 from .definitions import TaskStatus
+from .ChunkFactory import ChunkFactory, chunks
 
 def _check_dot():
     # Check that the "dot" commandline utility is available
