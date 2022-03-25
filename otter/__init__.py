@@ -6,9 +6,10 @@ Key functionality:
 - export execution graph to file
 """
 
-from .EventFactory import EventFactory
-from .tasks import Task, TaskRegistry
+from .EventFactory import EventFactory, events
+from .TaskRegistry import TaskRegistry, tasks
 from .args import get_args
+from .definitions import TaskStatus
 
 def _check_dot():
     # Check that the "dot" commandline utility is available

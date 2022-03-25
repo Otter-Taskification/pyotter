@@ -1,11 +1,14 @@
 from enum import Enum
 
 class Attr(str, Enum):
+    time = "time"
     event_type = "event_type"
     region_type = "region_type"
     endpoint = "endpoint"
     unique_id = "unique_id"
     encountering_task_id = "encountering_task_id"
+    task_type = "task_type"
+    parent_task_id = "parent_task_id"
 
 class EventType(str, Enum):
     thread_begin = "thread_begin"

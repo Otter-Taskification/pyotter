@@ -6,10 +6,10 @@ from ..definitions import EventType, Attr
 
 
 class_map = {
-    EventType.thread_begin:    events.Thread,
-    EventType.thread_end:      events.Thread,
-    EventType.parallel_begin:  events.Parallel,
-    EventType.parallel_end:    events.Parallel,
+    EventType.thread_begin:    events.ThreadBegin,
+    EventType.thread_end:      events.ThreadEnd,
+    EventType.parallel_begin:  events.ParallelBegin,
+    EventType.parallel_end:    events.ParallelEnd,
     EventType.workshare_begin: events.Workshare,
     EventType.workshare_end:   events.Workshare,
     EventType.sync_begin:      events.Sync,
@@ -33,5 +33,7 @@ class EventFactory:
     def __iter__(self) -> events._Event:
         for location, event in self.events:
             event_type = event.attributes[self.attr[Attr.event_type]]
+            if event_type not in class_map:
+                raise TypeError(f"{self.__class__.__name__} can't construct event of type '{event_type}'")
             constructor = class_map[event_type]
             yield constructor(event, self.attr)
