@@ -1,12 +1,15 @@
 from collections import deque
 from ..EventFactory import events
 from ..definitions import Attr
+from ..Logging import get_logger
 
 
 class Task:
     """Represents an instance of a task"""
 
     def __init__(self, e: events._Event):
+        self.log = get_logger(f"{self.__class__.__name__}")
+        self.log.debug(f"constructing task for event {e}")
         data = e.get_task_data()
         self.id = data[Attr.unique_id]
         self.parent_id = data[Attr.parent_task_id]
