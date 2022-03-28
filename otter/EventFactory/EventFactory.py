@@ -49,9 +49,8 @@ class Location:
         self.log.debug(f"{self} entered parallel region {id}")
         self.parallel_region_deque.append(id)
 
-    def leave_parallel_region(self, id: int):
-        assert id == self.current_parallel_region
-        self.log.debug(f"{self} exited parallel region {id}")
+    def leave_parallel_region(self):
+        self.log.debug(f"{self} exited parallel region {self.current_parallel_region}")
         self.parallel_region_deque.pop()
 
 

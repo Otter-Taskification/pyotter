@@ -92,11 +92,13 @@ class GenericEvent(_Event):
 class ThreadBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
 
     def update_chunks(self, chunk_dict, chunk_stack):
-        pass
+        yield None
 
 
 class ThreadEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
-    pass
+
+    def update_chunks(self, chunk_dict, chunk_stack):
+        yield None
 
 
 class ParallelBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
@@ -114,10 +116,26 @@ class ParallelBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
             # record enclosing chunk before creating the nested chunk
             chunk_stack[parallel_chunk_key].append(task_chunk)
         chunk_dict[parallel_chunk_key].append_event(self)
+        yield None
 
 
 class ParallelEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
-    pass
+
+    def update_chunks(self, chunk_dict, chunk_stack) -> None:
+        task_chunk_key = (self._location.name, self.encountering_task_id, RegionType.task)
+        self.log.debug(f"{task_chunk_key=}")
+        # append to parallel region chunk
+        parallel_chunk_key = (self._location.name, self.unique_id, RegionType.parallel)
+        parallel_chunk = chunk_dict[parallel_chunk_key]
+        parallel_chunk.append_event(self)
+        # yield parallel region chunk
+        yield parallel_chunk
+        self._location.leave_parallel_region()
+        if task_chunk_key in chunk_dict.keys():
+            # master thread: restore and update the enclosing chunk
+            chunk_dict[parallel_chunk_key] = chunk_stack[parallel_chunk_key].pop()
+            chunk_dict[parallel_chunk_key].append_event(self)
+            chunk_dict[task_chunk_key] = chunk_dict[parallel_chunk_key]
 
 
 class Sync(_Event):
@@ -144,10 +162,20 @@ class SingleBegin(ChunkSwitchEventMixin, WorkshareBegin):
         chunk_stack[task_chunk_key].append(task_chunk)
         # Create a new nested Chunk for the single region
         chunk_dict[task_chunk_key].append_event(self)
+        yield None
 
 
 class SingleEnd(ChunkSwitchEventMixin, WorkshareEnd):
-    pass
+
+    def update_chunks(self, chunk_dict, chunk_stack) -> None:
+        # Nested region - append to inner chunk, yield, then pop enclosing chunk & append to that chunk
+        task_chunk_key = self.encountering_task_id
+        self.log.debug(f"{task_chunk_key=}")
+        task_chunk = chunk_dict[task_chunk_key]
+        task_chunk.append_event(self)
+        yield task_chunk
+        chunk_dict[task_chunk_key] = chunk_stack[task_chunk_key].pop()
+        chunk_dict[task_chunk_key].append_event(self)
 
 
 class MasterBegin(SingleBegin):
@@ -178,6 +206,7 @@ class InitialTaskEnter(ChunkSwitchEventMixin, TaskEnter):
         self.log.debug(f"{chunk_key=}")
         chunk = chunk_dict[chunk_key]
         chunk.append_event(self)
+        yield None
 
 
 class ImplicitTaskEnter(ChunkSwitchEventMixin, TaskEnter):
@@ -189,7 +218,8 @@ class ImplicitTaskEnter(ChunkSwitchEventMixin, TaskEnter):
         chunk = chunk_dict[chunk_key]
         chunk.append_event(self)
         # Ensure implicit-task-id points to the same chunk for later events in this task
-        chunk_dict[self.unique_id] = chunk_dict[chunk_key]\
+        chunk_dict[self.unique_id] = chunk_dict[chunk_key]
+        yield None
 
 
 class TaskLeave(Task):
@@ -197,11 +227,20 @@ class TaskLeave(Task):
 
 
 class InitialTaskLeave(ChunkSwitchEventMixin, TaskLeave):
-    pass
+
+    def update_chunks(self, chunk_dict, chunk_stack) -> None:
+        chunk_key = self._location.name, self.unique_id, RegionType.task
+        chunk = chunk_dict[chunk_key]
+        chunk.append_event(self)
+        yield chunk
 
 
 class ImplicitTaskLeave(ChunkSwitchEventMixin, TaskLeave):
-    pass
+
+    def update_chunks(self, chunk_dict, chunk_stack) -> None:
+        # don't yield until parallel-end
+        chunk_dict[self.unique_id].append_event(self)
+        yield None
 
 
 class TaskCreate(RegisterTaskDataMixin, Task):
@@ -217,16 +256,14 @@ class TaskSchedule(ClassNotImplementedMixin, Task):
 class TaskSwitch(ChunkSwitchEventMixin, Task):
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
-        this_chunk_key = e.encountering_task_id
-        next_chunk_key = e.next_task_id
+        this_chunk_key = self.encountering_task_id
+        next_chunk_key = self.next_task_id
         self.log.debug(f"{this_chunk_key=} {next_chunk_key=}")
         this_chunk = chunk_dict[this_chunk_key]
         next_chunk = chunk_dict[next_chunk_key]
         this_chunk.append_event(self)
-        if e.prior_task_status == TaskStatus.complete:
-            yield this_chunk
+        yield this_chunk if self.prior_task_status == TaskStatus.complete else None
         next_chunk.append_event(self)
-
 
     def __repr__(self):
         return f"{self._base_repr} {self.prior_task_id} ({self.prior_task_status}) -> {self.next_task_id}"
