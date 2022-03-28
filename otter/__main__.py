@@ -11,7 +11,7 @@ with otf2.reader.open(args.anchorfile) as r:
     tasks = otter.TaskRegistry()
     chunks = otter.ChunkFactory(events, tasks)
     log.debug(f"iterating over chunks in {chunks}")
-    for chunk in chunks:
+    for chunk in chunks.read():
         print(chunk)
 
 log.info("Done!")

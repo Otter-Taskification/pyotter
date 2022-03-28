@@ -26,8 +26,9 @@ class ChunkFactory:
             if event.is_task_register_event:
                 self.tasks.register_task(event)
             if event.is_chunk_switch_event:
-                result = next(event.update_chunks(self.chunk_dict, self.chunk_stack))
-                if result is not None:
-                    yield result
+                yield from event.update_chunks(self.chunk_dict, self.chunk_stack)
             else:
                 self.chunk_dict[event.encountering_task_id].append_event(event)
+
+    def read(self):
+        yield from filter(None, self)
