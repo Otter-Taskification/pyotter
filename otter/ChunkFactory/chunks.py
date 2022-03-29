@@ -6,21 +6,21 @@ from itertools import islice
 from ..logging import get_logger
 from ..definitions import RegionType, Endpoint
 from ..EventFactory import events
+from .. import utils
 
 class Chunk:
 
+    @utils.decorate.log_init
     def __init__(self):
         self.log = get_logger(f"{self.__class__.__name__}")
         self._events = deque()
         self._graph = None
         self._type = None
-        self.log.debug(f"initialised {self}")
 
     def _post_append_init(self):
         if len(self) != 1:
             raise RuntimeError(f"only call _post_append_init after 1st append")
         self._type = self.first.region_type
-        self.log.debug(f"{self.__class__.__name__}._post_append_init called: {self.first=}")
 
     def __len__(self):
         return len(self._events)
@@ -51,7 +51,7 @@ class Chunk:
         return self._type
 
     def append_event(self, event):
-        self.log.debug(f"Add event {event._base_repr} to chunk: {self._base_repr}")
+        self.log.debug(f"{self.__class__.__name__}.append_event {event._base_repr} to chunk: {self._base_repr}")
         self._events.append(event)
         if len(self) == 1:
             self._post_append_init()
