@@ -1,7 +1,7 @@
 from .. import EventFactory, TaskRegistry
 from . import chunks
 from collections import defaultdict, deque
-from ..Logging import get_logger
+from ..logging import get_logger
 
 class ChunkFactory:
     """Aggregates a sequence of events into a sequence of Chunks."""
