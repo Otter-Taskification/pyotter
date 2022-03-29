@@ -6,6 +6,9 @@ from .. import utils
 
 log = get_logger(f"{__name__}")
 
+is_event = lambda item : isinstance(item, _Event)
+all_events = lambda args : all(map(is_event, args))
+any_events = lambda args : any(map(is_event, args))
 
 class _Event(ABC):
 
