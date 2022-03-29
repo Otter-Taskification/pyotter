@@ -1,5 +1,9 @@
 from ..definitions import RegionType, EventType
+from ..EventFactory import events
+from ..logging import get_logger
 from typing import Callable
+
+module_logger = get_logger(f"{__name__}")
 
 def key_is_not_none(key) -> Callable:
     return lambda vertex: vertex[key] is not None
@@ -7,6 +11,11 @@ def key_is_not_none(key) -> Callable:
 def is_region_type(region_type: RegionType) -> Callable:
     def check(vertex):
         event = vertex['event']
+        try:
+            assert isinstance(event, events._Event)
+        except AssertionError as e:
+            module_logger.exception(f"expected type {events._Event}, got type {type(event)}", stack_info=True)
+            raise
         return (event.is_enter_event or event.is_leave_event) and event.region_type == region_type
     return check
 
