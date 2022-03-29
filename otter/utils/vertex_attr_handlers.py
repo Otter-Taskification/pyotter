@@ -5,8 +5,8 @@ from . import decorate
 
 module_logger = get_logger(f"{__name__}")
 
-def all_are_instance(args, T):
-    return all(isinstance(x, T) for x in args)
+def are(reduce, args, T):
+    return reduce(isinstance(x, T) for x in args)
 
 @decorate.log_args(module_logger)
 def drop_args(args):
@@ -35,15 +35,18 @@ def unique_or_none(*_args):
 @decorate.log_args(module_logger)
 def pass_single_executor(args):
     assert isinstance(args, list)
-    assert events.all_events(args)
+    assert are(all, args, events._Event)
     if len(args) == 1:
         raise RuntimeError(f"shouldn't pass list of 1 event: {args}")
-    if {e.region_type for e in args} == {RegionType.single_other, RegionType.single_executor}:
-        event, = filter(lambda e: e.region_type == RegionType.single_executor, args)
-        module_logger.debug(f"returning event {event}")
+    # args is a list of >1 events._Event
+    single_executor_events = set(e for e in args if e.region_type == RegionType.single_executor)
+    if any(single_executor_events):
+        event = single_executor_events.pop()
+        module_logger.debug(f"returning single event: {event}")
         return event
     else:
-        module_logger.debug(f"returning all events")
+        module_logger.debug(f"{set(e.region_type for e in args)}")
+        module_logger.debug(f"returning event list")
         return args
 
 @decorate.log_args(module_logger)
@@ -54,16 +57,16 @@ def pass_master_event(args):
     else:
         return args
 
-def make_event_combiner(event_handler, list_handler=None, tuple_handler=None):
+def make_event_combiner(event_handler, list_handler=None):
     @decorate.log_args(module_logger)
     def event_combiner(args):
         assert isinstance(args, list)
         if len(args) == 1:
             return args[0]
         # args is list with >= 2 elements
-        if all_are_instance(args, events._Event):
+        if are(all, args, events._Event):
             return event_handler(args)
-        elif all_are_instance(args, list):
+        elif are(all, args, list):
             return list_handler(args) if list_handler else list(chain(*args))
         else:
             module_logger.error(args)
