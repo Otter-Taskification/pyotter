@@ -1,9 +1,8 @@
 import otf2
 import igraph as ig
 import otter
-from logging import DEBUG, INFO, WARN, CRITICAL, ERROR
 from collections import defaultdict
-from otter.utils import VertexLabeller
+from otter.utils import VertexLabeller, make_event_combiner
 from otter.definitions import RegionType
 
 args = otter.get_args()
@@ -29,7 +28,7 @@ for name in ['_task_cluster_id', '_is_task_enter_node', '_is_task_leave_node', '
         g.vs[name] = None
 g.vs['_synchronised_by_taskwait'] = False
 
-# Create cluster labellers
+# Create vertex labellers
 parallel_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_parallel_sequence_id'), group_key='_parallel_sequence_id')
 single_vertex_labeller = VertexLabeller(otter.utils.is_region_type(RegionType.single_executor), group_key='event')
 master_vertex_labeller = VertexLabeller(otter.utils.is_region_type(RegionType.master), group_key='event')
@@ -41,20 +40,25 @@ sync_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_sync_cluster
 # default: drop args when combining vertices
 log.info(f"{g.vs.attribute_names()=}")
 handler = otter.utils.default_attribute_handler(g.vs.attribute_names())
-handler['event'] = otter.decorate.log_call_with_msg(otter.utils.unique_arg, "combining events", log)
-log.info(f"set attribute handler 'otter.utils.unique_arg' for vertex attribute 'event'")
 
-log.info(f"contracting vertices")
+log.info(f"combining vertices...")
+
+log.info(f"combining vertices by parallel sequence ID")
+event_combiner = make_event_combiner(otter.utils.handlers.pass_single_executor)
+handler['event'] = otter.decorate.log_call_with_msg(event_combiner, "combining events", log)
+log.info(f"set attribute handler '{event_combiner.__module__}.{event_combiner.__name__}' for vertex attribute 'event'")
 g.contract_vertices(parallel_vertex_labeller.label(g.vs), combine_attrs=handler)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
-# g.contract_vertices(single_vertex_labeller.label(g.vs), combine_attrs=attr_handler(attr=chunk_gen.attr))
-# vcount_prev, vcount = vcount, g.vcount()
-# log.info(f"nodes updated: {vcount_prev} -> {vcount}")
+log.info(f"combining vertices by single-begin/end event")
+g.contract_vertices(single_vertex_labeller.label(g.vs), combine_attrs=handler)
+vcount_prev, vcount = vcount, g.vcount()
+log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
+# log.info(f"combining vertices by master-begin/end event")
 # g.contract_vertices(master_vertex_labeller.label(g.vs), combine_attrs=attr_handler(attr=chunk_gen.attr))
 # vcount_prev, vcount = vcount, g.vcount()
-# log.info(f"nodes updated: {vcount_prev} -> {vcount}")
+# log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
 log.info("Done!")
