@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from ..definitions import Attr, Endpoint, RegionType, TaskStatus
 from ..types import OTF2Event, OTF2Location, AttrDict
-from ..Logging import get_logger
+from ..logging import get_logger
+from .. import utils
 
 log = get_logger(f"{__name__}")
 
@@ -13,12 +14,12 @@ class _Event(ABC):
     is_task_register_event = False
     is_chunk_switch_event = False
 
+    @utils.decorate.log_init
     def __init__(self, event: OTF2Event, location: OTF2Location, attr: AttrDict):
         self.log = get_logger(f"{self.__class__.__name__}")
         self._event = event
         self._location = location
         self.attr = attr
-        self.log.debug(f"initialised event: {self.__class__.__name__}")
 
     def __getattr__(self, item):
         if item == "time":
@@ -53,6 +54,7 @@ class _Event(ABC):
 # mixin
 class ClassNotImplementedMixin(ABC):
 
+    @utils.decorate.log_init
     def __init__(self, *args, **kwargs):
         raise NotImplementedError(f"{self.__class__.__name__}")
 
@@ -92,12 +94,14 @@ class GenericEvent(_Event):
 class ThreadBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
 
     def update_chunks(self, chunk_dict, chunk_stack):
+        self.log.debug(f"{self.__class__.__name__}.update_chunks called - IGNORED")
         yield None
 
 
 class ThreadEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
 
     def update_chunks(self, chunk_dict, chunk_stack):
+        self.log.debug(f"{self.__class__.__name__}.update_chunks called - IGNORED")
         yield None
 
 
@@ -105,8 +109,8 @@ class ParallelBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         task_chunk_key = (self._location.name, self.encountering_task_id, RegionType.task)
-        self.log.debug(f"{task_chunk_key=}")
         parallel_chunk_key = (self._location.name, self.unique_id, RegionType.parallel)
+        self.log.debug(f"{self.__class__.__name__}.update_chunks called ({task_chunk_key=}, {parallel_chunk_key=})")
         self._location.enter_parallel_region(self.unique_id)
         if task_chunk_key in chunk_dict.keys():
             # The master thread will already have recorded an event in the task which encountered this parallel
@@ -123,7 +127,7 @@ class ParallelEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         task_chunk_key = (self._location.name, self.encountering_task_id, RegionType.task)
-        self.log.debug(f"{task_chunk_key=}")
+        self.log.debug(f"{self.__class__.__name__}.update_chunks called {task_chunk_key=}")
         # append to parallel region chunk
         parallel_chunk_key = (self._location.name, self.unique_id, RegionType.parallel)
         parallel_chunk = chunk_dict[parallel_chunk_key]
@@ -155,7 +159,7 @@ class SingleBegin(ChunkSwitchEventMixin, WorkshareBegin):
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         # Nested region - append to task chunk, push onto stack, create nested chunk
         task_chunk_key = self.encountering_task_id
-        self.log.debug(f"{task_chunk_key=}")
+        self.log.debug(f"{self.__class__.__name__}.update_chunks called {task_chunk_key=}")
         task_chunk = chunk_dict.pop(task_chunk_key)
         task_chunk.append_event(self)
         # store the enclosing chunk
@@ -170,7 +174,7 @@ class SingleEnd(ChunkSwitchEventMixin, WorkshareEnd):
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         # Nested region - append to inner chunk, yield, then pop enclosing chunk & append to that chunk
         task_chunk_key = self.encountering_task_id
-        self.log.debug(f"{task_chunk_key=}")
+        self.log.debug(f"{self.__class__.__name__}.update_chunks called {task_chunk_key=}")
         task_chunk = chunk_dict[task_chunk_key]
         task_chunk.append_event(self)
         yield task_chunk
@@ -203,7 +207,7 @@ class InitialTaskEnter(ChunkSwitchEventMixin, TaskEnter):
     def update_chunks(self, chunk_dict, chunk_stack):
         # For initial-task-begin, chunk key is (thread ID, initial task unique_id)
         chunk_key = self._location.name, self.unique_id, RegionType.task
-        self.log.debug(f"{chunk_key=}")
+        self.log.debug(f"{self.__class__.__name__}.update_chunks called {chunk_key=}")
         chunk = chunk_dict[chunk_key]
         chunk.append_event(self)
         yield None
@@ -214,7 +218,7 @@ class ImplicitTaskEnter(ChunkSwitchEventMixin, TaskEnter):
     def update_chunks(self, chunk_dict, chunk_stack):
         # (location name, current parallel ID, RegionType.parallel)
         chunk_key = self._location.name, self._location.current_parallel_region, RegionType.parallel
-        self.log.debug(f"{chunk_key=}")
+        self.log.debug(f"{self.__class__.__name__}.update_chunks called {chunk_key=}")
         chunk = chunk_dict[chunk_key]
         chunk.append_event(self)
         # Ensure implicit-task-id points to the same chunk for later events in this task
@@ -230,6 +234,7 @@ class InitialTaskLeave(ChunkSwitchEventMixin, TaskLeave):
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         chunk_key = self._location.name, self.unique_id, RegionType.task
+        self.log.debug(f"{self.__class__.__name__}.update_chunks called {chunk_key=}")
         chunk = chunk_dict[chunk_key]
         chunk.append_event(self)
         yield chunk
@@ -239,7 +244,10 @@ class ImplicitTaskLeave(ChunkSwitchEventMixin, TaskLeave):
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         # don't yield until parallel-end
-        chunk_dict[self.unique_id].append_event(self)
+        chunk_key = self.unique_id
+        self.log.debug(f"{self.__class__.__name__}.update_chunks called {chunk_key=}")
+        chunk = chunk_dict[chunk_key]
+        chunk.append_event(self)
         yield None
 
 
@@ -258,11 +266,11 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         this_chunk_key = self.encountering_task_id
         next_chunk_key = self.next_task_id
-        self.log.debug(f"{this_chunk_key=} {next_chunk_key=}")
+        self.log.debug(f"{self.__class__.__name__}.update_chunks called {this_chunk_key=} {next_chunk_key=}")
         this_chunk = chunk_dict[this_chunk_key]
-        next_chunk = chunk_dict[next_chunk_key]
         this_chunk.append_event(self)
         yield this_chunk if self.prior_task_status == TaskStatus.complete else None
+        next_chunk = chunk_dict[next_chunk_key]
         next_chunk.append_event(self)
 
     def __repr__(self):

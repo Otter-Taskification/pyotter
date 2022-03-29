@@ -4,7 +4,8 @@ from . import events
 from ..utils import PrettyCounter
 from ..types import OTF2Reader, OTF2Event, AttrDict
 from ..definitions import EventType, RegionType, Attr
-from ..Logging import get_logger
+from ..logging import get_logger
+from .. import utils
 
 log = get_logger(f"{__name__}")
 
@@ -28,11 +29,11 @@ class_map = {
 
 class Location:
 
+    @utils.decorate.log_init
     def __init__(self, location):
         self.log = get_logger(f"{self.__class__.__name__}")
         self._loc = location
         self.parallel_region_deque = deque()
-        self.log.debug(f"initialised {self}")
 
     def __repr__(self):
         return f"{self.__class__.__name__}(location={self._loc.name})"
@@ -56,6 +57,7 @@ class Location:
 
 class EventFactory:
 
+    @utils.decorate.log_init
     def __init__(self, r: OTF2Reader, default_cls: type=None):
         if default_cls is not None and not issubclass(default_cls, _Event):
             raise TypeError(f"arg {default_cls=} is not subclass of events._Event")
@@ -64,19 +66,18 @@ class EventFactory:
         self.attr = {attr.name: attr for attr in r.definitions.attributes}
         self.location_registry = {location: Location(location) for location in r.definitions.locations}
         self.events = r.events
-        self.log.debug(f"initialised {self}")
 
     def __repr__(self):
         return f"{self.__class__.__name__}(default_cls={self.default_cls})"
 
     def __iter__(self) -> events._Event:
-        self.log.debug(f"iterating over events")
+        self.log.debug(f"{self.__class__.__name__}.__iter__ generating events from {self.events}")
         for k, (location, event) in enumerate(self.events):
             constructor = self.get_class(
                 event.attributes[self.attr[Attr.event_type]],
                 event.attributes.get(self.attr[Attr.region_type], None)
             )
-            self.log.debug(f"got event {k}:{event} with {constructor=}")
+            self.log.debug(f"{self.__class__.__name__}.__iter__ event {k} {constructor=}")
             yield constructor(event, self.location_registry[location], self.attr)
 
     def get_class(self, event_type: EventType, region_type: RegionType) -> type:
