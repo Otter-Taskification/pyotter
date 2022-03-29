@@ -25,9 +25,6 @@ def get_args():
     if args.output is None and args.report is None and not args.interact:
         parser.error("must select at least one of -[o|i|r]")
 
-    if args.interact:
-        print("Otter launched interactively")
-
     try:
         check_args(args)
     except FileNotFoundError as E:
