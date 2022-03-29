@@ -11,11 +11,9 @@ def key_is_not_none(key) -> Callable:
 def is_region_type(region_type: RegionType) -> Callable:
     def check(vertex):
         event = vertex['event']
-        try:
-            assert isinstance(event, events._Event)
-        except AssertionError as e:
-            module_logger.exception(f"expected type {events._Event}, got type {type(event)}", stack_info=True)
-            raise
+        if not isinstance(event, events._Event):
+            module_logger.debug(f"expected {events._Event}, got {type(event)} ({event})", stack_info=True)
+            return False
         return (event.is_enter_event or event.is_leave_event) and event.region_type == region_type
     return check
 
