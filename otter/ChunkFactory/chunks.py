@@ -160,7 +160,7 @@ class Chunk:
         # Require at least 1 edge between start & end vertices in single-executor chunk if disconnected
         if self.type != RegionType.explicit_task and len(self) <= 2 and g.ecount() == 0:
             g.add_edge(g.vs[0], g.vs[1])
-        elif self.type == RegionType.single_executor and g.vertex_connectivity(v_root.index, v_prior.index) == 0:
+        elif self.type == RegionType.single_executor and not g.are_connected(v_root.index, v_prior.index):
             g.add_edge(g.vs[0], g.vs[-1])
 
         return self._graph
