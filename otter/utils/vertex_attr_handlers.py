@@ -1,38 +1,23 @@
+from functools import wraps
+from logging import DEBUG, INFO
 from ..logging import get_logger
 from ..definitions import RegionType
 from ..EventFactory import events
-from . import decorate
+from .decorate import log_init, log_args, log_msg
 
 module_logger = get_logger(f"{__name__}")
+
 
 def are(reduce, args, T):
     return reduce(isinstance(x, T) for x in args)
 
-@decorate.log_args(module_logger)
+
+@log_args(module_logger)
 def drop_args(args):
     return None
 
-@decorate.log_args(module_logger)
-def unique_arg(args):
-    assert isinstance(args, list)
-    all_identical = all([x is y for x in args for y in args])
-    module_logger.debug(f"got {len(args)} args - all items are identical: {all_identical}")
-    if all_identical:
-        return args[0]
-    else:
-        module_logger.debug("DUMPING ARGS:")
-        for n, arg in enumerate(args):
-            module_logger.debug(f"{n:>2}: {arg}")
-        raise ValueError("non-unique args")
 
-@decorate.log_args(module_logger)
-def unique_or_none(*_args):
-    try:
-        return unique_arg(*_args)
-    except ValueError:
-        return None
-
-@decorate.log_args(module_logger)
+# @log_args(module_logger)
 def pass_single_executor(args):
     assert isinstance(args, list)
     assert are(all, args, events._Event)
@@ -45,32 +30,54 @@ def pass_single_executor(args):
         module_logger.debug(f"returning single event: {event}")
         return event
     else:
-        module_logger.debug(f"{set(e.region_type for e in args)}")
-        module_logger.debug(f"returning event list")
+        event_types = set(type(e).__name__ for e in args)
+        module_logger.debug(f"no single-executor events, returning event list ({event_types=})")
         return args
 
-@decorate.log_args(module_logger)
-def pass_master_event(args):
-    region_types = {e.region_type for e in args}
-    if region_types == {'master'} and len(set(args)) == 1:
-        return args[0]
-    else:
-        return args
 
-def make_event_combiner(event_handler, list_handler=None):
-    @decorate.log_args(module_logger)
-    def event_combiner(args):
-        assert isinstance(args, list)
-        if len(args) == 1:
-            return args[0]
-        # args is list with >= 2 elements
-        if are(all, args, events._Event):
-            return event_handler(args)
-        elif are(all, args, list):
-            return list_handler(args) if list_handler else list(chain(*args))
-        else:
-            module_logger.error(args)
-            raise TypeError(f"unexpected type(s): {set(map(type, args))}")
-    event_combiner.__module__ = event_handler.__module__
-    event_combiner.__name__ = event_handler.__name__
-    return event_combiner
+class AttributeHandlerTable(dict):
+
+    @log_init()
+    def __init__(self, names, handler=drop_args, logger=None, level=DEBUG):
+        self.log = logger or get_logger(f"{self.__class__.__name__}")
+        self.level = level
+        super().__init__({name: log_msg(handler, f"combining attribute: {name}", self.log) for name in names})
+
+    def __setitem__(self, event, handler):
+        self.log.log(self.level, f"set handler '{handler}' for vertex attribute '{event}'")
+        return super().__setitem__(event, handler)
+
+
+class EventCombiner:
+
+    @log_init()
+    def __init__(self, event_handler, list_handler=None, logger=None, level=DEBUG):
+        self.event_handler = event_handler
+        self.log = logger or get_logger(self.__class__.__name__)
+        self.combine_events = self.make(event_handler, list_handler, self.log)
+        if level is not None:
+            self.combine_events = log_msg(self.combine_events, "combining events", self.log, level=level)
+
+    def __call__(self, args):
+        return self.combine_events(args)
+
+    @staticmethod
+    def make(event_handler, list_handler, logger):
+        @log_args(logger)
+        @wraps(event_handler)
+        def _event_combiner(args):
+            assert isinstance(args, list)
+            if len(args) == 1:
+                return args[0]
+            # args is list with >= 2 elements
+            if are(all, args, events._Event):
+                return event_handler(args)
+            elif are(all, args, list):
+                return list_handler(args) if list_handler else list(chain(*args))
+            else:
+                logger.error(args)
+                raise TypeError(f"unexpected type(s): {set(map(type, args))}")
+        return _event_combiner
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.event_handler.__module__}.{self.event_handler.__name__})"
