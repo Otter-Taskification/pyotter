@@ -2,12 +2,12 @@ from .. import EventFactory, TaskRegistry
 from . import chunks
 from collections import defaultdict, deque
 from ..logging import get_logger
-from .. import utils
+from ..utils.decorate import log_init
 
 class ChunkFactory:
     """Aggregates a sequence of events into a sequence of Chunks."""
 
-    @utils.decorate.log_init
+    @log_init()
     def __init__(self, events: EventFactory, tasks: TaskRegistry):
         self.log = get_logger(f"{self.__class__.__name__}")
         self.events = events

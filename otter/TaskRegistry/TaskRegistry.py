@@ -1,10 +1,8 @@
 from typing import Union
 from ..EventFactory import events
-from ..definitions import Attr
-from ..utils import PrettyCounter
 from .tasks import Task
 from ..logging import get_logger
-from .. import utils
+from ..utils.decorate import log_init
 
 class TaskRegistry:
     """
@@ -12,7 +10,7 @@ class TaskRegistry:
     Maps task ID to task instance, raising KeyError if an unregistered task is requested
     """
 
-    @utils.decorate.log_init
+    @log_init()
     def __init__(self):
         self.log = get_logger(f"{self.__class__.__name__}")
         self._dict = dict()

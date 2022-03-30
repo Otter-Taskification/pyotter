@@ -2,13 +2,13 @@ from collections import deque
 from ..EventFactory import events
 from ..definitions import Attr
 from ..logging import get_logger
-from .. import utils
+from ..utils.decorate import log_init
 
 
 class Task:
     """Represents an instance of a task"""
 
-    @utils.decorate.log_init
+    @log_init()
     def __init__(self, e: events._Event):
         self.log = get_logger(f"{self.__class__.__name__}")
         data = e.get_task_data()

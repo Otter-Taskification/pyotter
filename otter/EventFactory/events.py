@@ -1,14 +1,15 @@
-from abc import ABC, abstractmethod
-from ..definitions import Attr, Endpoint, RegionType, TaskStatus
+from logging import DEBUG, INFO
+from abc import ABC
+from ..definitions import Attr, RegionType, TaskStatus
 from ..types import OTF2Event, OTF2Location, AttrDict
 from ..logging import get_logger
-from .. import utils
+from ..utils.decorate import log_init
 
-log = get_logger(f"{__name__}")
 
 is_event = lambda item : isinstance(item, _Event)
 all_events = lambda args : all(map(is_event, args))
 any_events = lambda args : any(map(is_event, args))
+
 
 class _Event(ABC):
 
@@ -17,7 +18,7 @@ class _Event(ABC):
     is_task_register_event = False
     is_chunk_switch_event = False
 
-    @utils.decorate.log_init
+    @log_init(DEBUG)
     def __init__(self, event: OTF2Event, location: OTF2Location, attr: AttrDict):
         self.log = get_logger(f"{self.__class__.__name__}")
         self._event = event
@@ -57,7 +58,7 @@ class _Event(ABC):
 # mixin
 class ClassNotImplementedMixin(ABC):
 
-    @utils.decorate.log_init
+    @log_init
     def __init__(self, *args, **kwargs):
         raise NotImplementedError(f"{self.__class__.__name__}")
 

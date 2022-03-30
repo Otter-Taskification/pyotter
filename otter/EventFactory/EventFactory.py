@@ -1,13 +1,10 @@
-from collections import defaultdict, deque
+from collections import deque
 from .events import _Event
 from . import events
-from ..utils import PrettyCounter
 from ..types import OTF2Reader, OTF2Event, AttrDict
 from ..definitions import EventType, RegionType, Attr
 from ..logging import get_logger
-from .. import utils
-
-log = get_logger(f"{__name__}")
+from ..utils.decorate import log_init
 
 class_map = {
     EventType.thread_begin:    events.ThreadBegin,
@@ -29,7 +26,7 @@ class_map = {
 
 class Location:
 
-    @utils.decorate.log_init
+    @log_init()
     def __init__(self, location):
         self.log = get_logger(f"{self.__class__.__name__}")
         self._loc = location
@@ -57,7 +54,7 @@ class Location:
 
 class EventFactory:
 
-    @utils.decorate.log_init
+    @log_init()
     def __init__(self, r: OTF2Reader, default_cls: type=None):
         if default_cls is not None and not issubclass(default_cls, _Event):
             raise TypeError(f"arg {default_cls=} is not subclass of events._Event")

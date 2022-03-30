@@ -6,11 +6,11 @@ from itertools import islice
 from ..logging import get_logger
 from ..definitions import RegionType, Endpoint
 from ..EventFactory import events
-from .. import utils
+from ..utils.decorate import log_init
 
 class Chunk:
 
-    @utils.decorate.log_init
+    @log_init()
     def __init__(self):
         self.log = get_logger(f"{self.__class__.__name__}")
         self._events = deque()
