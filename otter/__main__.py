@@ -1,8 +1,8 @@
 import otf2
 import igraph as ig
 import otter
-from collections import defaultdict
-from otter.utils import VertexLabeller, make_event_combiner
+from logging import DEBUG, INFO
+from otter.utils import VertexLabeller, AttributeHandlerTable, EventCombiner
 from otter.definitions import RegionType
 
 args = otter.get_args()
@@ -36,23 +36,19 @@ task_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_task_cluster
 empty_task_vertex_labeller = VertexLabeller(otter.utils.is_empty_task_region, group_key=lambda v: v['_task_cluster_id'][0])
 sync_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_sync_cluster_id'), group_key='_sync_cluster_id')
 
-# Create a dict to map vertex attributes to handlers
-# default: drop args when combining vertices
-log.info(f"{g.vs.attribute_names()=}")
-handler = otter.utils.default_attribute_handler(g.vs.attribute_names())
+# Make a table for mapping vertex attributes to handlers - used by ig.Graph.contract_vertices
+handlers = AttributeHandlerTable(g.vs.attribute_names(), level=INFO)
+handlers['event'] = EventCombiner(otter.utils.handlers.pass_single_executor)
 
 log.info(f"combining vertices...")
 
 log.info(f"combining vertices by parallel sequence ID")
-event_combiner = make_event_combiner(otter.utils.handlers.pass_single_executor)
-handler['event'] = otter.decorate.log_call_with_msg(event_combiner, "combining events", log)
-log.info(f"set attribute handler '{event_combiner.__module__}.{event_combiner.__name__}' for vertex attribute 'event'")
-g.contract_vertices(parallel_vertex_labeller.label(g.vs), combine_attrs=handler)
+g.contract_vertices(parallel_vertex_labeller.label(g.vs), combine_attrs=handlers)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
 log.info(f"combining vertices by single-begin/end event")
-g.contract_vertices(single_vertex_labeller.label(g.vs), combine_attrs=handler)
+g.contract_vertices(single_vertex_labeller.label(g.vs), combine_attrs=handlers)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
