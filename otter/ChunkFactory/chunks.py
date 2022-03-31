@@ -2,15 +2,16 @@ import otf2
 import igraph as ig
 from collections import deque
 from typing import List
+from logging import DEBUG, INFO
 from itertools import islice
 from ..logging import get_logger
 from ..definitions import RegionType, Endpoint
 from ..EventFactory import events
-from ..utils.decorate import log_init
+from otter.decorators import log_init
 
 class Chunk:
 
-    @log_init()
+    @log_init(DEBUG)
     def __init__(self):
         self.log = get_logger(f"{self.__class__.__name__}")
         self._events = deque()

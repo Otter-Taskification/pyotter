@@ -2,7 +2,7 @@ from .. import EventFactory, TaskRegistry
 from . import chunks
 from collections import defaultdict, deque
 from ..logging import get_logger
-from ..utils.decorate import log_init
+from otter.decorators import log_init
 
 class ChunkFactory:
     """Aggregates a sequence of events into a sequence of Chunks."""
