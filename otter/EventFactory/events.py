@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from ..definitions import Attr, RegionType, TaskStatus
 from ..types import OTF2Event, OTF2Location, AttrDict
 from ..logging import get_logger
-from ..utils.decorate import log_init
+from otter.decorators import log_init
 
 
 is_event = lambda item : isinstance(item, _Event)
@@ -15,6 +15,7 @@ class _Event(ABC):
 
     is_enter_event = False
     is_leave_event = False
+    is_task_create_event = False
     is_task_register_event = False
     is_chunk_switch_event = False
 
@@ -267,6 +268,8 @@ class ImplicitTaskLeave(ChunkSwitchEventMixin, TaskLeave):
 
 
 class TaskCreate(RegisterTaskDataMixin, DefaultUpdateChunksMixin, Task):
+
+    is_task_create_event = True
 
     def __repr__(self):
         return f"{self._base_repr} {self.parent_task_id} created {self.unique_id}"
