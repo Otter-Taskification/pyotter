@@ -1,12 +1,13 @@
+from logging import DEBUG, INFO
 from collections import deque
 from .events import _Event
 from . import events
 from ..types import OTF2Reader, OTF2Event, AttrDict
 from ..definitions import EventType, RegionType, Attr
 from ..logging import get_logger
-from ..utils.decorate import log_init
+from ..utils.decorate import log_init, log_args
 
-class_map = {
+event_class_lookup = {
     EventType.thread_begin:    events.ThreadBegin,
     EventType.thread_end:      events.ThreadEnd,
     EventType.parallel_begin:  events.ParallelBegin,
@@ -22,6 +23,17 @@ class_map = {
     EventType.task_create:     events.TaskCreate,
     EventType.task_schedule:   events.TaskSchedule,
     EventType.task_switch:     events.TaskSwitch
+}
+
+region_event_class_lookup = {
+    (RegionType.initial_task,    EventType.task_enter):       events.InitialTaskEnter,
+    (RegionType.initial_task,    EventType.task_leave):       events.InitialTaskLeave,
+    (RegionType.implicit_task,   EventType.task_enter):       events.ImplicitTaskEnter,
+    (RegionType.implicit_task,   EventType.task_leave):       events.ImplicitTaskLeave,
+    (RegionType.single_executor, EventType.workshare_begin):  events.SingleBegin,
+    (RegionType.single_executor, EventType.workshare_end):    events.SingleEnd,
+    (RegionType.master,          EventType.master_begin):     events.MasterBegin,
+    (RegionType.master,          EventType.master_end):       events.MasterEnd
 }
 
 class Location:
@@ -70,42 +82,26 @@ class EventFactory:
     def __iter__(self) -> events._Event:
         self.log.debug(f"{self.__class__.__name__}.__iter__ generating events from {self.events}")
         for k, (location, event) in enumerate(self.events):
-            constructor = self.get_class(
-                event.attributes[self.attr[Attr.event_type]],
-                event.attributes.get(self.attr[Attr.region_type], None)
+            constructor = log_args(self.log, DEBUG)(
+                self.get_class(
+                    event.attributes[self.attr[Attr.event_type]],
+                    event.attributes.get(self.attr[Attr.region_type], None)
+                )
             )
             self.log.debug(f"{self.__class__.__name__}.__iter__ event {k} {constructor=}")
             yield constructor(event, self.location_registry[location], self.attr)
 
     def get_class(self, event_type: EventType, region_type: RegionType) -> type:
-        if event_type == EventType.task_switch:
-            return events.TaskSwitch
-        elif region_type == RegionType.initial_task:
-            if event_type == EventType.task_enter:
-                return events.InitialTaskEnter
-            elif event_type == EventType.task_leave:
-                return events.InitialTaskLeave
+        try:
+            return region_event_class_lookup[(region_type, event_type)]
+        except KeyError:
+            pass # fallback to event_class_lookup
+        try:
+            return event_class_lookup[event_type]
+        except KeyError:
+            # no class found in either dict
+            if self.default_cls is not None:
+                return self.default_cls
             else:
-                pass
-        elif region_type == RegionType.implicit_task:
-            if event_type == EventType.task_enter:
-                return events.ImplicitTaskEnter
-            elif event_type == EventType.task_leave:
-                return events.ImplicitTaskLeave
-            else:
-                pass
-        elif region_type in [RegionType.single_executor, RegionType.master]:
-            if event_type == EventType.workshare_begin:
-                return events.SingleBegin if region_type == RegionType.single_executor else events.MasterBegin
-            elif event_type == EventType.workshare_end:
-                return events.SingleEnd if region_type == RegionType.single_executor else events.MasterEnd
-            else:
-                pass
-        elif event_type in class_map:
-            return class_map[event_type]
-
-        if self.default_cls is not None:
-            return self.default_cls
-        else:
-            raise TypeError(
-                f"{self.__class__.__name__} can't construct event of type '{event_type}' for {region_type} region")
+                raise TypeError(
+                    f"{self.__class__.__name__} can't construct event of type '{event_type}' for {region_type} region")
