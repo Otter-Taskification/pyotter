@@ -2,7 +2,7 @@ from functools import wraps
 from logging import DEBUG, INFO
 
 
-def log_init(level=INFO):
+def log_init(level=DEBUG):
     """decorator factory: create a post-init decorator which logs an __init__ call with the specified level"""
     def decorator(init_func):
         @wraps(init_func)
