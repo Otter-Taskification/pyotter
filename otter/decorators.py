@@ -36,7 +36,7 @@ def _log_msg(msg, logger, level):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            logger.log(level, f"message when calling {func}: {msg}")
+            logger.log(level, f"CALLING {func}: {msg}")
             return func(*args, **kwargs)
         return wrapper
     return decorator

@@ -19,7 +19,7 @@ def get_args():
                         help='do not apply any styling to the graph nodes')
     parser.add_argument('-d', '--debug', action='store_true', default=False, dest='debug',
                         help='step through the code with pdb.set_trace()')
-    parser.add_argument('--log', dest='log', default="INFO", choices=["DEBUG", "INFO", "WARN", "ERROR"], help='logging level')
+    parser.add_argument('--log', dest='log', default="WARN", choices=["DEBUG", "INFO", "WARN", "ERROR"], help='logging level')
     args = parser.parse_args()
 
     if args.output is None and args.report is None and not args.interact:
