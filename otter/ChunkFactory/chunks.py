@@ -121,7 +121,7 @@ class Chunk:
                 elif event.is_leave_event:
                     if master_enter_event is None:
                         raise RuntimeError("master-enter event was None")
-                    node['_master_enter_event'] = master_enter_event
+                    v['_master_enter_event'] = master_enter_event
                     master_enter_event = None
 
             # Label nodes in a parallel chunk by their position for easier merging
@@ -143,9 +143,9 @@ class Chunk:
             # For task-create add dummy nodes for easier merging
             if isinstance(event, events.TaskCreate):
                 v['_task_cluster_id'] = (event.unique_id, Endpoint.enter)
-                dummy_node = g.add_vertex(event=event)
-                dummy_node['_task_cluster_id'] = (event.unique_id, Endpoint.leave)
-                continue  # to skip updating prior_node
+                dummy_vertex = g.add_vertex(event=event)
+                dummy_vertex['_task_cluster_id'] = (event.unique_id, Endpoint.leave)
+                continue  # to skip updating v_prior
 
             if event is self.last and self.type == RegionType.explicit_task:
                 v['_is_task_leave_node'] = True
