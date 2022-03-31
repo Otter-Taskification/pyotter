@@ -8,14 +8,27 @@ module_logger = get_logger(f"{__name__}")
 def key_is_not_none(key) -> Callable:
     return lambda vertex: vertex[key] is not None
 
+def _is_event_region_type(event, region_type) -> bool:
+    assert events.is_event(event)
+    return (event.is_enter_event or event.is_leave_event) and event.region_type == region_type
+
 def is_region_type(region_type: RegionType) -> Callable:
-    def check(vertex):
-        event = vertex['event']
-        if not isinstance(event, events._Event):
-            module_logger.debug(f"expected {events._Event}, got {type(event)} ({event})", stack_info=True)
-            return False
-        return (event.is_enter_event or event.is_leave_event) and event.region_type == region_type
-    return check
+    """Return a function which checks whether the event attribute of a vertex is of the given region type"""
+    def check_region_type(vertex):
+        """
+        Check the region_type of the event attribute of some vertex. If the event attribute is an Event, check whether
+        it has the corresponding region_type. If it is a list of Events, check whether all Events have the corresponding
+        region_type. Raise a RuntimeError otherwise, as the type of the event attribute must be either Event or List[Event].
+        """
+        event_attribute = vertex['event']
+        if events.is_event(event_attribute):
+            return _is_event_region_type(event_attribute, region_type)
+        elif isinstance(event_attribute, list) and events.all_events(event_attribute):
+            return all(_is_event_region_type(e, region_type) for e in event_attribute)
+        else:
+            module_logger.debug(f"expected {events._Event} or List[{events._Event}], got {type(event_attribute)} ({event_attribute})", stack_info=True)
+            raise RuntimeError(f"expected {events._Event}, got {type(event)} ({event})")
+    return check_region_type
 
 def is_empty_task_region(v) -> bool:
     # Return True if v is a task-enter (-leave) node with no outgoing (incoming) edges
