@@ -18,11 +18,30 @@ def drop_args(args):
     return None
 
 
+def pass_args(args):
+    return args
+
+
+def pass_bool_value(values):
+    if set(map(type, values)) == {bool, type(None)}:
+        A, B = set(values)
+        return A if B is None else B
+    raise NotImplementedError(f"not implemented for {values=}")
+
+
 def pass_the_unique_value(args):
     items = set(args)
     if len(items) == 1:
         return items.pop()
     raise ValueError(f"expected single item: {items=}")
+
+
+def pass_the_set_of_values(args):
+    items = set(args)
+    if len(items) == 1:
+        return items.pop()
+    else:
+        return items
 
 
 def _pass_unique_event(args, region_type: RegionType):
@@ -61,7 +80,7 @@ def pass_unique_master_event(args):
 
 @log_args(module_logger)
 def reject_task_create(args):
-    events_filtered = [event for event in args if event.is_task_create_event]
+    events_filtered = [event for event in args if not event.is_task_create_event]
     if len(events_filtered) == 1:
         return events_filtered[0]
     elif len(events_filtered) == 0:
@@ -86,8 +105,8 @@ class AttributeHandlerTable(dict):
 class VertexAttributeCombiner:
 
     @log_init()
-    def __init__(self, handler, list_handler=None, logger=None, level=DEBUG, cls=events._Event, msg="combining events"):
-        self.handler = handler
+    def __init__(self, handler=None, list_handler=None, logger=None, level=DEBUG, cls=events._Event, msg="combining events"):
+        self.handler = handler if handler else (lambda arg: arg)
         self.log = logger or get_logger(self.__class__.__name__)
         self.combine_values = self.make(handler, list_handler, self.log, cls=cls)
         if level is not None:
@@ -120,6 +139,10 @@ class VertexAttributeCombiner:
             else:
                 logger.debug(f"check None: no args were None")
             # args is a list in which fewer than all items are None i.e. at least 1 item which is not None
+
+            # Filter out all values which are None
+            args = [arg for arg in args if arg is not None]
+
             if len(args) == 1:
                 item = args[0]
                 logger.debug(f"list contains 1 item: {item}")

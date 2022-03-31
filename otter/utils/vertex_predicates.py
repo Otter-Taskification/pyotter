@@ -30,13 +30,13 @@ def is_region_type(region_type: RegionType) -> Callable:
             raise RuntimeError(f"expected {events._Event}, got {type(event)} ({event})")
     return check_region_type
 
-def is_empty_task_region(v) -> bool:
-    # Return True if v is a task-enter (-leave) node with no outgoing (incoming) edges
-    if v['_task_cluster_id'] is None:
+def is_empty_task_region(vertex) -> bool:
+    # Return True if vertex is a task-enter (-leave) node with no outgoing (incoming) edges
+    if vertex['_task_cluster_id'] is None:
         return False
-    if v['_is_task_enter_node'] or v['_is_task_leave_node']:
-        return ((v['_is_task_leave_node'] and v.indegree() == 0) or
-                (v['_is_task_enter_node'] and v.outdegree() == 0))
-    if type(v['event']) is list and set(map(type, v['event'])) in [{EventType.task_switch}]:
-        return ((all(v['_is_task_leave_node']) and v.indegree() == 0) or
-                (all(v['_is_task_enter_node']) and v.outdegree() == 0))
+    if vertex['_is_task_enter_node'] or vertex['_is_task_leave_node']:
+        return ((vertex['_is_task_leave_node'] and vertex.indegree() == 0) or
+                (vertex['_is_task_enter_node'] and vertex.outdegree() == 0))
+    if type(vertex['event']) is list and set(map(type, vertex['event'])) in [{EventType.task_switch}]:
+        return ((all(vertex['_is_task_leave_node']) and vertex.indegree() == 0) or
+                (all(vertex['_is_task_enter_node']) and vertex.outdegree() == 0))
