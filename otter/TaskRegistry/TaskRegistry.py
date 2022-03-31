@@ -2,7 +2,7 @@ from typing import Union
 from ..EventFactory import events
 from .tasks import Task
 from ..logging import get_logger
-from ..utils.decorate import log_init
+from otter.decorators import log_init
 
 class TaskRegistry:
     """

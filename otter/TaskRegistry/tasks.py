@@ -2,7 +2,7 @@ from collections import deque
 from ..EventFactory import events
 from ..definitions import Attr
 from ..logging import get_logger
-from ..utils.decorate import log_init
+from otter.decorators import log_init
 
 
 class Task:
