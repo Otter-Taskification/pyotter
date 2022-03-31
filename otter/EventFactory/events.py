@@ -1,5 +1,5 @@
 from logging import DEBUG, INFO
-from abc import ABC
+from abc import ABC, abstractmethod
 from ..definitions import Attr, RegionType, TaskStatus
 from ..types import OTF2Event, OTF2Location, AttrDict
 from ..logging import get_logger
@@ -49,6 +49,7 @@ class _Event(ABC):
     def get_task_data(self):
         raise NotImplementedError(f"method not implemented for {type(self)}")
 
+    @abstractmethod
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         raise NotImplementedError(f"method not implemented for {type(self)}")
 
@@ -61,6 +62,16 @@ class ClassNotImplementedMixin(ABC):
     @log_init
     def __init__(self, *args, **kwargs):
         raise NotImplementedError(f"{self.__class__.__name__}")
+
+
+# mixin
+class DefaultUpdateChunksMixin(ABC):
+
+    def update_chunks(self, chunk_dict, chunk_stack) -> None:
+        encountering_task_id = self.encountering_task_id
+        chunk = chunk_dict[encountering_task_id]
+        chunk.append_event(self)
+
 
 # mixin
 class EnterMixin(ABC):
@@ -146,15 +157,15 @@ class ParallelEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
             chunk_dict[task_chunk_key] = chunk_dict[parallel_chunk_key]
 
 
-class Sync(_Event):
+class Sync(DefaultUpdateChunksMixin, _Event):
     pass
 
 
-class WorkshareBegin(EnterMixin, _Event):
+class WorkshareBegin(EnterMixin, DefaultUpdateChunksMixin, _Event):
     pass
 
 
-class WorkshareEnd(LeaveMixin, _Event):
+class WorkshareEnd(LeaveMixin, DefaultUpdateChunksMixin, _Event):
     pass
 
 
@@ -255,13 +266,13 @@ class ImplicitTaskLeave(ChunkSwitchEventMixin, TaskLeave):
         yield None
 
 
-class TaskCreate(RegisterTaskDataMixin, Task):
+class TaskCreate(RegisterTaskDataMixin, DefaultUpdateChunksMixin, Task):
 
     def __repr__(self):
         return f"{self._base_repr} {self.parent_task_id} created {self.unique_id}"
 
 
-class TaskSchedule(ClassNotImplementedMixin, Task):
+class TaskSchedule(Task):
     pass
 
 
