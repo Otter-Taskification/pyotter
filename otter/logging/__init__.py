@@ -18,7 +18,7 @@ def initialise(args):
     # create formatter and apply to handlers
     f = logging.Formatter(
         fmt='[{asctime}] {filename:<20}(#{lineno:>03}) [{levelname}] {message}',
-        datefmt='%Y/%m/%d-%H:%m:%S',
+        datefmt='%Y/%m/%d-%H:%M:%S',
         style="{"
     )
     ch.setFormatter(f)
