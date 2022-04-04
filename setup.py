@@ -18,7 +18,7 @@ setup(name="pyotter",
     package_data={'otter': ['templates/*', 'log/setup/*.yaml']},
     install_requires=[
         'python-igraph==0.9.1',
-        'loggingdecorators>=0.1.1'
+        'loggingdecorators>=0.1.2'
     ],
     dependency_links=['https://perftools.pages.jsc.fz-juelich.de/cicd/otf2/']
 )
