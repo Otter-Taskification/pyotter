@@ -19,7 +19,8 @@ def get_args():
                         help='do not apply any styling to the graph nodes')
     parser.add_argument('-d', '--debug', action='store_true', default=False, dest='debug',
                         help='step through the code with pdb.set_trace()')
-    parser.add_argument('--log', dest='log', default="WARN", choices=["DEBUG", "INFO", "WARN", "ERROR"], help='logging level')
+    parser.add_argument('--loglevel', dest='loglevel', default="WARN", choices=["DEBUG", "INFO", "WARN", "ERROR"], help='log level')
+    parser.add_argument('--logdir', dest='logdir', default=".", help='log directory')
     args = parser.parse_args()
 
     if args.output is None and args.report is None and not args.interact:
@@ -55,5 +56,10 @@ def check_args(args):
     # Report path must not exist
     if args.report is not None and os.path.isdir(args.report):
         raise FileExistsError(f"{args.report}")
+
+    # log dir must be normalised
+    if not os.path.isabs(args.logdir):
+        args.logdir = os.path.join(os.getcwd(), args.logdir)
+    args.logdir = os.path.normpath(args.logdir)
 
     return

@@ -6,13 +6,16 @@ Key functionality:
 - export execution graph to file
 """
 
+from .args import get_args
+args = get_args()
+
+from . import log
+log.Logging.init(args)
+
 from .EventFactory import EventFactory, events
 from .TaskRegistry import TaskRegistry, tasks
-from .args import get_args
 from .definitions import TaskStatus
 from .ChunkFactory import ChunkFactory, chunks
-from .logging import get_logger
-from . import decorators
 
 def _check_dot():
     # Check that the "dot" commandline utility is available
