@@ -1,11 +1,14 @@
-from logging import DEBUG, INFO
 from collections import deque
+from .. import log
+from ..log import get_logger
+from ..log.levels import DEBUG, INFO, WARN, ERROR
 from .events import _Event
 from . import events
 from ..types import OTF2Reader, OTF2Event, AttrDict
 from ..definitions import EventType, RegionType, Attr
-from ..logging import get_logger
-from otter.decorators import log_init, log_args
+from loggingdecorators import on_init
+
+module_logger = get_logger("events")
 
 event_class_lookup = {
     EventType.thread_begin:    events.ThreadBegin,
@@ -14,8 +17,8 @@ event_class_lookup = {
     EventType.parallel_end:    events.ParallelEnd,
     EventType.workshare_begin: events.WorkshareBegin,
     EventType.workshare_end:   events.WorkshareEnd,
-    EventType.sync_begin:      events.Sync,
-    EventType.sync_end:        events.Sync,
+    EventType.sync_begin:      events.SyncBegin,
+    EventType.sync_end:        events.SyncEnd,
     EventType.master_begin:    events.Master,
     EventType.master_end:      events.Master,
     EventType.task_enter:      events.TaskEnter,
@@ -38,9 +41,9 @@ region_event_class_lookup = {
 
 class Location:
 
-    @log_init()
+    @on_init(logger=get_logger("init_logger"), level=DEBUG)
     def __init__(self, location):
-        self.log = get_logger(f"{self.__class__.__name__}")
+        self.log = get_logger(self.__class__.__name__)
         self._loc = location
         self.parallel_region_deque = deque()
 
@@ -66,28 +69,30 @@ class Location:
 
 class EventFactory:
 
-    @log_init()
+    @on_init(logger=get_logger("init_logger"))
     def __init__(self, r: OTF2Reader, default_cls: type=None, log_event_construction=DEBUG):
         if default_cls is not None and not issubclass(default_cls, _Event):
             raise TypeError(f"arg {default_cls=} is not subclass of events._Event")
-        self.log = get_logger(f"{self.__class__.__name__}")
+        self.log = module_logger
         self.default_cls = default_cls
         self.attr = {attr.name: attr for attr in r.definitions.attributes}
-        self.location_registry = {location: Location(location) for location in r.definitions.locations}
+        self.location_registry = dict() #{location: Location(location) for location in r.definitions.locations}
+        for location in r.definitions.locations:
+            self.location_registry[location] = Location(location)
+            self.log.debug(f"got location: {location.name}(events={location.number_of_events}, type={location.type})")
         self.events = r.events
-        self.cls_decorator = log_args(self.log, log_event_construction) if log_event_construction else lambda func : func
 
     def __repr__(self):
         return f"{self.__class__.__name__}(default_cls={self.default_cls})"
 
     def __iter__(self) -> events._Event:
-        self.log.debug(f"{self.__class__.__name__}.__iter__ generating events from {self.events}")
+        self.log.debug(f"generating events from {self.events}")
         for k, (location, event) in enumerate(self.events):
-            cls = self.cls_decorator(self.get_class(
+            cls = self.get_class(
                 event.attributes[self.attr[Attr.event_type]],
                 event.attributes.get(self.attr[Attr.region_type],None)
-            ))
-            self.log.debug(f"{self.__class__.__name__}.__iter__ event {k} {cls=}")
+            )
+            self.log.debug(f"making event {k} {cls=}")
             yield cls(event, self.location_registry[location], self.attr)
 
     def get_class(self, event_type: EventType, region_type: RegionType) -> type:

@@ -1,9 +1,9 @@
 from ..definitions import RegionType, EventType
 from ..EventFactory import events
-from ..logging import get_logger
+from ..log import get_logger
 from typing import Callable
 
-module_logger = get_logger(f"{__name__}")
+module_logger = get_logger("vertex.pred")
 
 def key_is_not_none(key) -> Callable:
     return lambda vertex: vertex[key] is not None

@@ -1,19 +1,19 @@
 from functools import wraps
 from itertools import chain
-from logging import DEBUG, INFO
-from ..logging import get_logger
+from .. import log
+from ..log import get_logger, DEBUG, INFO
 from ..definitions import RegionType
 from ..EventFactory import events
-from otter.decorators import log_init, log_args, log_msg
+from loggingdecorators import on_init, on_call
 
-module_logger = get_logger(f"{__name__}")
+module_logger = get_logger("vertex.attr")
 
 
 def are(reduce, args, T):
     return reduce(isinstance(x, T) for x in args)
 
 
-@log_args(module_logger)
+# @on_call(module_logger)
 def drop_args(args):
     return None
 
@@ -78,7 +78,7 @@ def pass_unique_master_event(args):
     return _pass_unique_event(args, RegionType.master)
 
 
-@log_args(module_logger)
+# @on_call(module_logger)
 def reject_task_create(args):
     events_filtered = [event for event in args if not event.is_task_create_event]
     if len(events_filtered) == 1:
@@ -91,34 +91,41 @@ def reject_task_create(args):
 
 class AttributeHandlerTable(dict):
 
-    @log_init()
-    def __init__(self, names, handler=drop_args, logger=None, level=DEBUG):
-        self.log = logger or get_logger(f"{self.__class__.__name__}")
+    @on_init(logger=get_logger("init_logger"))
+    def __init__(self, names, default_handler=drop_args, logger=None, level=DEBUG):
+        self.log = logger or get_logger(self.__class__.__name__)
         self.level = level
-        super().__init__({name: log_msg(handler, f"combining attribute {name} with handler {handler}", self.log) for name in names})
+        super().__init__({name: default_handler for name in names})
 
     def __setitem__(self, event, handler):
-        self.log.log(self.level, f"set handler '{handler}' for vertex attribute '{event}'")
+        self.log.log(self.level, f"set handler '{handler}' for vertex attribute '{event}'", stacklevel=2)
         return super().__setitem__(event, handler)
 
 
 class VertexAttributeCombiner:
 
-    @log_init()
+    @on_init(logger=get_logger("init_logger"))
     def __init__(self, handler=None, list_handler=None, logger=None, level=DEBUG, cls=events._Event, msg="combining events"):
         self.handler = handler if handler else (lambda arg: arg)
         self.log = logger or get_logger(self.__class__.__name__)
-        self.combine_values = self.make(handler, list_handler, self.log, cls=cls)
-        if level is not None:
-            self.combine_values = log_msg(self.combine_values, msg, self.log, level=level)
+        self.combine_values = self.make(handler, list_handler, self.log, cls, msg=msg, depth=1)
+        # if level is not None:
+        #     self.combine_values = self.make(handler, list_handler, self.log, cls=cls, depth=2)
+        #     self.combine_values = log_msg(self.log, self.combine_values, msg, level=level)
+        # else:
+        #     self.combine_values = self.make(handler, list_handler, self.log, cls=cls, depth=1)
 
     def __call__(self, args):
         """Call the value combiner which applies the specified handlers"""
         return self.combine_values(args)
 
     @staticmethod
-    def make(handler, list_handler, logger, cls):
-        @log_args(logger)
+    def make(handler, list_handler, logger, cls, msg: str="", depth=0):
+        """
+        Using value=1, log messages emitted within _value_combiner will get the filename & lineno of the caller of
+        _value_combiner. For each additional wrapper around _value_combiner, increase the depth argument by 1 to get
+        the correct stack information in the log messages.
+        """
         @wraps(handler)
         def _value_combiner(args):
             """
@@ -130,14 +137,15 @@ class VertexAttributeCombiner:
             If args is a list of lists, pass to list handler (default: chain lists together to prevent nested lists)
             No other types are expected to be passed here via the 'event' vertex attribute
             """
+            const_depth = 2 #
             assert isinstance(args, list)
             if all(arg is None for arg in args):
-                logger.debug(f"check None: all args were None")
+                logger.debug(f"check None: all args were None", stacklevel=const_depth+depth)
                 return None
             if any(arg is None for arg in args):
-                logger.debug(f"check None: at least 1 arg was None")
+                logger.debug(f"check None: at least 1 arg was None", stacklevel=const_depth+depth)
             else:
-                logger.debug(f"check None: no args were None")
+                logger.debug(f"check None: no args were None", stacklevel=const_depth+depth)
             # args is a list in which fewer than all items are None i.e. at least 1 item which is not None
 
             # Filter out all values which are None
@@ -145,7 +153,7 @@ class VertexAttributeCombiner:
 
             if len(args) == 1:
                 item = args[0]
-                logger.debug(f"list contains 1 item: {item}")
+                logger.debug(f"list contains 1 item: {item}", stacklevel=const_depth+depth)
                 return item
             # args is list with > 1 element, at least 1 of which is not None
             if are(all, args, cls): # doesn't handle the case for List[None, MasterBegin], for example...
@@ -153,12 +161,15 @@ class VertexAttributeCombiner:
             elif are(all, args, list):
                 return list_handler(args) if list_handler else list(chain(*args))
             elif are(any, args, type(None)):
-                logger.error(args)
+                logger.error(args, stacklevel=const_depth+depth)
                 raise TypeError(f"mixed type(s) with NoneType: {set(map(type, args))}")
             else:
-                logger.error(args)
+                logger.error(args, stacklevel=const_depth+depth)
                 raise TypeError(f"unexpected type(s): {set(map(type, args))}")
-        return _value_combiner
+
+        # Apply the on_call decorator with the correct depth so that logs dispatched inside nested decorators get the
+        # correct stacklevel to find the original caller
+        return on_call(logger, msg=msg, depth=depth)(_value_combiner)
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.handler.__module__}.{self.handler.__name__})"

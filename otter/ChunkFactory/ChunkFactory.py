@@ -1,15 +1,19 @@
-from .. import EventFactory, TaskRegistry
-from . import chunks
 from collections import defaultdict, deque
-from ..logging import get_logger
-from otter.decorators import log_init
+from .. import log
+from ..log import get_logger
+from ..log.levels import DEBUG, INFO, WARN, ERROR
+from . import chunks
+from .. import EventFactory, TaskRegistry
+from loggingdecorators import on_init
+
+module_logger = get_logger("chunks")
 
 class ChunkFactory:
     """Aggregates a sequence of events into a sequence of Chunks."""
 
-    @log_init()
+    @on_init(logger=get_logger("init_logger"))
     def __init__(self, events: EventFactory, tasks: TaskRegistry):
-        self.log = get_logger(f"{self.__class__.__name__}")
+        self.log = module_logger
         self.events = events
         self.tasks = tasks
         # Track all chunks currently under construction according to key
@@ -23,15 +27,17 @@ class ChunkFactory:
     def __iter__(self) -> chunks.Chunk:
         self.log.debug(f"{self.__class__.__name__}.__iter__ receiving events from {self.events}")
         for k, event in enumerate(self.events):
-            self.log.debug(f"{self.__class__.__name__}.__iter__ got event {k}: {event}")
+            self.log.debug(f"got event {k}: {event}")
             if event.is_task_register_event:
                 self.tasks.register_task(event)
+            # elif event.is_task_switch_event:
+            #     self.tasks.update_task(event)
             if event.is_chunk_switch_event:
+                self.log.debug(f"updating chunks")
                 yield from event.update_chunks(self.chunk_dict, self.chunk_stack)
             else:
                 self.chunk_dict[event.encountering_task_id].append_event(event)
-            self.log.debug(f"{self.__class__.__name__}.__iter__ requesting next event")
-        self.log.debug(f"{self.__class__.__name__}.__iter__ exhausted {self.events}")
+        self.log.debug(f"exhausted {self.events}")
 
     def read(self):
         yield from filter(None, self)

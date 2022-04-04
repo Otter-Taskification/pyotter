@@ -2,18 +2,21 @@ import otf2
 import igraph as ig
 from collections import deque
 from typing import List
-from logging import DEBUG, INFO
 from itertools import islice
-from ..logging import get_logger
+from .. import log
+from ..log import get_logger
+from ..log.levels import DEBUG, INFO, WARN, ERROR
 from ..definitions import RegionType, Endpoint
 from ..EventFactory import events
-from otter.decorators import log_init
+from loggingdecorators import on_init
+
+module_logger = get_logger("chunks")
 
 class Chunk:
 
-    @log_init(DEBUG)
+    @on_init(logger=get_logger("init_logger"), level=DEBUG)
     def __init__(self):
-        self.log = get_logger(f"{self.__class__.__name__}")
+        self.log = module_logger
         self._events = deque()
         self._graph = None
         self._type = None
