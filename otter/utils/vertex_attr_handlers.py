@@ -12,11 +12,88 @@ from loggingdecorators import on_init, on_call
 module_logger = get_logger("vertex.attr")
 
 
+class AttributeHandlerTable(dict):
+
+    @on_init(logger=get_logger("init_logger"))
+    def __init__(self, names, default_handler=None, logger=None, level=DEBUG):
+        """
+        dict which maps attribute names to handlers for combining that attribute
+        overrides __setitem__ to log each time a handler is set
+        """
+        self.log = logger or get_logger(self.__class__.__name__)
+        self.level = level
+        handler = default_handler or pass_first_arg
+        super().__init__({name: handler for name in names})
+
+    def __setitem__(self, event, handler):
+        self.log.log(self.level, f"set handler '{handler}' for vertex attribute '{event}'", stacklevel=2)
+        return super().__setitem__(event, handler)
+
+
+class VertexAttributeCombiner:
+
+    @on_init(logger=get_logger("init_logger"))
+    def __init__(self, handler=None, accept: Union[Type, List[Type]]=[list, events._Event], msg="combining events"):
+        """
+        Wraps a handler function to allow checking and logging of the arguments passed to it.
+        Log invocations of the handler with an on_call decorator.
+
+        handler: a function which accepts one arg (a list of the values to be combined)
+        accept: a type, or list of types, which each arg must conform to for the given handler to be applied
+        """
+        self.handler = handler if handler else (lambda arg: arg)
+        self.accept = accept
+        self.log = get_logger(self.__class__.__name__)
+        call_decorator = on_call(self.log, msg=msg)
+        self.handler = call_decorator(self.handler)
+
+    def __call__(self, args):
+
+        """
+        Called by igraph.Graph.contract_vertices when combining a vertex attribute
+        Expects args to be a list of values to be combined
+        Returns the value to assign to the attribute of the vertex which replaces the contracted vertices
+        If args is a list of lists, flatten into one list before passing to handler
+        If args is a list with 1 item, return that item
+        """
+
+        assert isinstance(args, list)
+
+        # Prevent any nesting of lists when args is a List[List[events._Event]]
+        args = list(flatten(args))
+        assert isinstance(args, list) and all(not isinstance(item, list) for item in args) # flat list
+
+        if all(arg is None for arg in args):
+            self.log.debug(f"all args were None", stacklevel=4)
+            return None
+
+        # Filter out all values which are None (allow False to pass through)
+        args = list(filter(lambda x: x is not None, args))
+
+        if len(args) == 1:
+            item = args[0]
+            self.log.debug(f"list contains 1 item: {item}", stacklevel=4)
+            return item
+
+        # Each arg must be of the given type (or one of the given list of types) for this handler
+        A = isinstance(self.accept, Iterable) and all(isinstance(arg, tuple(self.accept)) for arg in args)
+        B = isinstance(self.accept, type) and are(all, args, self.accept)
+        if not (A or B):
+            raise TypeError(f"expected {accept}, got {set(map(type, args))}")
+
+        # args is list with > 1 element, none of which is None
+        return self.handler(args)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.handler.__module__}.{self.handler.__name__})"
+
+
+### Handlers
+
 def are(reduce, args, T):
     return reduce(isinstance(x, T) for x in args)
 
 
-# @on_call(module_logger)
 def drop_args(args):
     return None
 
@@ -60,23 +137,9 @@ def _return_unique_event(args, region_type):
     Expects to find & return exactly 1 single-executor event in this list
     Error otherwise
     """
-    is_event_list = lambda this : isinstance(this, list) and all(isinstance(thing, events._Event) for thing in this)
+    is_event_list = lambda this : all(isinstance(thing, events._Event) for thing in this)
+    assert isinstance(args, list)
     assert is_event_list(args)
-    if not (isinstance(args, list) and len(args) > 0):
-        module_logger.debug(f"{args}")
-        for item in args:
-            module_logger.debug(f"    {item=}")
-        raise TypeError("!!!")
-
-    if not is_event_list(args):
-        assert all(is_event_list(item) for item in args)
-        module_logger.debug(f"detected list of event_list, chaining {len(args)} lists together")
-        module_logger.debug(f"before: len={list(map(len, args))}")
-        args = list(chain(*args))
-        module_logger.debug(f"after: 1 event list of len={len(args)}")
-        assert is_event_list(args)
-    else:
-        module_logger.debug(f"detected event_list len={len(args)}, types={set(map(type, args))}")
 
     # args is guaranteed to be a list of events
     unique_events = set(e for e in args if e.region_type == region_type)
@@ -103,7 +166,6 @@ def return_unique_master_event(args):
     return _return_unique_event(args, RegionType.single_executor)
 
 
-# @on_call(module_logger)
 def reject_task_create(args):
     events_filtered = [event for event in args if not event.is_task_create_event]
     if len(events_filtered) == 1:
@@ -112,80 +174,3 @@ def reject_task_create(args):
         raise NotImplementedError("No events remain after filtering")
     else:
         return events_filtered
-
-
-class AttributeHandlerTable(dict):
-
-    @on_init(logger=get_logger("init_logger"))
-    def __init__(self, names, default_handler=pass_first_arg, logger=None, level=DEBUG):
-        self.log = logger or get_logger(self.__class__.__name__)
-        self.level = level
-        super().__init__({name: default_handler for name in names})
-
-    def __setitem__(self, event, handler):
-        self.log.log(self.level, f"set handler '{handler}' for vertex attribute '{event}'", stacklevel=2)
-        return super().__setitem__(event, handler)
-
-
-class VertexAttributeCombiner:
-
-    @on_init(logger=get_logger("init_logger"))
-    def __init__(self, handler=None, cls: Union[Type, List[Type]]=[list, events._Event], msg="combining events"):
-        self.handler = handler if handler else (lambda arg: arg)
-        self.log = get_logger(self.__class__.__name__)
-        self.combine_values = self.make(handler, self.log, cls, msg=msg, depth=1)
-
-    def __call__(self, args):
-        """Call the value combiner which applies the specified handlers"""
-        return self.combine_values(args)
-
-    @staticmethod
-    def make(handler, logger, cls, msg: str="", depth=0):
-        """
-        Using value=1, log messages emitted within _value_combiner will get the filename & lineno of the caller of
-        _value_combiner. For each additional wrapper around _value_combiner, increase the depth argument by 1 to get
-        the correct stack information in the log messages.
-        """
-        @wraps(handler)
-        def _value_combiner(args):
-            """
-            Called by igraph.Graph.contract_vertices when combining a vertex attribute
-            Expects args to be a list of values to be combined
-            Returns the value to assign to the attribute of the vertex which replaces the contracted vertices
-            If args is a list of lists, flatten into one list before passing to handler
-            If args is a list with 1 item, return that item
-            """
-
-            assert isinstance(args, list)
-
-            # Prevent any nesting of lists when args is a List[List[events._Event]]
-            args = list(flatten(args))
-            assert isinstance(args, list) and all(not isinstance(item, list) for item in args)
-
-            if all(arg is None for arg in args):
-                logger.debug(f"check None: all args were None")
-                return None
-
-            # Filter out all values which are None (allow False to pass through)
-            args = list(filter(lambda x : x is not None, args))
-
-            if len(args) == 1:
-                item = args[0]
-                logger.debug(f"list contains 1 item: {item}")
-                return item
-            # args is list with > 1 element, none of which is None
-
-            # Each arg must match the given type (or one of the given list of types) for this handler
-            A = isinstance(cls, Iterable) and all(isinstance(arg, tuple(cls)) for arg in args)
-            B = isinstance(cls, type) and are(all, args, cls)
-            if not (A or B):
-                raise TypeError(f"expected {cls}, got {set(map(type, args))}")
-
-            return handler(args)
-
-        # Apply the on_call decorator with the correct depth so that logs dispatched inside nested decorators get the
-        # correct stacklevel to find the original caller
-        return on_call(logger, msg=msg, depth=depth)(_value_combiner)
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.handler.__module__}.{self.handler.__name__})"
