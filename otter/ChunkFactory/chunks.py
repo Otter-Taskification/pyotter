@@ -21,17 +21,12 @@ class Chunk:
         self._graph = None
         self._type = None
 
-    def _post_append_init(self):
-        if len(self) != 1:
-            raise RuntimeError(f"only call _post_append_init after 1st append")
-        self._type = self.first.region_type
-
     def __len__(self):
         return len(self._events)
 
     @property
     def _base_repr(self):
-        return f"{self.__class__.__name__}({len(self._events)} events, self.type={self._type})"
+        return f"{self.__class__.__name__}({len(self._events)} events, self.type={self.type})"
 
     @property
     def _data_repr(self):
@@ -39,6 +34,11 @@ class Chunk:
 
     def __repr__(self):
         return f"{self._base_repr}\n{self._data_repr}"
+
+    def to_text(self):
+        content = [self._base_repr]
+        content.extend([f" - {e}" for e in self._events])
+        return content
 
     @property
     def first(self):
@@ -50,15 +50,17 @@ class Chunk:
 
     @property
     def type(self):
-        if self._type is None:
-            raise RuntimeError(f"{self._base_repr} not initialised correctly")
-        return self._type
+        if len(self) == 0:
+            self.log.debug(f"chunk contains no events!")
+            return None
+        if self.first.is_task_switch_event:
+            return self.first.next_task_region_type
+        else:
+            return self.first.region_type
 
     def append_event(self, event):
         self.log.debug(f"{self.__class__.__name__}.append_event {event._base_repr} to chunk: {self._base_repr}")
         self._events.append(event)
-        if len(self) == 1:
-            self._post_append_init()
 
     @staticmethod
     def events_bridge_region(previous: events._Event, current: events._Event, types: List[RegionType]) -> bool:

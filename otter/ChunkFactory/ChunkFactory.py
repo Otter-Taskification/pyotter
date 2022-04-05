@@ -1,4 +1,5 @@
 from collections import defaultdict, deque
+from functools import cached_property
 from .. import log
 from ..log import get_logger
 from ..log.levels import DEBUG, INFO, WARN, ERROR
@@ -41,3 +42,7 @@ class ChunkFactory:
 
     def read(self):
         yield from filter(None, self)
+
+    @cached_property
+    def chunks(self):
+        return list(self.read())
