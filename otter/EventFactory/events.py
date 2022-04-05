@@ -300,10 +300,15 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
         next_chunk_key = self.next_task_id
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {this_chunk_key=}, {next_chunk_key=}")
         this_chunk = chunk_dict[this_chunk_key]
-        this_chunk.append_event(self)
-        yield this_chunk if self.prior_task_status == TaskStatus.complete else None
+        if self.prior_task_status != TaskStatus.switch: # only update the prior task's chunk if it wasn't a regular switch event
+            self.log.debug(f"{self.__class__.__name__}.update_chunks: {self} updating chunk key={this_chunk_key} for {self.region_type} with status {self.prior_task_status}")
+            this_chunk.append_event(self)
+            yield this_chunk if self.prior_task_status == TaskStatus.complete else None
+        else:
+            self.log.debug(f"{self.__class__.__name__}.update_chunks: {self} skipped updating chunk key={this_chunk_key} for {self.region_type} with status {self.prior_task_status}")
+        self.log.debug(f"{self.__class__.__name__}.update_chunks: {self} updating chunk key={next_chunk_key}")
         next_chunk = chunk_dict[next_chunk_key]
         next_chunk.append_event(self)
 
     def __repr__(self):
-        return f"{self._base_repr} {self.prior_task_id} ({self.prior_task_status}) -> {self.next_task_id}"
+        return f"{self._base_repr} [{self.prior_task_id} ({self.prior_task_status}) -> {self.next_task_id}]"
