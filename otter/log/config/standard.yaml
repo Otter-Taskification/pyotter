@@ -52,6 +52,13 @@ handlers:
 #    filename: events.log
 #    mode: w
 
+  debugChunksFile:
+    level: DEBUG
+    class: logging.FileHandler
+    formatter: simple
+    filename: otter.chunks.log
+    mode: w
+
 
 loggers:
 
@@ -64,6 +71,10 @@ loggers:
 
   otter.initialise:
     handlers: [debugInitFile]
+    propagate: False
+
+  otter.chunks_debug:
+    handlers: [debugChunksFile]
     propagate: False
 
   on_init:
