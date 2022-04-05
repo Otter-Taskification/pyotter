@@ -23,10 +23,11 @@ class Task:
         self._children = deque()
 
     def __repr__(self):
-        return "{}(id={}, type={}, parent={}, children=({}))".format(
+        return "{}(id={}, type={}, crt_ts={}, parent={}, children=({}))".format(
             self.__class__,
             self.id,
             self.task_type,
+            self.crt_ts,
             self.parent_id,
             ", ".join([str(c) for c in self.children])
         )
