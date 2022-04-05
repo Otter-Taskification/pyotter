@@ -27,7 +27,9 @@ def is_region_type(region_type: RegionType) -> Callable:
             return all(_is_event_region_type(e, region_type) for e in event_attribute)
         else:
             module_logger.debug(f"expected {events._Event} or List[{events._Event}], got {type(event_attribute)} ({event_attribute})", stack_info=True)
-            raise RuntimeError(f"expected {events._Event}, got {type(event)} ({event})")
+            for item in event_attribute:
+                module_logger.debug(f"is an event: {isinstance(item, events._Event)} {item=}")
+            raise RuntimeError(f"expected {events._Event}, got {type(event_attribute)} ({event_attribute})")
     return check_region_type
 
 def is_empty_task_region(vertex) -> bool:
