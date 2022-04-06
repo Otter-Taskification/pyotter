@@ -144,18 +144,18 @@ def _return_unique_event(args, region_type):
     # args is guaranteed to be a list of events
     unique_events = set(e for e in args if e.region_type == region_type)
 
-    if len(unique_events) > 1:
-        # error: if >1 event arrived here, the vertices were somehow mis-labelled
-        module_logger.error(f"multiple {region_type} events received: {args}")
-        raise ValueError(f"multiple {region_type} events received: {args}")
-    elif len(unique_events) == 1:
+    if len(unique_events) == 1:
         event = unique_events.pop()
         module_logger.debug(f"returning event: {event}")
         return event
-    else:
+    elif len(unique_events) == 0:
         event_types = set(type(e).__name__ for e in args)
         module_logger.debug(f"no {region_type} events, returning event list ({event_types=})")
         return args
+    else:
+        # error: if >1 event arrived here, the vertices were somehow mis-labelled
+        module_logger.error(f"multiple {region_type} events received: {args}")
+        raise ValueError(f"multiple {region_type} events received: {args}")
 
 
 def return_unique_single_executor_event(args):
@@ -165,6 +165,13 @@ def return_unique_single_executor_event(args):
 def return_unique_master_event(args):
     return _return_unique_event(args, RegionType.single_executor)
 
+def return_unique_taskswitch_complete_event(args):
+    assert isinstance(args, list)
+    assert all(events.is_event(item) for item in args)
+    assert all(event.is_task_switch_event for event in args)
+    event_set = set(event for event in args if event.is_task_switch_complete_event)
+    assert len(event_set) == 1
+    return event_set.pop()
 
 def reject_task_create(args):
     events_filtered = [event for event in args if not event.is_task_create_event]
