@@ -42,3 +42,12 @@ def is_empty_task_region(vertex) -> bool:
     if type(vertex['event']) is list and set(map(type, vertex['event'])) in [{EventType.task_switch}]:
         return ((all(vertex['_is_task_leave_node']) and vertex.indegree() == 0) or
                 (all(vertex['_is_task_enter_node']) and vertex.outdegree() == 0))
+
+def is_terminal_task_vertex(vertex) -> bool:
+    event = vertex['event']
+    if isinstance(event, list):
+        assert(all(events.is_event(item) for item in event))
+        return any(e.is_task_switch_complete_event for e in event)
+    else:
+        assert(events.is_event(event))
+        return event.is_task_switch_complete_event
