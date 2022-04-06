@@ -10,6 +10,11 @@ class PrettyCounter(Counter):
 
 class VertexLabeller:
 
+    """
+    Calculates new labels for a set of vertices. If cond returns True for an element in an iterable, assign a distinct
+    label according to a key given by group_key. Otherwise, assign a label unique across this set of vertices.
+    """
+
     def __init__(self, cond: Callable, group_key: Union[Callable, str] = "event"):
         if isinstance(group_key, str):
             self._group_func = lambda v: v[group_key]
