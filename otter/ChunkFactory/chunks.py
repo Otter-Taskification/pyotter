@@ -1,5 +1,6 @@
 import otf2
 import igraph as ig
+from functools import cached_property
 from collections import deque
 from typing import List
 from itertools import islice
@@ -18,7 +19,6 @@ class Chunk:
     def __init__(self):
         self.log = module_logger
         self._events = deque()
-        self._graph = None
         self._type = None
 
     def __len__(self):
@@ -76,12 +76,10 @@ class Chunk:
     def events_bridge_parallel_region(cls, previous: events._Event, current: events._Event) -> bool:
         return cls.events_bridge_region(previous, current, [RegionType.parallel])
 
-    def as_graph(self):
-        if self._graph is not None:
-            return self._graph
+    @cached_property
+    def graph(self):
 
         g = ig.Graph(directed=True)
-        self._graph = g
         v_prior = g.add_vertex(event=self.first)
         v_root = v_prior
 
@@ -169,4 +167,4 @@ class Chunk:
         elif self.type == RegionType.single_executor and not g.are_connected(v_root.index, v_prior.index):
             g.add_edge(g.vs[0], g.vs[-1])
 
-        return self._graph
+        return g
