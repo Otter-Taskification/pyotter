@@ -20,6 +20,7 @@ class _Event(ABC):
     is_task_create_event = False
     is_task_register_event = False
     is_task_switch_event = False
+    is_task_switch_complete_event = False
     is_chunk_switch_event = False
 
     @on_init(logger=get_logger("init_logger"))
@@ -28,11 +29,10 @@ class _Event(ABC):
         self._event = event
         self._location = location
         self.attr = attr
+        self.time = self._event.time
 
     def __getattr__(self, item):
-        if item == "time":
-            return self._event.time
-        elif item not in self.attr:
+        if item not in self.attr:
             raise AttributeError(f"attribute '{item}' is not defined")
         elif self.attr[item] not in self._event.attributes:
             raise AttributeError(f"attribute '{item}' not found in {self._base_repr} object")
@@ -59,6 +59,9 @@ class _Event(ABC):
 
     def __repr__(self):
         return " ".join([self._base_repr, self._attr_repr])
+
+    def as_row(self, fmt="{type:<22} {time} {region_type:<16} {endpoint}"):
+        return fmt.format(type=self.__class__.__name__, time=self.time, region_type=getattr(self, "region_type", None), endpoint=self.endpoint)
 
 # mixin
 class ClassNotImplementedMixin(ABC):
@@ -294,6 +297,10 @@ class TaskSchedule(Task):
 
 class TaskSwitch(ChunkSwitchEventMixin, Task):
     is_task_switch_event = True
+
+    @property
+    def is_task_switch_complete_event(self):
+        return self.prior_task_status in [TaskStatus.complete, TaskStatus.cancel]
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         this_chunk_key = self.encountering_task_id

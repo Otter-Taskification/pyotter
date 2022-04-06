@@ -145,7 +145,7 @@ class Chunk:
                 g.add_edge(v_prior, v)
 
             # For task-create add dummy nodes for easier merging
-            if isinstance(event, events.TaskCreate):
+            if event.is_task_create_event:
                 v['_task_cluster_id'] = (event.unique_id, Endpoint.enter)
                 dummy_vertex = g.add_vertex(event=event)
                 dummy_vertex['_task_cluster_id'] = (event.unique_id, Endpoint.leave)
