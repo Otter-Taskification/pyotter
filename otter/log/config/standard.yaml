@@ -59,6 +59,13 @@ handlers:
     filename: otter.chunks.log
     mode: w
 
+  debugGraphsFile:
+    level: DEBUG
+    class: logging.FileHandler
+    formatter: simple
+    filename: otter.graphs.log
+    mode: w
+
 
 loggers:
 
@@ -75,6 +82,10 @@ loggers:
 
   otter.chunks_debug:
     handlers: [debugChunksFile]
+    propagate: False
+
+  otter.graphs_debug:
+    handlers: [debugGraphsFile]
     propagate: False
 
   on_init:
