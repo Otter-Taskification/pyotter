@@ -15,9 +15,10 @@ setup(name="pyotter",
     license="https://github.com/adamtuft/pyotter/blob/main/LICENSE",
     url="https://github.com/adamtuft/pyotter",
     packages=find_packages(),
-    package_data={'otter': ['templates/*']},
+    package_data={'otter': ['templates/*', 'log/setup/*.yaml']},
     install_requires=[
-        'python-igraph==0.9.1'
+        'python-igraph==0.9.1',
+        'loggingdecorators>=0.1.2'
     ],
     dependency_links=['https://perftools.pages.jsc.fz-juelich.de/cicd/otf2/']
 )

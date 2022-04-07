@@ -1,0 +1,112 @@
+version: 1
+
+
+formatters:
+
+  default:
+    format: '[{asctime}] [{name}] [{levelname}] [{filename:}:{lineno}] {message}'
+    datefmt: '%Y/%m/%d-%H:%M:%S'
+    style: '{'
+
+  simple:
+    format: '{name} [{levelname}]: {message}'
+    style: '{'
+
+  init:
+    format: '{name} [{levelname}] {filename}:{lineno} (in {funcName}): {message}'
+    style: '{'
+
+
+handlers:
+
+  infoConsole:
+    level: INFO
+    class: logging.StreamHandler
+    formatter: simple
+
+  debugFile:
+    level: DEBUG
+    class: logging.FileHandler
+    formatter: default
+    filename: otter.log
+    mode: w
+
+  debugInitFile:
+    level: DEBUG
+    class: logging.FileHandler
+    formatter: default
+    filename: otter.initialise.log
+    mode: w
+
+  debugObjectInitFile:
+    level: DEBUG
+    class: logging.FileHandler
+    formatter: init
+    filename: otter.object-init.log
+    mode: w
+
+#  eventsFile:
+#    level: DEBUG
+#    class: logging.FileHandler
+#    formatter: default
+#    filename: events.log
+#    mode: w
+
+  debugChunksFile:
+    level: DEBUG
+    class: logging.FileHandler
+    formatter: simple
+    filename: otter.chunks.log
+    mode: w
+
+  debugGraphsFile:
+    level: DEBUG
+    class: logging.FileHandler
+    formatter: simple
+    filename: otter.graphs.log
+    mode: w
+
+  debugTaskAttrFile:
+    level: DEBUG
+    class: logging.FileHandler
+    formatter: simple
+    filename: otter.tasks.log
+    mode: w
+
+
+loggers:
+
+  otter:
+    handlers: [debugFile]
+
+  otter.main:
+    handlers: [infoConsole]
+    propagate: True
+
+  otter.initialise:
+    handlers: [debugInitFile]
+    propagate: False
+
+  otter.chunks_debug:
+    handlers: [debugChunksFile]
+    propagate: False
+
+  otter.graphs_debug:
+    handlers: [debugGraphsFile]
+    propagate: False
+
+  otter.tasks_debug:
+    handlers: [debugTaskAttrFile]
+    propagate: False
+
+  on_init:
+    handlers: [debugObjectInitFile]
+
+
+root:
+  level: WARN
+
+
+otter:
+  init: on_init
+  initialise: otter.initialise

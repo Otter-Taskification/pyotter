@@ -1,5 +1,15 @@
 from enum import Enum
 
+class Attr(str, Enum):
+    time = "time"
+    event_type = "event_type"
+    region_type = "region_type"
+    endpoint = "endpoint"
+    unique_id = "unique_id"
+    encountering_task_id = "encountering_task_id"
+    task_type = "task_type"
+    parent_task_id = "parent_task_id"
+
 class EventType(str, Enum):
     thread_begin = "thread_begin"
     thread_end = "thread_end"
@@ -13,6 +23,7 @@ class EventType(str, Enum):
     task_schedule = "task_schedule"
     task_enter = "task_enter"
     task_leave = "task_leave"
+    task_switch = "task_switch"
     master_begin = "master_begin"
     master_end = "master_end"
 
@@ -38,6 +49,10 @@ class RegionType(str, Enum):
     barrier_implementation = "barrier_implementation"
     taskwait = "taskwait"
     taskgroup = "taskgroup"
+    PARALLEL = "parallel"
+    WORKSHARE = "workshare"
+    SYNC = "sync"
+    TASK = "task"
 
 class TaskStatus(str, Enum):
     complete = "complete"
@@ -63,3 +78,7 @@ class EdgeType(str, Enum):
     execution_flow = "execution_flow"
     taskwait = "taskwait"
     taskgroup = "taskgroup"
+
+class TaskEvent(str, Enum):
+    CREATE = EventType.task_create.value
+    SWITCH = EventType.task_switch.value

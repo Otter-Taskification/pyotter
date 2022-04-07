@@ -1,361 +1,404 @@
-import pdb
-import warnings
-import igraph as ig
+from itertools import count
+from collections import defaultdict, Counter
 import otf2
+import igraph as ig
 import otter
-from itertools import chain, count, groupby
-from collections import Counter
-from otf2.events import Enter, Leave, ThreadTaskSwitch
-from otter.definitions import EventType, Endpoint, RegionType, TaskStatus, TaskType, EdgeType
-from otter.trace import AttributeLookup, RegionLookup
-from otter.helpers import set_tuples, reject_task_create, suppress_task_create, attr_handler, label_clusters, descendants_if, attr_getter, pass_master_event, apply_styling
-from otter.chunks import Chunk, ChunkGenerator, event_defines_new_task_fragment, fmt_event
-from otter.report import write_report
+from otter import args
+from otter.log import DEBUG
+from otter.utils import VertexLabeller, AttributeHandlerTable, VertexAttributeCombiner
+from otter.definitions import RegionType, Endpoint, TaskType, EdgeType
 
-def main():
+otter._check_dot()
+args = otter.get_args()
+otter.log.Logging.init(args)
+log = otter.log.get_logger("main")
 
-    args = otter.get_args()
-    anchorfile = args.anchorfile
+log.info(f"reading OTF2 anchorfile: {args.anchorfile}")
+with otf2.reader.open(args.anchorfile) as r:
+    events = otter.EventFactory(r)
+    tasks = otter.TaskRegistry()
+    log.info(f"generating chunks")
+    chunks = otter.ChunkFactory(events, tasks).chunks
+    graphs = list(chunk.graph for chunk in chunks)
 
-    # Convert event stream into graph chunks
-    print(f"loading OTF2 anchor file: {anchorfile}")
-    with otf2.reader.open(anchorfile) as tr:
-        regions = RegionLookup(tr.definitions.regions)
-        chunk_gen = ChunkGenerator(tr, verbose=args.verbose)
-        chunk_graphs = [c.as_graph(verbose=args.verbose) for c in chunk_gen]
-        chunk_types = [c.kind for c in chunk_gen]
-        task_tree = chunk_gen.make_task_tree()
-        event_attr = attr_getter(chunk_gen.attr)
-    
-    if not args.nostyle:
-        task_tree.vs['style'] = 'filled'
-        task_tree.vs['color'] = ['red' if v['task_type'] == RegionType.implicit_task else 'gray' for v in task_tree.vs]
-    tt_layout = task_tree.layout_reingold_tilford()
+# Dump chunks and graphs to log file
+if args.loglevel == "DEBUG":
+    chunk_log = otter.log.get_logger("chunks_debug")
+    graph_log = otter.log.get_logger("graphs_debug")
+    task_log = otter.log.get_logger("tasks_debug")
 
-    set_trace = lambda : pdb.set_trace() if args.debug else None
+    graph_log.debug(">>> BEGIN GRAPHS <<<")
+    chunk_log.debug(f">>> BEGIN CHUNKS <<<")
 
-    set_trace()
+    for chunk in chunks:
 
-    # Count chunks by type
-    if args.verbose:
-        print("graph chunks created:")
-        for k, v in Counter(chunk_types).items():
-            print(f"  {k:18s} {v:8d}")
+        # write chunk
+        for line in chunk.to_text():
+            chunk_log.debug(f"{line}")
 
-    set_trace()
+        # write graph
+        graph_log.debug(f"Chunk type: {chunk.type}")
+        g = chunk.graph
+        lines = [" ".join(f"{g}".split("\n"))]
+        for line in lines:
+            graph_log.debug(f"{line}")
+        for v in g.vs:
+            graph_log.debug(f"{v}")
+        graph_log.debug("")
 
-    # Collect all chunks
-    print("combining chunks")
-    g = ig.disjoint_union(chunk_graphs)
-    num_nodes = g.vcount()
+    chunk_log.debug(f">>> END CHUNKS <<<")
+    graph_log.debug(">>> END GRAPHS <<<")
 
-    if args.verbose:
-        print("{:20s} {:6d}".format("nodes created", num_nodes))
+    task_log.debug(">>> BEGIN TASKS <<<")
+    attributes = ",".join(tasks.attributes)
+    task_log.debug(f"{attributes=}")
+    for record in tasks.data:
+        task_log.debug(f"{record}")
+    task_log.debug(">>> END TASKS <<<")
 
-    if 'task_cluster_id' not in g.vs.attribute_names():
-        g.vs['task_cluster_id'] = None
-    g.vs['sync_cluster_id'] = None
-    g.vs['region_type'] = None
-    g.vs['synchronised_by_taskwait'] = False
+# Collect all chunks
+log.info("combining chunks")
+g = ig.disjoint_union([c.graph for c in chunks])
+vcount = g.vcount()
+log.info(f"graph disjoint union has {vcount} vertices")
 
-    if 'is_task_enter_node' not in g.vs.attribute_names():
-        g.vs['is_task_enter_node'] = None
-    if 'is_task_leave_node' not in g.vs.attribute_names():
-        g.vs['is_task_leave_node'] = None
+# Define some vertex attributes
+for name in ['_task_cluster_id', '_is_task_enter_node', '_is_task_leave_node', '_region_type', '_master_enter_event', '_taskgroup_enter_event']:
+    if name not in g.vs.attribute_names():
+        g.vs[name] = None
+# g.vs['_synchronised_by_taskwait'] = False
 
-    set_trace()
+# Create vertex labellers
+log.info("creating vertex labellers")
+parallel_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_parallel_sequence_id'), group_key='_parallel_sequence_id')
+single_vertex_labeller = VertexLabeller(otter.utils.is_region_type(RegionType.single_executor), group_key='event')
+master_vertex_labeller = VertexLabeller(otter.utils.is_region_type(RegionType.master), group_key='event')
+task_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_task_cluster_id'), group_key='_task_cluster_id')
+empty_task_vertex_labeller = VertexLabeller(otter.utils.is_empty_task_region, group_key=lambda v: v['_task_cluster_id'][0])
 
-    # Collapse by parallel sequence ID
-    if args.verbose:
-        print("contracting by parallel sequence ID")
-    g.vs['cluster'] = label_clusters(g.vs, lambda v: v['parallel_sequence_id'] is not None, 'parallel_sequence_id')
-    nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(attr=chunk_gen.attr))
-    num_nodes = g.vcount()
-    if args.verbose:
-        print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
+# Make a table for mapping vertex attributes to handlers - used by ig.Graph.contract_vertices
+handlers = AttributeHandlerTable(g.vs.attribute_names(), level=DEBUG)
 
-    set_trace()
+# Supply the logic to use when combining each of these vertex attributes
+attribute_handlers = [
+    ("_master_enter_event", otter.utils.handlers.return_unique_master_event, (type(None), otter.events._Event)),
+    ("_task_cluster_id",    otter.utils.handlers.pass_the_unique_value,      (type(None), tuple)),
+    ("_is_task_enter_node", otter.utils.handlers.pass_bool_value,            (type(None), bool)),
+    ("_is_task_leave_node", otter.utils.handlers.pass_bool_value,            (type(None), bool))
+]
+for attribute, handler, accept in attribute_handlers:
+    handlers[attribute] = VertexAttributeCombiner(handler, accept=accept, msg=f"combining attribute: {attribute}")
 
-    # Collapse by single-begin/end event
-    def is_single_executor(v):
-        return type(v['event']) in [Enter, Leave] and event_attr(v['event'], 'region_type') == RegionType.single_executor
-    if args.verbose:
-        print("contracting by single-begin/end event")
-    g.vs['cluster'] = label_clusters(g.vs, is_single_executor, 'event')
-    nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(attr=chunk_gen.attr))
-    num_nodes = g.vcount()
-    if args.verbose:
-        print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
+log.info(f"combining vertices...")
 
-    set_trace()
-
-    # Collapse by master-begin/end event
-    def is_master(v):
-        return type(v['event']) in [Enter, Leave] and event_attr(v['event'], 'region_type') == RegionType.master
-    if args.verbose:
-        print("contracting by master-begin/end event")
-    g.vs['cluster'] = label_clusters(g.vs, is_master, 'event')
-    nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(events=pass_master_event, attr=chunk_gen.attr))
-    num_nodes = g.vcount()
-    if args.verbose:
-        print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
-
-    set_trace()
-
-    # Itermediate clean-up: for each master region, remove edges that connect 
-    # the same nodes as the master region
-    master_enter = filter(lambda v: event_attr(v['event'], 'region_type') == RegionType.master and event_attr(v['event'], 'endpoint') == Endpoint.enter, g.vs)
-    master_enter_nodes = {v['event']: v for v in master_enter}
-    master_leave = filter(lambda v: event_attr(v['event'], 'region_type') == RegionType.master and event_attr(v['event'], 'endpoint') == Endpoint.leave, g.vs)
-    master_node_pairs = ((master_enter_nodes[leave_node['master_enter_event']], leave_node) for leave_node in master_leave)
-    def yield_neighbours():
-        for enter_node, leave_node in master_node_pairs:
-            (p,), (s,) = enter_node.predecessors(), leave_node.successors()
-            yield p, s
-    neighbour_set = {(p,s) for p, s in yield_neighbours()}
-    redundant_edges = list(filter(lambda e: (e.source_vertex, e.target_vertex) in neighbour_set, g.es))
-    if args.verbose:
-        print(f"deleting redundant edges due to master regions: {len(redundant_edges)}")
-    g.delete_edges(redundant_edges)
-
-    set_trace()
-
-    # Collapse by (task-ID, endpoint) to get 1 subgraph per task
-    for v in g.vs:
-        if v['is_task_enter_node']:
-            v['task_cluster_id'] = (event_attr(v['event'], 'unique_id'), Endpoint.enter)
-        elif v['is_task_leave_node']:
-            v['task_cluster_id'] = (event_attr(v['event'], 'encountering_task_id'), Endpoint.leave)
-    if args.verbose:
-        print("contracting by task ID & endpoint")
-    g.vs['cluster'] = label_clusters(g.vs, lambda v: v['task_cluster_id'] is not None, 'task_cluster_id')
-    nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'],
-                        combine_attrs=attr_handler(events=reject_task_create, tuples=set_tuples, attr=chunk_gen.attr))
-    num_nodes = g.vcount()
-    if args.verbose:
-        print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
-
-    set_trace()
-
-    # Collapse by task ID where there are no links between to combine task nodes with nothing nested within
-    def is_empty_task_region(v):
-        if v['task_cluster_id'] is None:
-            return False
-        if v['is_task_enter_node'] or v['is_task_leave_node']:
-            return ((v['is_task_leave_node'] and v.indegree() == 0) or 
-                    (v['is_task_enter_node'] and v.outdegree() == 0))
-        if type(v['event']) is list and set(map(type, v['event'])) in [{ThreadTaskSwitch}]:
-            return ((all(v['is_task_leave_node']) and v.indegree() == 0) or 
-                    (all(v['is_task_enter_node']) and v.outdegree() == 0))
-    if args.verbose:
-        print("contracting by task ID where there are no nested nodes")
-    g.vs['cluster'] = label_clusters(g.vs, is_empty_task_region, lambda v: v['task_cluster_id'][0])
-    nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(events=suppress_task_create, tuples=set_tuples, attr=chunk_gen.attr))
-    num_nodes = g.vcount()
-    if args.verbose:
-        print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
-
-    # Label (contracted) task nodes for easier identification
-    for v in g.vs:
-        if v['is_task_enter_node'] and v['is_task_leave_node']:
-            v['is_contracted_task_node'] = True
-            if type(v['event']) is list and len(v['event']) == 0:
-                pdb.set_trace()
-            v['task_id'] = event_attr(v['event'], 'unique_id')
-        elif v['is_task_enter_node'] or v['is_task_leave_node']:
-            v['task_id'] = v['task_cluster_id'][0]
-
-    set_trace()
-
-    # Collapse redundant sync-enter/leave node pairs by labelling unique pairs of nodes identified by their shared edge
-    dummy_counter = count()
-    for e in g.es:
-        node_types = set()
-        for v in (e.source_vertex, e.target_vertex):
-            if type(v['event']) is not list:
-                node_types.add(event_attr(v['event'], 'region_type'))
-            else:
-                for event in v['event']:
-                    node_types.add(event_attr(event, 'region_type'))
-        if (node_types in [{RegionType.barrier_implicit}, {RegionType.barrier_explicit}, {RegionType.taskwait}, {RegionType.loop}] and
-                e.source_vertex.attributes().get('sync_cluster_id', None) is None and
-                e.target_vertex.attributes().get('sync_cluster_id', None) is None):
-            value = next(dummy_counter)
-            e.source_vertex['sync_cluster_id'] = e.target_vertex['sync_cluster_id'] = value
-    if args.verbose:
-        print("contracting redundant sync-enter/leave node pairs")
-    g.vs['cluster'] = label_clusters(g.vs, lambda v: v['sync_cluster_id'] is not None, 'sync_cluster_id')
-    nodes_before = num_nodes
-    g.contract_vertices(g.vs['cluster'], combine_attrs=attr_handler(tuples=set_tuples, attr=chunk_gen.attr))
-    num_nodes = g.vcount()
-    if args.verbose:
-        print("{:20s} {:6d} -> {:6d} ({:6d})".format("nodes updated", nodes_before, num_nodes, num_nodes-nodes_before))
-
-    set_trace()
-
-    # Unpack the region_type attribute
-    for v in g.vs:
-        if type(v['event']) is list:
-            v['region_type'], = set([event_attr(e, 'region_type') for e in v['event']])
-            v['endpoint'] = set([event_attr(e, 'endpoint') for e in v['event']])
-        elif type(v['event']) in [Enter, Leave]:
-            v['region_type'] = event_attr(v['event'], 'region_type')
-            v['endpoint'] = event_attr(v['event'], 'endpoint')
-        elif type(v['event']) in [ThreadTaskSwitch] and v['is_task_enter_node']:
-            v['region_type'] = task_tree.vs.find(event_attr(v['event'], 'unique_id'))['task_type']
-            v['endpoint'] = Endpoint.enter
-        elif type(v['event']) in [ThreadTaskSwitch] and v['is_task_leave_node']:
-            v['region_type'] = task_tree.vs.find(event_attr(v['event'], 'encountering_task_id'))['task_type']
-            v['endpoint'] = Endpoint.leave
-        else:
-            v['region_type'] = event_attr(v['event'], 'region_type')
-            v['endpoint'] = event_attr(v['event'], 'endpoint')
-        if type(v['endpoint']) is set and len(v['endpoint']) == 1:
-            v['endpoint'], = v['endpoint']
-
-    set_trace()
-
-    # Apply taskwait synchronisation
-    if args.verbose:
-        print("applying taskwait synchronisation")
-    for twnode in g.vs.select(lambda v: v['region_type'] == RegionType.taskwait):
-        parents = set(task_tree.vs.find(event_attr(e, 'encountering_task_id')) for e in twnode['event'])
-        tw_encounter_ts = {event_attr(e, 'encountering_task_id'): e.time for e in twnode['event'] if type(e) is Enter}
-        tw_complete_ts = {event_attr(e, 'encountering_task_id'): e.time for e in twnode['event'] if type(e) is Leave}
-        children = [c.index for c in chain(*[p.neighbors(mode='out') for p in parents])
-                    if c['crt_ts'] < tw_encounter_ts[c['parent_index']] and c['end_ts'] < tw_complete_ts[c['parent_index']]]
-        nodes = [v for v in g.vs
-            if (v['is_contracted_task_node'] and v['task_id'] in children)
-            or (not v['is_contracted_task_node'] 
-                and v['region_type'] == RegionType.explicit_task
-                and event_attr(v['event'], 'encountering_task_id') in children
-                and event_attr(v['event'], 'prior_task_status') not in [TaskStatus.switch])
-        ]
-        nodes = [v for v in nodes if not v['synchronised_by_taskwait']]
-        ecount = g.ecount()
-        g.add_edges([(v.index, twnode.index) for v in nodes])
-        g.es[ecount:]['type'] = EdgeType.taskwait
-        for v in nodes:
-            v['synchronised_by_taskwait'] = True
-
-    set_trace()
-
-    def event_time_per_task(event):
-        """Return the map: encountering task id -> event time for all encountering tasks in the event"""
-        if type(event) is list:
-            return {event_attr(e, 'encountering_task_id'): e.time for e in event}
-        return {event_attr(event, 'encountering_task_id'): event.time}
-
-    # Apply taskgroup synchronisation
-    if args.verbose:
-        print("applying taskgroup synchronisation")
-    for tgnode in g.vs.select(lambda v: v['region_type'] == RegionType.taskgroup and v['endpoint'] == Endpoint.leave):
-        tg_enter_ts = event_time_per_task(tgnode['taskgroup_enter_event'])
-        tg_leave_ts = event_time_per_task(tgnode['event'])
-        parents = [task_tree.vs.find(k) for k in tg_enter_ts]
-        children = [c for c in chain(*[p.neighbors(mode='out') for p in parents])
-                    if tg_enter_ts[c['parent_index']] < c['crt_ts'] < tg_leave_ts[c['parent_index']]]
-        descendants = list(chain(*[descendants_if(c, cond=lambda x: x['task_type'] != RegionType.implicit_task) for c in children]))
-        nodes = [v for v in g.vs
-            if (v['is_contracted_task_node'] and v['task_id'] in descendants)
-            or (not v['is_contracted_task_node'] 
-                and v['region_type'] == RegionType.explicit_task
-                and event_attr(v['event'], 'encountering_task_id') in descendants
-                and event_attr(v['event'], 'prior_task_status') not in [TaskStatus.switch])
-        ]
-        ecount = g.ecount()
-        g.add_edges([(v.index, tgnode.index) for v in nodes])
-        g.es[ecount:]['type'] = EdgeType.taskgroup
-
-    set_trace()
-
-    # Apply styling if desired
-    if not args.nostyle:
-        apply_styling(g)
-
-    # Determine labels for task and parallel nodes
-    for v in g.vs:
-        if v['region_type'] == RegionType.explicit_task:
-            if v['is_task_enter_node'] or v['is_task_leave_node']:
-                v['label'] = str(v['task_id'])
-            # if v['is_contracted_task_node']:
-            #     v['label'] = str(v['task_id'])
-            # elif v['is_task_enter_node']:
-            #     v['label'] = str(event_attr(v['event'], 'unique_id'))
-            # elif v['is_task_leave_node']:
-            #     v['label'] = str(event_attr(v['event'], 'encountering_task_id'))
-            else:
-                v['label'] = " "
-        elif v['region_type'] == RegionType.parallel:
-            v['label'] = str(event_attr(v['event'], 'unique_id'))
-        else:
-            v['label'] = " "
-
-    g.simplify(combine_edges='first')
-
-    # Clean up redundant attributes
-    for item in ['task_cluster_id', 'parallel_sequence_id', 'cluster', 'sync_cluster_id']:
-        if item in g.vs.attribute_names():
-            if args.verbose:
-                print(f"deleting vertex attribute '{item}'")
-            del g.vs[item]
-
-    if args.output:
-        print(f"writing graph to '{args.output}'")
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            try:
-                g.write(args.output)
-            except OSError as oserr:
-                print(f"igraph error: {oserr}")
-                print(f"failed to write to file '{args.output}'")
-
-    if args.report:
-        write_report(args, g, task_tree)
-
-    if args.interact:
-        import atexit
-        import code
-        import os
-        import readline
-        readline.parse_and_bind("tab: complete")
-
-        hfile = os.path.join(os.path.expanduser("~"), ".otter_history")
-
-        try:
-            readline.read_history_file(hfile)
-            numlines = readline.get_current_history_length()
-        except FileNotFoundError:
-            open(hfile, 'wb').close()
-            numlines = 0
-
-        def append_history(n, f):
-            newlines = readline.get_current_history_length()
-            readline.set_history_length(1000)
-            readline.append_history_file(newlines - n, f)
-
-        atexit.register(append_history, numlines, hfile)
-
-        k = ""
-        for k, v in locals().items():
-            if g is v:
-                break
-
-        banner = f"""
-Graph '{k}' has {g.vcount()} nodes and {g.ecount()} edges
-
-Entering interactive mode, use:
-    ig.plot({k}, [target="..."], ...)   to view or plot to file
-    {k}.write_*()                       to save a representation of the graph e.g. {k}.write_dot("graph.dot")     
 """
-        Console = code.InteractiveConsole(locals=locals())
-        Console.interact(banner=banner, exitmsg=f"history saved to {hfile}")
+Contract vertices according to _parallel_sequence_id to combine the chunks generated by the threads of a parallel block.
+When combining the 'event' vertex attribute, keep single-executor events over single-other events. All other events
+should be combined in a list. 
+"""
+log.info(f"combining vertices by parallel sequence ID")
+handlers['event'] = VertexAttributeCombiner(otter.utils.handlers.return_unique_single_executor_event)
+labeller = VertexLabeller(otter.utils.key_is_not_none('_parallel_sequence_id'), group_key='_parallel_sequence_id')
+g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+vcount_prev, vcount = vcount, g.vcount()
+log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
+
+"""
+Contract those vertices which refer to the same single-executor event. This connects single-executor chunks to the
+chunks containing them, as both chunks contain references to the single-exec-begin/end events.
+"""
+log.info(f"combining vertices by single-begin/end event")
+labeller = VertexLabeller(otter.utils.is_region_type(RegionType.single_executor), group_key='event')
+g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+vcount_prev, vcount = vcount, g.vcount()
+log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
+
+"""
+master-leave vertices (which refer to their master-leave event) refer to their corresponding master-enter event.
+"""
+log.info(f"combining vertices by master-begin/end event")
+handlers['event'] = VertexAttributeCombiner(otter.utils.handlers.return_unique_master_event)
+labeller = VertexLabeller(otter.utils.is_region_type(RegionType.master), group_key='event')
+g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+vcount_prev, vcount = vcount, g.vcount()
+log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
 
-if __name__ == "__main__":
-    main()
+"""
+Intermediate clean-up: for each master region, remove edges that connect
+the same nodes as the master region
+"""
+master_enter_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.events.MasterBegin), g.vs)
+master_leave_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.events.MasterEnd), g.vs)
+master_enter_vertex_map = {enter_vertex['event']: enter_vertex for enter_vertex in master_enter_vertices}
+master_vertex_pairs = ((master_enter_vertex_map[leave_vertex['_master_enter_event']], leave_vertex) for leave_vertex in master_leave_vertices)
+neighbour_pairs = {(enter.predecessors()[0], leave.successors()[0]) for enter, leave in master_vertex_pairs}
+redundant_edges = list(filter(lambda edge: (edge.source_vertex, edge.target_vertex) in neighbour_pairs, g.es))
+log.info(f"deleting redundant edges due to master regions: {len(redundant_edges)}")
+g.delete_edges(redundant_edges)
+
+"""
+Contract by _task_cluster_id, rejecting task-create vertices to replace task-create vertices with the corresponding
+task's chunk.
+"""
+log.info("combining vertices by task ID & endpoint")
+handlers['event'] = VertexAttributeCombiner(otter.utils.handlers.reject_task_create)
+labeller = VertexLabeller(otter.utils.key_is_not_none('_task_cluster_id'), group_key='_task_cluster_id')
+g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+vcount_prev, vcount = vcount, g.vcount()
+log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
+
+"""
+Contract vertices with the same task ID where the task chunk contains no internal vertices to get 1 vertex per empty
+task region.
+"""
+log.info("combining vertices by task ID where there are no nested nodes")
+handlers['_task_cluster_id'] = VertexAttributeCombiner(otter.utils.handlers.pass_the_set_of_values, accept=tuple, msg="combining attribute: _task_cluster_id")
+labeller = VertexLabeller(otter.utils.is_empty_task_region, group_key=lambda v: v['_task_cluster_id'][0])
+g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+vcount_prev, vcount = vcount, g.vcount()
+log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
+#         v['task_id'] = v['task_cluster_id'][0]
+
+# Define _sync_cluster_id to identify pairs of connected nodes to contract
+# the dummy value is used as a label to contract vertices
+dummy_counter = count()
+g.vs['_sync_cluster_id'] = None
+for edge in g.es:
+    if otter.utils.edge_connects_same_type(edge, [RegionType.barrier_implicit, RegionType.barrier_explicit, RegionType.taskwait, RegionType.loop]):
+        edge.source_vertex['_sync_cluster_id'] = edge.target_vertex['_sync_cluster_id'] = next(dummy_counter)
+
+"""
+Contract pairs of directly connected vertices which represent empty barriers, taskwait & loop regions.  
+"""
+log.info("combining redundant sync and loop enter/leave node pairs")
+handlers['event'] = VertexAttributeCombiner(otter.utils.handlers.pass_args)
+labeller= VertexLabeller(otter.utils.key_is_not_none('_sync_cluster_id'), group_key='_sync_cluster_id')
+g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+vcount_prev, vcount = vcount, g.vcount()
+log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
+
+# Unpack the region_type attribute
+
+
+"""
+        Apply taskwait synchronisation
+        ==============================
+
+1. Give each explicit task a reference to the last vertex which represents its chunk. This is the vertex which will be
+connected to the corresponding taskwait vertex, if applicable. The correct vertex will contain exactly 1 TaskSwitch(complete)
+event for the corresponding task.
+"""
+log.debug(f"filtering for task-complete vertices")
+task_complete_vertices = dict()
+for vertex in filter(otter.utils.is_terminal_task_vertex, g.vs):
+    event = vertex['event']
+    if isinstance(event, list):
+        event = otter.utils.handlers.return_unique_taskswitch_complete_event(event)
+    assert otter.events.is_event(event)
+    log.debug(f" - task {event.prior_task_id}: {event}")
+    task_complete_vertices[event.prior_task_id] = vertex
+
+log.info("applying taskwait synchronisation")
+
+"""
+2. For each task that encountered a taskwait barrier, make a list of the taskwait-begin/end event pairs & the vertex
+which refers to these events
+"""
+log.debug(f"gathering taskwait vertices by encountering task ID")
+taskwait_vertices = defaultdict(list)
+for vertex in filter(otter.utils.is_region_type(RegionType.taskwait), g.vs):
+    log.debug(f"got taskwait vertex {vertex} with events:")
+    for event in vertex['event']: # now guaranteed to have exactly 2 event instances per vertex (tw-begin+end)
+        log.debug(f" - {event}")
+        taskwait_vertices[event.encountering_task_id].append(dict(event=event, vertex=vertex))
+
+"""
+3. For each task that encountered a taskwait barrier, connect child tasks to the correct taskwait barrier (if any).
+"""
+for task_id, event_vertex_dicts in taskwait_vertices.items():
+
+    log.debug(f"applying taskwait synchronisation for children of task {task_id}: {list(tasks[task_id].children)}")
+
+    """
+    Keep the event-vertex pairs for which the event is the taskwait-enter event
+    """
+    event_vertex_dicts = sorted(filter(lambda d: d['event'].endpoint == Endpoint.enter, event_vertex_dicts), key=lambda d: d['event'].time)
+    log.debug(f"task {task_id} encountered {(len(event_vertex_dicts))} taskwait barriers:")
+    for record in event_vertex_dicts:
+        log.debug(f" - task {task_id} encountered {record['event']} {record['vertex']}")
+
+    """Iterate over the taskwait-enter events for this taskID, in chronological order"""
+    event_vertex_pairs_iter = iter(event_vertex_dicts)
+
+    """Iterate over the children of this task in the order they were created"""
+    children_iter = iter(sorted(tasks[task_id].children, key=lambda id: tasks[id].crt_ts))
+
+    """Get the first pair of taskwait-enter events"""
+    previous_event, previous_vertex = None, None
+    next_record = next(event_vertex_pairs_iter, None)
+    next_event = next_record['event'] if next_record else None
+    next_vertex = next_record['vertex'] if next_record else None
+
+
+    while True:
+
+        """Get the next child task if any are left to be synchronised"""
+        try:
+            child = next(children_iter)
+        except StopIteration:
+            """ran out of child tasks"""
+            break
+
+        """Assert: expect that we haven't already missed the taskwait barrier for this child task"""
+        if previous_event and tasks[child].crt_ts < previous_event.time:
+            print(tasks[child])
+            print(previous_event)
+            raise ValueError("child created before previous")
+
+        """This child is synchronised by either "next_event" or a subsequent taskwait barrier"""
+        while next_event and next_event.time <= tasks[child].crt_ts:
+            previous_event, previous_vertex = next_event, next_vertex
+            next_record = next(event_vertex_pairs_iter, None)
+            next_event = next_record['event'] if next_record else None
+            next_vertex = next_record['vertex'] if next_record else None
+
+        task_complete_vertex = task_complete_vertices[child]
+        assert next_event.time > tasks[child].crt_ts and (previous_event is None or previous_event.time < tasks[child].crt_ts)
+        edge = g.add_edge(task_complete_vertex, next_vertex)
+        edge['edge_type'] = EdgeType.taskwait
+        log.debug(f"synchronised task {child}:")
+        log.debug(f"  from: {task_complete_vertex}")
+        log.debug(f"    to: {next_vertex}")
+
+        if previous_event is None and next_event is None:
+            """ran out of taskwait barriers - no further taskwait synchronisation to apply to children of this task"""
+            break
+
+del taskwait_vertices
+
+"""
+        Apply taskgroup synchronisation
+        ===============================
+
+For each task that encountered a taskgroup region, gather a list of the taskgroup begin/end events and the vertex which
+represents the taskgroup-end event.
+"""
+
+log.info("applying taskgroup synchronisation")
+
+log.debug(f"gathering taskgroup regions by encountering task ID")
+taskgroup_vertices = defaultdict(list)
+for vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
+    end_event = vertex['event']
+    if isinstance(end_event, list):
+        end_event = otter.utils.handlers.return_unique_taskgroup_complete_event(end_event)
+    assert otter.events.is_event(end_event)
+    begin_event = vertex['_taskgroup_enter_event']
+    assert begin_event is not None and otter.events.is_event(begin_event)
+    taskgroup_vertices[end_event.encountering_task_id].append((begin_event, end_event, vertex))
+    log.debug(f" - task {end_event.encountering_task_id}: {(begin_event, end_event, vertex)}")
+
+
+"""
+For each task that encountered any taskgroup regions:
+"""
+was_created_during = lambda crt_ts: (lambda items: items[0].time < crt_ts < items[1].time)
+for task_id, taskgroup_vertex_pairs in taskgroup_vertices.items():
+    descendants = tasks.descendants_while(task_id, lambda t : t.task_type != TaskType.implicit)
+    log.debug(f"applying taskgroup synchronisation for descendants of task {task_id} {descendants}")
+    log.debug(f"task {task_id} encountered {(len(taskgroup_vertex_pairs))} taskgroup regions")
+
+    """
+    For each descendant task (stopping at descendants which are implicit tasks...
+    """
+    for desc_id in descendants:
+        desc_task = tasks[desc_id]
+        match = list(filter(was_created_during(desc_task.crt_ts), taskgroup_vertex_pairs))
+        if len(match) == 0:
+            log.debug(f" - task {desc_id} {desc_task.crt_ts=} not synchronised by taskgroup region")
+        else:
+            assert len(match) == 1
+            *_, tg_end_vertex = match[0]
+            edge = g.add_edge(task_complete_vertices[desc_id], tg_end_vertex)
+            edge['edge_type'] = EdgeType.taskgroup
+            log.debug(f" - task {desc_id} synchronised by taskgroup-end event at {tg_end_vertex['event'].time}")
+
+
+g.simplify(combine_edges='first')
+
+if args.output:
+    log.info(f"writing graph to {args.output}")
+    import warnings
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        try:
+            g.write(args.output)
+        except OSError as oserr:
+            print(f"igraph error: {oserr}")
+            print(f"failed to write to file '{args.output}'")
+
+# Dump graph details to file
+if args.loglevel == "DEBUG":
+    log.info(f"writing graph to graph.log")
+    with open("graph.log", "w") as f:
+        f.write("### VERTEX ATTRIBUTES:\n")
+        for name in g.vs.attribute_names():
+            levels = set(otter.utils.flatten(g.vs[name]))
+            n_levels = len(levels)
+            if n_levels <= 6:
+                f.write(f"  {name:>35} {n_levels:>6} levels {list(levels)}\n")
+            else:
+                f.write(f"  {name:>35} {n_levels:>6} levels (...)\n")
+
+        # Counter = otter.utils.counters.PrettyCounter(value for value in g.vs['region_type'])
+
+        f.write("\nCount of vertex['event'] types:\n")
+        f.write(str(Counter))
+        f.write("\n\n")
+
+        f.write("### EDGE ATTRIBUTES:\n")
+        for name in g.es.attribute_names():
+            levels = set(otter.utils.flatten(g.es[name]))
+            n_levels = len(levels)
+            if n_levels <= 6:
+                f.write(f"  {name:>35} {n_levels:>6} levels ({list(levels)})\n")
+            else:
+                f.write(f"  {name:>35} {n_levels:>6} levels (...)\n")
+
+        f.write("\n")
+
+        f.write("### VERTICES:\n")
+        for v in g.vs:
+            f.write(f"{v}\n")
+
+        f.write("\n")
+        f.write("### EDGES:\n")
+        for e in g.es:
+            f.write(f"{e.tuple}\n")
+
+# Clean up temporary vertex attributes
+for name in g.vs.attribute_names():
+    if name.startswith("_"):
+        del g.vs[name]
+
+# Unpack vertex event attributes
+for vertex in g.vs:
+    attributes = otter.unpack(vertex['event'])
+    if isinstance(attributes, dict):
+        for key, value in attributes.items():
+            if isinstance(value, int):
+                value = str(value)
+            elif value == "":
+                value = None
+            vertex[key] = value
+
+del g.vs['event']
+
+if args.report:
+    otter.write_report(args, g, tasks)
+
+if args.interact:
+    otter.interact(locals(), g)
+
+log.info("Done!")
