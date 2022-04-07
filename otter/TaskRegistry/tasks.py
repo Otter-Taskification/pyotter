@@ -18,6 +18,8 @@ class Task:
         data = e.get_task_data()
         self.id = data[Attr.unique_id]
         self.parent_id = data[Attr.parent_task_id]
+        if self.parent_id == 18446744073709551615:
+            self.parent_id = None
         self.task_type = data[Attr.task_type]
         self.crt_ts = data[Attr.time]
         self._children = deque()
@@ -42,3 +44,10 @@ class Task:
     @property
     def children(self):
         return (child for child in self._children)
+
+    def keys(self):
+        exclude = ["logger"]
+        return (key for key in vars(self) if not key in exclude and not key.startswith("_"))
+
+    def as_dict(self):
+        return {key: getattr(self, key) for key in self.keys()}

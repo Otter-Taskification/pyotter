@@ -12,6 +12,11 @@ is_event = lambda item : isinstance(item, _Event)
 all_events = lambda args : all(map(is_event, args))
 any_events = lambda args : any(map(is_event, args))
 
+def is_event_list(arg):
+    if not isinstance(arg, list):
+        return False
+    return all_events(arg)
+
 
 class _Event(ABC):
 
@@ -22,6 +27,7 @@ class _Event(ABC):
     is_task_switch_event = False
     is_task_switch_complete_event = False
     is_chunk_switch_event = False
+    is_task_group_end_event = False
 
     @on_init(logger=get_logger("init_logger"))
     def __init__(self, event: OTF2Event, location: OTF2Location, attr: AttrDict):
@@ -62,6 +68,13 @@ class _Event(ABC):
 
     def as_row(self, fmt="{type:<22} {time} {region_type:<16} {endpoint}"):
         return fmt.format(type=self.__class__.__name__, time=self.time, region_type=getattr(self, "region_type", None), endpoint=self.endpoint)
+
+    def yield_attributes(self):
+        yield "time", str(self.time)
+        for name , attr in self.attr.items():
+            if attr in self._event.attributes:
+                value = self._event.attributes[attr]
+                yield name, value
 
 # mixin
 class ClassNotImplementedMixin(ABC):
@@ -176,6 +189,14 @@ class SyncBegin(EnterMixin, Sync):
 
 class SyncEnd(LeaveMixin, Sync):
     pass
+
+
+class TaskgroupBegin(SyncBegin):
+    pass
+
+
+class TaskgroupEnd(SyncEnd):
+    is_task_group_end_event = True
 
 
 class WorkshareBegin(EnterMixin, DefaultUpdateChunksMixin, _Event):

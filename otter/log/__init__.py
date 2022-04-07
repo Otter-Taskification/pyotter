@@ -92,11 +92,17 @@ def get_logger(name: str):
         logger = getattr(Logging, f"_{name}")
         if isinstance(logger, logging.getLoggerClass()):
             result = logger
+        elif logger is None:
+            result = logging.getLogger()
         else:
             raise TypeError(f"unknown type: {type(logger)=}")
     else:
-        result = logging.getLogger(f"{Logging._root.name}.{name}")
-    log.debug(f"got logger for {name=}:", stacklevel=2)
-    for line in logger_lines(result):
-        log.debug(line, stacklevel=2)
+        try:
+            result = logging.getLogger(f"{Logging._root.name}.{name}")
+        except AttributeError:
+            result = logging.getLogger()
+    if log is not None:
+        log.debug(f"got logger for {name=}:", stacklevel=2)
+        for line in logger_lines(result):
+            log.debug(line, stacklevel=2)
     return result

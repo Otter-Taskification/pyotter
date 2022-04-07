@@ -50,3 +50,10 @@ shapemap_region_type = defaultdict(lambda: 'circle', **{
     # Master
     'master': 'circle'
 })
+
+task_attribute_names = {
+    "id": "Unique ID",
+    "parent_id": "Parent ID",
+    "task_type": "Task Type",
+    "crt_ts": "Creation Time"
+}

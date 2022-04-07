@@ -36,7 +36,9 @@ region_event_class_lookup = {
     (RegionType.single_executor, EventType.workshare_begin):  events.SingleBegin,
     (RegionType.single_executor, EventType.workshare_end):    events.SingleEnd,
     (RegionType.master,          EventType.master_begin):     events.MasterBegin,
-    (RegionType.master,          EventType.master_end):       events.MasterEnd
+    (RegionType.master,          EventType.master_end):       events.MasterEnd,
+    (RegionType.taskgroup,       EventType.sync_begin):       events.TaskgroupBegin,
+    (RegionType.taskgroup,       EventType.sync_end):         events.TaskgroupEnd
 }
 
 class Location:

@@ -173,6 +173,14 @@ def return_unique_taskswitch_complete_event(args):
     assert len(event_set) == 1
     return event_set.pop()
 
+def return_unique_taskgroup_complete_event(args):
+    assert isinstance(args, list)
+    assert all(events.is_event(item) for item in args)
+    assert all(event.is_task_switch_event for event in args)
+    event_set = set(event for event in args if event.is_task_group_end_event)
+    assert len(event_set) == 1
+    return event_set.pop()
+
 def reject_task_create(args):
     events_filtered = [event for event in args if not event.is_task_create_event]
     if len(events_filtered) == 1:

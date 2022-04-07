@@ -66,6 +66,13 @@ handlers:
     filename: otter.graphs.log
     mode: w
 
+  debugTaskAttrFile:
+    level: DEBUG
+    class: logging.FileHandler
+    formatter: simple
+    filename: otter.tasks.log
+    mode: w
+
 
 loggers:
 
@@ -86,6 +93,10 @@ loggers:
 
   otter.graphs_debug:
     handlers: [debugGraphsFile]
+    propagate: False
+
+  otter.tasks_debug:
+    handlers: [debugTaskAttrFile]
     propagate: False
 
   on_init:

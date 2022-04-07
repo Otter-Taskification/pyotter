@@ -51,3 +51,12 @@ def is_terminal_task_vertex(vertex) -> bool:
     else:
         assert(events.is_event(event))
         return event.is_task_switch_complete_event
+
+def is_task_group_end_vertex(vertex) -> bool:
+    event = vertex['event']
+    if isinstance(event, list):
+        assert(all(events.is_event(item) for item in event))
+        return any(e.is_task_group_end_event for e in event)
+    else:
+        assert(events.is_event(event))
+        return event.is_task_group_end_event
