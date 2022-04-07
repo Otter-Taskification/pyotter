@@ -1,10 +1,10 @@
 from .log import get_logger
-from . import styling
 module_logger = get_logger("report")
 
 def write_report(args, g, tasks):
     import os
     import csv
+    from . import styling
 
     task_tree = tasks.task_tree()
     task_attributes = tasks.attributes
@@ -86,6 +86,7 @@ def prepare_html(tasks):
     from string import Template
     from . import templates
     from . import reporting
+    from . import styling
 
     try:
         import importlib.resources as resources

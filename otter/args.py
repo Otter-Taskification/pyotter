@@ -1,7 +1,5 @@
-import argparse
-import os
-
 def get_args():
+    import argparse
 
     parser = argparse.ArgumentParser(
         prog="python3 -m otter",
@@ -38,6 +36,7 @@ def get_args():
     return args
 
 def check_args(args):
+    import os
 
     # Ensure report path is normalised
     if args.report is not None:
