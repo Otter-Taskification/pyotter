@@ -1,9 +1,5 @@
 from collections import defaultdict
 
-"""
-Styling dictionaries for __main__.py
-"""
-
 # Map region type to node color
 colormap_region_type = defaultdict(lambda: 'grey', **{
     'initial_task': 'green',
@@ -57,3 +53,10 @@ task_attribute_names = {
     "task_type": "Task Type",
     "crt_ts": "Creation Time"
 }
+
+colormap_task_type = defaultdict(lambda: 'black', **{
+    'initial_task': 'cyan',
+    'implicit_task': 'gray',
+    'explicit_task': 'red',
+    'target_task': 'orange'
+})
