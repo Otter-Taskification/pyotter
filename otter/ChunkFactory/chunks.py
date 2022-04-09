@@ -64,8 +64,9 @@ class Chunk:
     @staticmethod
     def events_bridge_region(previous: events._Event, current: events._Event, types: List[RegionType]) -> bool:
         # Used to check for certain enter-leave event sequences
-        return previous.region_type in types and previous.is_enter_event == Endpoint.enter \
-               and current.region_type in region_types and current.is_leave_event == Endpoint.leave
+        assert events.is_event(previous) and events.is_event(current)
+        return previous.region_type in types and previous.is_enter_event \
+               and current.region_type in types and current.is_leave_event
 
     @classmethod
     def events_bridge_single_master_region(cls, previous: events._Event, current: events._Event) -> bool:
@@ -77,6 +78,8 @@ class Chunk:
 
     @cached_property
     def graph(self):
+
+        self.log.debug(f"transforming chunk to graph {self.first=}")
 
         g = ig.Graph(directed=True)
         v_prior = g.add_vertex(event=self.first)
@@ -141,7 +144,10 @@ class Chunk:
             events_bridge_parallel = self.events_bridge_parallel_region(v_prior['event'], event)
             events_have_same_id = event.unique_id == v_prior['event'].unique_id if events_bridge_parallel else False
             if not (events_bridge_single_master or (events_bridge_parallel and events_have_same_id)):
+                self.log.debug(f"add edge from: {v_prior['event']} to: {event}")
                 g.add_edge(v_prior, v)
+            else:
+                self.log.debug(f"edge skipped from: {v_prior['event']} to: {event}")
 
             # For task-create add dummy nodes for easier merging
             if event.is_task_create_event:
@@ -162,8 +168,7 @@ class Chunk:
         # If no internal vertices (len(self) <= 2), require at least 1 edge (except for empty explicit task chunks)
         # Require at least 1 edge between start & end vertices in single-executor chunk if disconnected
         if self.type != RegionType.explicit_task and len(self) <= 2 and g.ecount() == 0:
+            self.log.debug(f"no internal vertices - add edge from: {g.vs[0]['event']} to: {g.vs[1]['event']}")
             g.add_edge(g.vs[0], g.vs[1])
-        elif self.type == RegionType.single_executor and not g.are_connected(v_root.index, v_prior.index):
-            g.add_edge(g.vs[0], g.vs[-1])
 
         return g
