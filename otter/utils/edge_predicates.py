@@ -1,11 +1,10 @@
 from ..definitions import RegionType, EventType
 from ..EventFactory import events
 from .. import log
-from ..log import get_logger
 from ..log.levels import DEBUG, INFO, WARN, ERROR
 from typing import List, Callable
 
-module_logger = get_logger("edges")
+get_module_logger = log.logger_getter("edges")
 
 def edge_connects_same_type(edge, match_list: List[RegionType]) -> bool:
     event_pair = (vertex['event'] for vertex in (edge.source_vertex, edge.target_vertex))

@@ -5,19 +5,18 @@ from collections import deque
 from typing import List
 from itertools import islice
 from .. import log
-from ..log import get_logger
 from ..log.levels import DEBUG, INFO, WARN, ERROR
 from ..definitions import RegionType, Endpoint
 from ..EventFactory import events
 from loggingdecorators import on_init
 
-module_logger = get_logger("chunks")
+get_module_logger = log.logger_getter("chunks")
 
 class Chunk:
 
-    @on_init(logger=get_logger("init_logger"), level=DEBUG)
+    @on_init(logger=log.logger_getter("init_logger"), level=DEBUG)
     def __init__(self):
-        self.log = module_logger
+        self.log = get_module_logger()
         self._events = deque()
         self._type = None
 

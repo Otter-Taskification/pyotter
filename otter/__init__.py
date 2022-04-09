@@ -5,7 +5,7 @@ from .TaskRegistry import TaskRegistry, tasks
 from .definitions import TaskStatus
 from .ChunkFactory import ChunkFactory, chunks
 from .report import write_report
-
+from .styling import style_tasks, style_graph
 
 def _check_dot():
     # Check that the "dot" commandline utility is available

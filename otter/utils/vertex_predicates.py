@@ -1,9 +1,9 @@
 from ..definitions import RegionType, EventType
 from ..EventFactory import events
-from ..log import get_logger
+from .. import log
 from typing import Callable
 
-module_logger = get_logger("vertex.pred")
+get_module_logger = log.logger_getter("vertex.pred")
 
 def key_is_not_none(key) -> Callable:
     return lambda vertex: vertex[key] is not None
@@ -26,9 +26,10 @@ def is_region_type(region_type: RegionType) -> Callable:
         elif isinstance(event_attribute, list) and events.all_events(event_attribute):
             return all(_is_event_region_type(e, region_type) for e in event_attribute)
         else:
-            module_logger.debug(f"expected {events._Event} or List[{events._Event}], got {type(event_attribute)} ({event_attribute})", stack_info=True)
+            logger = get_module_logger()
+            logger.debug(f"expected {events._Event} or List[{events._Event}], got {type(event_attribute)} ({event_attribute})", stack_info=True)
             for item in event_attribute:
-                module_logger.debug(f"is an event: {isinstance(item, events._Event)} {item=}")
+                logger.debug(f"is an event: {isinstance(item, events._Event)} {item=}")
             raise RuntimeError(f"expected {events._Event}, got {type(event_attribute)} ({event_attribute})")
     return check_region_type
 

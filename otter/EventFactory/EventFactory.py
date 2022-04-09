@@ -1,6 +1,5 @@
 from collections import deque
 from .. import log
-from ..log import get_logger
 from ..log.levels import DEBUG, INFO, WARN, ERROR
 from .events import _Event
 from . import events
@@ -8,7 +7,7 @@ from ..types import OTF2Reader, OTF2Event, AttrDict
 from ..definitions import EventType, RegionType, Attr
 from loggingdecorators import on_init
 
-module_logger = get_logger("events")
+get_module_logger = log.logger_getter("events")
 
 event_class_lookup = {
     EventType.thread_begin:    events.ThreadBegin,
@@ -43,9 +42,9 @@ region_event_class_lookup = {
 
 class Location:
 
-    @on_init(logger=get_logger("init_logger"), level=DEBUG)
+    @on_init(logger=log.logger_getter("init_logger"), level=DEBUG)
     def __init__(self, location):
-        self.log = get_logger(self.__class__.__name__)
+        self.log = log.get_logger(self.__class__.__name__)
         self._loc = location
         self.parallel_region_deque = deque()
 
@@ -71,11 +70,11 @@ class Location:
 
 class EventFactory:
 
-    @on_init(logger=get_logger("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, r: OTF2Reader, default_cls: type=None, log_event_construction=DEBUG):
         if default_cls is not None and not issubclass(default_cls, _Event):
             raise TypeError(f"arg {default_cls=} is not subclass of events._Event")
-        self.log = module_logger
+        self.log = get_module_logger()
         self.default_cls = default_cls
         self.attr = {attr.name: attr for attr in r.definitions.attributes}
         self.location_registry = dict() #{location: Location(location) for location in r.definitions.locations}

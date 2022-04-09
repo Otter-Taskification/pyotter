@@ -1,5 +1,5 @@
-from .log import get_logger
-module_logger = get_logger("report")
+from . import log
+get_module_logger = log.logger_getter("report")
 
 def write_report(args, g, tasks):
     import os
@@ -38,7 +38,7 @@ def write_report(args, g, tasks):
     # Write HTML report
     html = prepare_html(tasks)
     html_file = os.path.join(report, "report.html")
-    module_logger.info(f"writing report: {html_file}")
+    get_module_logger().info(f"writing report: {html_file}")
     with open(html_file, "w") as f:
         f.write(html)
 
@@ -60,26 +60,26 @@ def save_graph_to_dot(graph, dotfile):
     with warnings.catch_warnings(record=True):
         warnings.simplefilter("always")
 
-        module_logger.info(f"writing dotfile: {dotfile}")
+        get_module_logger().info(f"writing dotfile: {dotfile}")
         try:
             graph.write(dotfile)
         except OSError as E:
-            module_logger.error(f"error while writing dotfile: {E}")
+            get_module_logger().error(f"error while writing dotfile: {E}")
 
 
 def convert_to_svg(dot, svg):
     from subprocess import run, CalledProcessError, PIPE
 
     command = f"dot -Tsvg -o {svg} -Gpad=1 -Nfontsize=10 {dot}"
-    module_logger.info(f"converting {dot} to svg")
-    module_logger.info(command)
+    get_module_logger().info(f"converting {dot} to svg")
+    get_module_logger().info(command)
 
     try:
         run(command, shell=True, check=True, stderr=PIPE, stdout=PIPE)
     except CalledProcessError as Error:
-        module_logger.error(f"{Error}")
+        get_module_logger().error(f"{Error}")
         for line in filter(None, Error.stderr.decode('utf-8').split("\n")):
-            module_logger.error(f"{line}")
+            get_module_logger().error(f"{line}")
 
 
 def prepare_html(tasks):

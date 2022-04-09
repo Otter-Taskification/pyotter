@@ -2,7 +2,6 @@ from typing import Union
 from functools import lru_cache
 from collections import namedtuple
 from .. import log
-from ..log import get_logger
 from ..log.levels import DEBUG, INFO, WARN, ERROR
 from ..EventFactory import events
 from .tasks import Task
@@ -11,7 +10,7 @@ from loggingdecorators import on_init
 from warnings import warn
 import igraph as ig
 
-module_logger = get_logger("tasks")
+get_module_logger = log.logger_getter("tasks")
 
 TaskAttributes = namedtuple("TaskAttributes", "names values")
 
@@ -21,9 +20,9 @@ class TaskRegistry:
     Maps task ID to task instance, raising KeyError if an unregistered task is requested
     """
 
-    @on_init(logger=get_logger("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self):
-        self.log = module_logger
+        self.log = get_module_logger()
         self._dict = dict()
         self._task_attributes = list()
         self._task_attribute_set = set()
@@ -73,6 +72,7 @@ class TaskRegistry:
                 yield child_id
                 yield from self.descendants_while(child_id, cond)
 
+    @lru_cache(maxsize=None)
     def task_tree(self):
         task_tree = ig.Graph(n=len(self), directed=True)
         task_tree.vs['name'] = list(task.id for task in self)
@@ -84,7 +84,7 @@ class TaskRegistry:
 
     @property
     def attributes(self):
-        return self._task_attributes.copy()
+        return self._task_attributes
 
     @property
     def data(self):

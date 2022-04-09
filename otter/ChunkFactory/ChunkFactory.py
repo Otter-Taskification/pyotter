@@ -1,20 +1,19 @@
 from collections import defaultdict, deque
 from functools import cached_property
 from .. import log
-from ..log import get_logger
 from ..log.levels import DEBUG, INFO, WARN, ERROR
 from . import chunks
 from .. import EventFactory, TaskRegistry
 from loggingdecorators import on_init
 
-module_logger = get_logger("chunks")
+get_module_logger = log.logger_getter("chunks")
 
 class ChunkFactory:
     """Aggregates a sequence of events into a sequence of Chunks."""
 
-    @on_init(logger=get_logger("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, events: EventFactory, tasks: TaskRegistry):
-        self.log = module_logger
+        self.log = get_module_logger()
         self.events = events
         self.tasks = tasks
         # Track all chunks currently under construction according to key

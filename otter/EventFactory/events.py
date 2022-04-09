@@ -1,12 +1,11 @@
 from abc import ABC, abstractmethod
 from .. import log
-from ..log import get_logger
 from ..log.levels import DEBUG, INFO, WARN, ERROR
 from ..definitions import Attr, RegionType, TaskStatus
 from ..types import OTF2Event, OTF2Location, AttrDict
 from loggingdecorators import on_init
 
-module_logger = get_logger("events")
+get_module_logger = log.logger_getter("events")
 
 is_event = lambda item : isinstance(item, _Event)
 all_events = lambda args : all(map(is_event, args))
@@ -29,9 +28,9 @@ class _Event(ABC):
     is_chunk_switch_event = False
     is_task_group_end_event = False
 
-    @on_init(logger=get_logger("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, event: OTF2Event, location: OTF2Location, attr: AttrDict):
-        self.log = module_logger
+        self.log = get_module_logger()
         self._event = event
         self._location = location
         self.attr = attr
@@ -79,7 +78,7 @@ class _Event(ABC):
 # mixin
 class ClassNotImplementedMixin(ABC):
 
-    @on_init(logger=get_logger("init_logger"), level=ERROR)
+    @on_init(logger=log.logger_getter("init_logger"), level=ERROR)
     def __init__(self, *args, **kwargs):
         raise NotImplementedError(f"{self.__class__.__name__}")
 

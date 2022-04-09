@@ -1,20 +1,19 @@
 from collections import deque
 from .. import log
-from ..log import get_logger
 from ..log.levels import DEBUG, INFO, WARN, ERROR
 from ..EventFactory import events
 from ..definitions import Attr
 from loggingdecorators import on_init
 
-module_logger = get_logger("tasks")
+get_module_logger = log.logger_getter("tasks")
 
 
 class Task:
     """Represents an instance of a task"""
 
-    @on_init(logger=get_logger("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, e: events._Event):
-        self.logger = module_logger
+        self.logger = get_module_logger()
         data = e.get_task_data()
         self.id = data[Attr.unique_id]
         self.parent_id = data[Attr.parent_task_id]

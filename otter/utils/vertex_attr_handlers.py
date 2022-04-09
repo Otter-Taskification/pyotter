@@ -3,24 +3,24 @@ from functools import wraps
 from itertools import chain
 from typing import Type, List, Union
 from .. import log
-from ..log import get_logger, DEBUG, INFO
+from ..log import DEBUG, INFO
 from ..definitions import RegionType
 from ..EventFactory import events
 from ..utils import flatten
 from loggingdecorators import on_init, on_call
 
-module_logger = get_logger("vertex.attr")
+get_module_logger = log.logger_getter("vertex.attr")
 
 
 class AttributeHandlerTable(dict):
 
-    @on_init(logger=get_logger("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, names, default_handler=None, logger=None, level=DEBUG):
         """
         dict which maps attribute names to handlers for combining that attribute
         overrides __setitem__ to log each time a handler is set
         """
-        self.log = logger or get_logger(self.__class__.__name__)
+        self.log = logger or log.get_logger(self.__class__.__name__)
         self.level = level
         handler = default_handler or pass_first_arg
         super().__init__({name: handler for name in names})
@@ -32,7 +32,7 @@ class AttributeHandlerTable(dict):
 
 class VertexAttributeCombiner:
 
-    @on_init(logger=get_logger("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, handler=None, accept: Union[Type, List[Type]]=[list, events._Event], msg="combining events"):
         """
         Wraps a handler function to allow checking and logging of the arguments passed to it.
@@ -43,7 +43,7 @@ class VertexAttributeCombiner:
         """
         self.handler = handler if handler else (lambda arg: arg)
         self.accept = accept
-        self.log = get_logger(self.__class__.__name__)
+        self.log = log.get_logger(self.__class__.__name__)
         call_decorator = on_call(self.log, msg=msg)
         self.handler = call_decorator(self.handler)
 
@@ -144,17 +144,18 @@ def _return_unique_event(args, region_type):
     # args is guaranteed to be a list of events
     unique_events = set(e for e in args if e.region_type == region_type)
 
+    logger = get_module_logger()
     if len(unique_events) == 1:
         event = unique_events.pop()
-        module_logger.debug(f"returning event: {event}")
+        logger.debug(f"returning event: {event}")
         return event
     elif len(unique_events) == 0:
         event_types = set(type(e).__name__ for e in args)
-        module_logger.debug(f"no {region_type} events, returning event list ({event_types=})")
+        logger.debug(f"no {region_type} events, returning event list ({event_types=})")
         return args
     else:
         # error: if >1 event arrived here, the vertices were somehow mis-labelled
-        module_logger.error(f"multiple {region_type} events received: {args}")
+        logger.error(f"multiple {region_type} events received: {args}")
         raise ValueError(f"multiple {region_type} events received: {args}")
 
 

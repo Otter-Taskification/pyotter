@@ -3,14 +3,13 @@ from collections import defaultdict, Counter
 import otf2
 import igraph as ig
 import otter
-from otter import args
 from otter.log import DEBUG
 from otter.utils import VertexLabeller, AttributeHandlerTable, VertexAttributeCombiner
 from otter.definitions import RegionType, Endpoint, TaskType, EdgeType
 
 otter._check_dot()
 args = otter.get_args()
-otter.log.Logging.init(args)
+otter.log.initialise(args)
 log = otter.log.get_logger("main")
 
 log.info(f"reading OTF2 anchorfile: {args.anchorfile}")
@@ -338,6 +337,29 @@ if args.output:
             print(f"igraph error: {oserr}")
             print(f"failed to write to file '{args.output}'")
 
+# Unpack vertex event attributes
+for vertex in g.vs:
+    event = vertex['event']
+    log.debug(f"unpacking vertex {event=}")
+    attributes = otter.unpack(event)
+    if isinstance(attributes, dict):
+        for key, value in attributes.items():
+            log.debug(f"  got {key}={value}")
+            if isinstance(value, list):
+                s = set(value)
+                if len(s) == 1:
+                    value = s.pop()
+                else:
+                    value = ";".join(str(item) for item in value)
+            if isinstance(value, int):
+                value = str(value)
+            elif value == "":
+                value = None
+            log.debug(f"    unpacked {value=}")
+            vertex[key] = value
+    else:
+        raise TypeError(f"{type(attributes)}")
+
 # Dump graph details to file
 if args.loglevel == "DEBUG":
     log.info(f"writing graph to graph.log")
@@ -382,20 +404,11 @@ for name in g.vs.attribute_names():
     if name.startswith("_"):
         del g.vs[name]
 
-# Unpack vertex event attributes
-for vertex in g.vs:
-    attributes = otter.unpack(vertex['event'])
-    if isinstance(attributes, dict):
-        for key, value in attributes.items():
-            if isinstance(value, int):
-                value = str(value)
-            elif value == "":
-                value = None
-            vertex[key] = value
-
 del g.vs['event']
 
 if args.report:
+    otter.style_graph(g)
+    otter.style_tasks(tasks.task_tree())
     otter.write_report(args, g, tasks)
 
 if args.interact:
