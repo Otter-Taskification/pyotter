@@ -9,47 +9,52 @@ def write_report(args, g, tasks):
     task_tree = tasks.task_tree()
     task_attributes = tasks.attributes
 
-    # Normalise report path
-    if not os.path.isabs(args.report):
-        report = os.path.join(os.getcwd(), args.report)
-    else:
-        report = args.report
-    report = os.path.normpath(report)
-
-    # Create report directory
-    try:
-        os.mkdir(report)
-    except FileExistsError as err:
-        print(f"Error: {err}")
-        return
-
-    # Create subdirectory
-    subdirs = ["html", "img", "data"]
-    for s in subdirs:
-        os.mkdir(os.path.join(report, s))
+    create_report_dirs(args)
 
     # Save graphs
     for obj, name in [(g, "graph"), (task_tree, "tree")]:
-        dot = os.path.join(report, "data", f"{name}.dot")
-        svg = os.path.join(report, "img", f"{name}.svg")
+        dot = os.path.join(args.report, "data", f"{name}.dot")
+        svg = os.path.join(args.report, "img", f"{name}.svg")
         save_graph_to_dot(obj, dot)
         convert_to_svg(dot, svg)
 
     # Write HTML report
     html = prepare_html(tasks)
-    html_file = os.path.join(report, "report.html")
+    html_file = os.path.join(args.report, "report.html")
     get_module_logger().info(f"writing report: {html_file}")
     with open(html_file, "w") as f:
         f.write(html)
 
     # Save task data to csv
-    with open(os.path.join(report, "data", "task_attributes.csv"), "w") as csvfile:
+    with open(os.path.join(args.report, "data", "task_attributes.csv"), "w") as csvfile:
         writer = csv.DictWriter(csvfile, task_attributes)
         writer.writerow({
             key: styling.task_attribute_names[key]
             for key in task_attributes
         })
         writer.writerows(tasks.data)
+
+    return
+
+
+def create_report_dirs(args):
+    import os
+
+    # Create report directory
+    try:
+        os.mkdir(args.report)
+    except FileExistsError as err:
+        if not args.force:
+            raise
+
+    # Create subdirectory
+    subdirs = ["html", "img", "data"]
+    for s in subdirs:
+        try:
+            os.mkdir(os.path.join(args.report, s))
+        except FileExistsError as err:
+            if not args.force:
+                raise
 
     return
 

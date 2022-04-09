@@ -9,6 +9,7 @@ def get_args():
     parser.add_argument('anchorfile', help='OTF2 anchor file')
     parser.add_argument('-o', '--output', dest='output', help='output file')
     parser.add_argument('-r', '--report', dest='report', help='report path')
+    parser.add_argument('-f', '--force', dest='force', action='store_true', default=False, help='force overwrite if files already exist')
     parser.add_argument('-v', '--verbose', action='store_true', dest='verbose',
                         help='print chunks as they are generated')
     parser.add_argument('-i', '--interact', action='store_true', dest='interact',
@@ -38,23 +39,26 @@ def get_args():
 def check_args(args):
     import os
 
-    # Ensure report path is normalised
-    if args.report is not None:
-        if not os.path.isabs(args.report):
-            args.report = os.path.join(os.getcwd(), args.report)
-        args.report = os.path.normpath(args.report)
-
     # Anchorfile must exist
     if not os.path.isfile(args.anchorfile):
         raise FileNotFoundError(args.anchorfile)
 
-    # Report directory must exist
-    if args.report is not None and not os.path.isdir(os.path.dirname(args.report)):
-        raise FileNotFoundError(os.path.dirname(args.report))
 
-    # Report path must not exist
-    if args.report is not None and os.path.isdir(args.report):
-        raise FileExistsError(f"{args.report}")
+    if args.report is not None:
+
+        # Ensure report path is normalised
+        if not os.path.isabs(args.report):
+            args.report = os.path.join(os.getcwd(), args.report)
+        args.report = os.path.normpath(args.report)
+
+        # Report parent directory must exist
+        parent = os.path.dirname(args.report)
+        if not os.path.isdir(parent):
+            raise FileNotFoundError(os.path.dirname(args.report))
+
+        # Report path must not exist, unless overridden with --force
+        if os.path.isdir(args.report) and not args.force:
+            raise FileExistsError(f"{args.report}")
 
     # log dir must be normalised
     if not os.path.isabs(args.logdir):
