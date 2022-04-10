@@ -1,5 +1,5 @@
 from ..definitions import RegionType, EventType
-from ..EventFactory import events
+from ..core import events
 from .. import log
 from typing import Callable
 
@@ -27,10 +27,10 @@ def is_region_type(region_type: RegionType) -> Callable:
             return all(_is_event_region_type(e, region_type) for e in event_attribute)
         else:
             logger = get_module_logger()
-            logger.debug(f"expected {events._Event} or List[{events._Event}], got {type(event_attribute)} ({event_attribute})", stack_info=True)
+            logger.debug(f"expected {core.events.events._Event} or List[{core.events.events._Event}], got {type(event_attribute)} ({event_attribute})", stack_info=True)
             for item in event_attribute:
-                logger.debug(f"is an event: {isinstance(item, events._Event)} {item=}")
-            raise RuntimeError(f"expected {events._Event}, got {type(event_attribute)} ({event_attribute})")
+                logger.debug(f"is an event: {isinstance(item, core.events.events._Event)} {item=}")
+            raise RuntimeError(f"expected {core.events.events._Event}, got {type(event_attribute)} ({event_attribute})")
     return check_region_type
 
 def is_empty_task_region(vertex) -> bool:

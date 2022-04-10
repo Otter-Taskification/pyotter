@@ -1,9 +1,7 @@
 from abc import ABC, abstractmethod
-from .. import log
-from ..log.levels import DEBUG, INFO, WARN, ERROR
-from ..definitions import Attr, RegionType, TaskStatus
-from ..types import OTF2Event, OTF2Location, AttrDict
-from loggingdecorators import on_init
+import loggingdecorators as logdec
+from ... import log
+from ... import definitions as defn
 
 get_module_logger = log.logger_getter("events")
 
@@ -23,13 +21,14 @@ class _Event(ABC):
     is_leave_event = False
     is_task_create_event = False
     is_task_register_event = False
+    is_task_complete_event = False
     is_task_switch_event = False
     is_task_switch_complete_event = False
     is_chunk_switch_event = False
     is_task_group_end_event = False
 
-    @on_init(logger=log.logger_getter("init_logger"))
-    def __init__(self, event: OTF2Event, location: OTF2Location, attr: AttrDict):
+    @logdec.on_init(logger=log.logger_getter("init_logger"))
+    def __init__(self, event, location, attr):
         self.log = get_module_logger()
         self._event = event
         self._location = location
@@ -75,10 +74,13 @@ class _Event(ABC):
                 value = self._event.attributes[attr]
                 yield name, value
 
+    def get_task_completed(self):
+        raise NotImplementedError()
+
 # mixin
 class ClassNotImplementedMixin(ABC):
 
-    @on_init(logger=log.logger_getter("init_logger"), level=ERROR)
+    @logdec.on_init(logger=log.logger_getter("init_logger"), level=log.ERROR)
     def __init__(self, *args, **kwargs):
         raise NotImplementedError(f"{self.__class__.__name__}")
 
@@ -109,10 +111,10 @@ class RegisterTaskDataMixin(ABC):
 
     def get_task_data(self):
         return {
-            Attr.unique_id:         self.unique_id,
-            Attr.task_type:         self.task_type,
-            Attr.parent_task_id:    self.parent_task_id,
-            Attr.time:              self._event.time
+            defn.Attr.unique_id:         self.unique_id,
+            defn.Attr.task_type:         self.task_type,
+            defn.Attr.parent_task_id:    self.parent_task_id,
+            defn.Attr.time:              self._event.time
         }
 
 
@@ -142,8 +144,8 @@ class ThreadEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
 class ParallelBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
-        task_chunk_key = (self._location.name, self.encountering_task_id, RegionType.task)
-        parallel_chunk_key = (self._location.name, self.unique_id, RegionType.parallel)
+        task_chunk_key = (self._location.name, self.encountering_task_id, defn.RegionType.task)
+        parallel_chunk_key = (self._location.name, self.unique_id, defn.RegionType.parallel)
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {task_chunk_key=}, {parallel_chunk_key=}")
         self._location.enter_parallel_region(self.unique_id)
         if task_chunk_key in chunk_dict.keys():
@@ -160,10 +162,10 @@ class ParallelBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
 class ParallelEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
-        task_chunk_key = (self._location.name, self.encountering_task_id, RegionType.task)
+        task_chunk_key = (self._location.name, self.encountering_task_id, defn.RegionType.task)
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {task_chunk_key=}")
         # append to parallel region chunk
-        parallel_chunk_key = (self._location.name, self.unique_id, RegionType.parallel)
+        parallel_chunk_key = (self._location.name, self.unique_id, defn.RegionType.parallel)
         parallel_chunk = chunk_dict[parallel_chunk_key]
         parallel_chunk.append_event(self)
         # yield parallel region chunk
@@ -179,7 +181,7 @@ class ParallelEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
 class Sync(DefaultUpdateChunksMixin, _Event):
 
     def __repr__(self):
-        return "{} ({})".format(self._base_repr, ", ".join([str(self.__getattr__(attr)) for attr in [Attr.encountering_task_id, Attr.region_type, Attr.endpoint]]))
+        return "{} ({})".format(self._base_repr, ", ".join([str(self.__getattr__(attr)) for attr in [defn.Attr.encountering_task_id, defn.Attr.region_type, defn.Attr.endpoint]]))
 
 
 class SyncBegin(EnterMixin, Sync):
@@ -258,7 +260,7 @@ class InitialTaskEnter(ChunkSwitchEventMixin, TaskEnter):
 
     def update_chunks(self, chunk_dict, chunk_stack):
         # For initial-task-begin, chunk key is (thread ID, initial task unique_id)
-        chunk_key = self._location.name, self.unique_id, RegionType.task
+        chunk_key = self._location.name, self.unique_id, defn.RegionType.task
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {chunk_key=}")
         chunk = chunk_dict[chunk_key]
         chunk.append_event(self)
@@ -268,8 +270,8 @@ class InitialTaskEnter(ChunkSwitchEventMixin, TaskEnter):
 class ImplicitTaskEnter(ChunkSwitchEventMixin, TaskEnter):
 
     def update_chunks(self, chunk_dict, chunk_stack):
-        # (location name, current parallel ID, RegionType.parallel)
-        chunk_key = self._location.name, self._location.current_parallel_region, RegionType.parallel
+        # (location name, current parallel ID, defn.RegionType.parallel)
+        chunk_key = self._location.name, self._location.current_parallel_region, defn.RegionType.parallel
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {chunk_key=}")
         chunk = chunk_dict[chunk_key]
         chunk.append_event(self)
@@ -279,13 +281,16 @@ class ImplicitTaskEnter(ChunkSwitchEventMixin, TaskEnter):
 
 
 class TaskLeave(Task):
-    pass
+    is_task_complete_event = True
+
+    def get_task_completed(self):
+        return self.unique_id
 
 
 class InitialTaskLeave(ChunkSwitchEventMixin, TaskLeave):
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
-        chunk_key = self._location.name, self.unique_id, RegionType.task
+        chunk_key = self._location.name, self.unique_id, defn.RegionType.task
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {chunk_key=}")
         chunk = chunk_dict[chunk_key]
         chunk.append_event(self)
@@ -319,23 +324,32 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
     is_task_switch_event = True
 
     @property
+    def is_task_complete_event(self):
+        return self.is_task_switch_complete_event
+
+    @property
     def is_task_switch_complete_event(self):
-        return self.prior_task_status in [TaskStatus.complete, TaskStatus.cancel]
+        return self.prior_task_status in [defn.TaskStatus.complete, defn.TaskStatus.cancel]
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         this_chunk_key = self.encountering_task_id
         next_chunk_key = self.next_task_id
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {this_chunk_key=}, {next_chunk_key=}")
         this_chunk = chunk_dict[this_chunk_key]
-        if self.prior_task_status != TaskStatus.switch: # only update the prior task's chunk if it wasn't a regular switch event
+        if self.prior_task_status != defn.TaskStatus.switch: # only update the prior task's chunk if it wasn't a regular switch event
             self.log.debug(f"{self.__class__.__name__}.update_chunks: {self} updating chunk key={this_chunk_key} for {self.region_type} with status {self.prior_task_status}")
             this_chunk.append_event(self)
-            yield this_chunk if self.prior_task_status == TaskStatus.complete else None
+            yield this_chunk if self.prior_task_status == defn.TaskStatus.complete else None
         else:
             self.log.debug(f"{self.__class__.__name__}.update_chunks: {self} skipped updating chunk key={this_chunk_key} for {self.region_type} with status {self.prior_task_status}")
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {self} updating chunk key={next_chunk_key}")
         next_chunk = chunk_dict[next_chunk_key]
         next_chunk.append_event(self)
+
+    def get_task_completed(self):
+        if not self.is_task_complete_event:
+            raise RuntimeErrpr("not a task-complete event: {self}")
+        return self.encountering_task_id
 
     def __repr__(self):
         return f"{self._base_repr} [{self.prior_task_id} ({self.prior_task_status}) -> {self.next_task_id}]"

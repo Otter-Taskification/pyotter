@@ -1,41 +1,6 @@
-from . import log
+from .. import log
+
 get_module_logger = log.logger_getter("report")
-
-def write_report(args, g, tasks):
-    import os
-    import csv
-    from . import styling
-
-    task_tree = tasks.task_tree()
-    task_attributes = tasks.attributes
-
-    create_report_dirs(args)
-
-    # Save graphs
-    for obj, name in [(g, "graph"), (task_tree, "tree")]:
-        dot = os.path.join(args.report, "data", f"{name}.dot")
-        svg = os.path.join(args.report, "img", f"{name}.svg")
-        save_graph_to_dot(obj, dot)
-        convert_to_svg(dot, svg)
-
-    # Write HTML report
-    html = prepare_html(tasks)
-    html_file = os.path.join(args.report, "report.html")
-    get_module_logger().info(f"writing report: {html_file}")
-    with open(html_file, "w") as f:
-        f.write(html)
-
-    # Save task data to csv
-    with open(os.path.join(args.report, "data", "task_attributes.csv"), "w") as csvfile:
-        writer = csv.DictWriter(csvfile, task_attributes)
-        writer.writerow({
-            key: styling.task_attribute_names[key]
-            for key in task_attributes
-        })
-        writer.writerows(tasks.data)
-
-    return
-
 
 def create_report_dirs(args):
     import os
@@ -90,8 +55,8 @@ def convert_to_svg(dot, svg):
 def prepare_html(tasks):
     from string import Template
     from . import templates
-    from . import reporting
-    from . import styling
+    from . import make
+    from .. import styling
 
     try:
         import importlib.resources as resources
@@ -99,7 +64,7 @@ def prepare_html(tasks):
         import importlib_resources as resources
 
     # Make the table of task attributes
-    task_table = reporting.table(
+    task_table = make.table(
         tasks.attributes,
         styling.task_attribute_names,
         tasks.data,

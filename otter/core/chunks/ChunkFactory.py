@@ -1,18 +1,17 @@
 from collections import defaultdict, deque
 from functools import cached_property
-from .. import log
-from ..log.levels import DEBUG, INFO, WARN, ERROR
+import loggingdecorators as logdec
+from ... import log
 from . import chunks
-from .. import EventFactory, TaskRegistry
-from loggingdecorators import on_init
+from .. import tasks
 
 get_module_logger = log.logger_getter("chunks")
 
 class ChunkFactory:
     """Aggregates a sequence of events into a sequence of Chunks."""
 
-    @on_init(logger=log.logger_getter("init_logger"))
-    def __init__(self, events: EventFactory, tasks: TaskRegistry):
+    @logdec.on_init(logger=log.logger_getter("init_logger"))
+    def __init__(self, events, tasks):
         self.log = get_module_logger()
         self.events = events
         self.tasks = tasks
@@ -28,15 +27,23 @@ class ChunkFactory:
         self.log.debug(f"{self.__class__.__name__}.__iter__ receiving events from {self.events}")
         for k, event in enumerate(self.events):
             self.log.debug(f"got event {k}: {event}")
-            if event.is_task_register_event:
-                self.tasks.register_task(event)
-            # elif event.is_task_switch_event:
-            #     self.tasks.update_task(event)
+
             if event.is_chunk_switch_event:
                 self.log.debug(f"updating chunks")
                 yield from event.update_chunks(self.chunk_dict, self.chunk_stack)
             else:
                 self.chunk_dict[event.encountering_task_id].append_event(event)
+
+            if event.is_task_register_event:
+                self.tasks.register_task(event)
+
+            if event.is_task_complete_event:
+                self.log.debug(f"event <{event}> notifying task {event.encountering_task_id} of end_ts")
+                try:
+                    self.tasks[event.get_task_completed()].end_ts = event.time
+                except tasks.NullTaskError:
+                    pass
+
         self.log.debug(f"exhausted {self.events}")
 
     def read(self):

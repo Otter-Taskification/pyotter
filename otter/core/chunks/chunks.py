@@ -1,20 +1,19 @@
 import otf2
 import igraph as ig
+import loggingdecorators as logdec
 from functools import cached_property
 from collections import deque
 from typing import List
 from itertools import islice
-from .. import log
-from ..log.levels import DEBUG, INFO, WARN, ERROR
-from ..definitions import RegionType, Endpoint
-from ..EventFactory import events
-from loggingdecorators import on_init
+from ... import log
+from ... import definitions as defn
+from .. import events
 
 get_module_logger = log.logger_getter("chunks")
 
 class Chunk:
 
-    @on_init(logger=log.logger_getter("init_logger"), level=DEBUG)
+    @logdec.on_init(logger=log.logger_getter("init_logger"), level=log.DEBUG)
     def __init__(self):
         self.log = get_module_logger()
         self._events = deque()
@@ -62,19 +61,19 @@ class Chunk:
         self._events.append(event)
 
     @staticmethod
-    def events_bridge_region(previous: events._Event, current: events._Event, types: List[RegionType]) -> bool:
+    def events_bridge_region(previous, current, types: List[defn.RegionType]) -> bool:
         # Used to check for certain enter-leave event sequences
         assert events.is_event(previous) and events.is_event(current)
         return previous.region_type in types and previous.is_enter_event \
                and current.region_type in types and current.is_leave_event
 
     @classmethod
-    def events_bridge_single_master_region(cls, previous: events._Event, current: events._Event) -> bool:
-        return cls.events_bridge_region(previous, current, [RegionType.single_executor, RegionType.single_other, RegionType.master])
+    def events_bridge_single_master_region(cls, previous, current) -> bool:
+        return cls.events_bridge_region(previous, current, [defn.RegionType.single_executor, defn.RegionType.single_other, defn.RegionType.master])
 
     @classmethod
-    def events_bridge_parallel_region(cls, previous: events._Event, current: events._Event) -> bool:
-        return cls.events_bridge_region(previous, current, [RegionType.parallel])
+    def events_bridge_parallel_region(cls, previous, current) -> bool:
+        return cls.events_bridge_region(previous, current, [defn.RegionType.parallel])
 
     @cached_property
     def graph(self):
@@ -89,29 +88,29 @@ class Chunk:
         taskgroup_enter_event = None
 
         # Match master-enter event to corresponding master-leave
-        master_enter_event = self.first if self.first.region_type == RegionType.master else None
+        master_enter_event = self.first if self.first.region_type == defn.RegionType.master else None
 
         # Add attributes to the first node depending on chunk region type
-        if self.type == RegionType.parallel:
+        if self.type == defn.RegionType.parallel:
             v_prior["_parallel_sequence_id"] = (self.first.unique_id, self.first.endpoint)
-        elif self.type == RegionType.explicit_task:
+        elif self.type == defn.RegionType.explicit_task:
             v_prior['_is_task_enter_node'] = True
-            v_prior['_task_cluster_id'] = (self.first.unique_id, Endpoint.enter)
+            v_prior['_task_cluster_id'] = (self.first.unique_id, defn.Endpoint.enter)
 
         sequence_count = 1
         for event in islice(self._events, 1, None):
 
-            if event.region_type in [RegionType.implicit_task]:
+            if event.region_type in [defn.RegionType.implicit_task]:
                 continue
 
-            if isinstance(event, events.TaskSwitch) and event is not self.last:
+            if event.is_task_switch_event and event is not self.last:
                 continue
 
             # The vertex representing this event
             v = g.add_vertex(event=event)
 
             # Match taskgroup-enter/-leave events
-            if event.region_type == RegionType.taskgroup:
+            if event.region_type == defn.RegionType.taskgroup:
                 if event.is_enter_event:
                     taskgroup_enter_event = event
                 elif event.is_leave_event:
@@ -121,7 +120,7 @@ class Chunk:
                     taskgroup_enter_event = None
 
             # Match master-enter/-leave events
-            elif event.region_type == RegionType.master:
+            elif event.region_type == defn.RegionType.master:
                 if event.is_enter_event:
                     master_enter_event = event
                 elif event.is_leave_event:
@@ -131,12 +130,12 @@ class Chunk:
                     master_enter_event = None
 
             # Label nodes in a parallel chunk by their position for easier merging
-            if self.type == RegionType.parallel and (event.is_enter_event or event.is_leave_event) and event.region_type != RegionType.master:
+            if self.type == defn.RegionType.parallel and (event.is_enter_event or event.is_leave_event) and event.region_type != defn.RegionType.master:
                 v["_parallel_sequence_id"] = (self.first.unique_id, sequence_count)
                 sequence_count += 1
 
             # Label nested parallel regions for easier merging, except a parallel chunk's closing parallel-end event
-            if event.region_type == RegionType.parallel:
+            if event.region_type == defn.RegionType.parallel:
                 v["_parallel_sequence_id"] = (self.first.unique_id if event is self.last else event.unique_id, event.endpoint)
 
             # Add edge except for (single/master begin -> end) and (parallel N begin -> parallel N end)
@@ -151,23 +150,23 @@ class Chunk:
 
             # For task-create add dummy nodes for easier merging
             if event.is_task_create_event:
-                v['_task_cluster_id'] = (event.unique_id, Endpoint.enter)
+                v['_task_cluster_id'] = (event.unique_id, defn.Endpoint.enter)
                 dummy_vertex = g.add_vertex(event=event)
-                dummy_vertex['_task_cluster_id'] = (event.unique_id, Endpoint.leave)
+                dummy_vertex['_task_cluster_id'] = (event.unique_id, defn.Endpoint.leave)
                 continue  # to skip updating v_prior
 
-            if event is self.last and self.type == RegionType.explicit_task:
+            if event is self.last and self.type == defn.RegionType.explicit_task:
                 v['_is_task_leave_node'] = True
-                v['_task_cluster_id'] = (event.encountering_task_id, Endpoint.leave)
+                v['_task_cluster_id'] = (event.encountering_task_id, defn.Endpoint.leave)
 
             v_prior = v
 
-        if self.type == RegionType.explicit_task and len(self) <= 2:
+        if self.type == defn.RegionType.explicit_task and len(self) <= 2:
             g.delete_edges([0])
 
         # If no internal vertices (len(self) <= 2), require at least 1 edge (except for empty explicit task chunks)
         # Require at least 1 edge between start & end vertices in single-executor chunk if disconnected
-        if self.type != RegionType.explicit_task and len(self) <= 2 and g.ecount() == 0:
+        if self.type != defn.RegionType.explicit_task and len(self) <= 2 and g.ecount() == 0:
             self.log.debug(f"no internal vertices - add edge from: {g.vs[0]['event']} to: {g.vs[1]['event']}")
             g.add_edge(g.vs[0], g.vs[1])
 

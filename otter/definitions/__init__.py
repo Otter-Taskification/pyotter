@@ -82,3 +82,5 @@ class EdgeType(str, Enum):
 class TaskEvent(str, Enum):
     CREATE = EventType.task_create.value
     SWITCH = EventType.task_switch.value
+
+NullTask = 18446744073709551615

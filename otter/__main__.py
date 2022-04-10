@@ -3,11 +3,9 @@ from collections import defaultdict, Counter
 import otf2
 import igraph as ig
 import otter
-from otter.log import DEBUG
-from otter.utils import VertexLabeller, AttributeHandlerTable, VertexAttributeCombiner
-from otter.definitions import RegionType, Endpoint, TaskType, EdgeType
+from otter.utils import VertexLabeller, VertexAttributeCombiner, AttributeHandlerTable
+from otter.definitions import RegionType, Endpoint, EdgeType
 
-otter._check_dot()
 args = otter.get_args()
 otter.log.initialise(args)
 log = otter.log.get_logger("main")
@@ -65,7 +63,6 @@ log.info(f"graph disjoint union has {vcount} vertices")
 for name in ['_task_cluster_id', '_is_task_enter_node', '_is_task_leave_node', '_region_type', '_master_enter_event', '_taskgroup_enter_event']:
     if name not in g.vs.attribute_names():
         g.vs[name] = None
-# g.vs['_synchronised_by_taskwait'] = False
 
 # Create vertex labellers
 log.info("creating vertex labellers")
@@ -76,11 +73,11 @@ task_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_task_cluster
 empty_task_vertex_labeller = VertexLabeller(otter.utils.is_empty_task_region, group_key=lambda v: v['_task_cluster_id'][0])
 
 # Make a table for mapping vertex attributes to handlers - used by ig.Graph.contract_vertices
-handlers = AttributeHandlerTable(g.vs.attribute_names(), level=DEBUG)
+handlers = AttributeHandlerTable(g.vs.attribute_names(), level=otter.log.DEBUG)
 
 # Supply the logic to use when combining each of these vertex attributes
 attribute_handlers = [
-    ("_master_enter_event", otter.utils.handlers.return_unique_master_event, (type(None), otter.events._Event)),
+    ("_master_enter_event", otter.utils.handlers.return_unique_master_event, (type(None), otter.core.events.events._Event)),
     ("_task_cluster_id",    otter.utils.handlers.pass_the_unique_value,      (type(None), tuple)),
     ("_is_task_enter_node", otter.utils.handlers.pass_bool_value,            (type(None), bool)),
     ("_is_task_leave_node", otter.utils.handlers.pass_bool_value,            (type(None), bool))
@@ -127,8 +124,8 @@ log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 Intermediate clean-up: for each master region, remove edges that connect
 the same nodes as the master region
 """
-master_enter_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.events.MasterBegin), g.vs)
-master_leave_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.events.MasterEnd), g.vs)
+master_enter_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.core.events.events.MasterBegin), g.vs)
+master_leave_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.core.events.events.MasterEnd), g.vs)
 master_enter_vertex_map = {enter_vertex['event']: enter_vertex for enter_vertex in master_enter_vertices}
 master_vertex_pairs = ((master_enter_vertex_map[leave_vertex['_master_enter_event']], leave_vertex) for leave_vertex in master_leave_vertices)
 neighbour_pairs = {(enter.predecessors()[0], leave.successors()[0]) for enter, leave in master_vertex_pairs}
@@ -194,7 +191,7 @@ for vertex in filter(otter.utils.is_terminal_task_vertex, g.vs):
     event = vertex['event']
     if isinstance(event, list):
         event = otter.utils.handlers.return_unique_taskswitch_complete_event(event)
-    assert otter.events.is_event(event)
+    assert otter.core.is_event(event)
     log.debug(f" - task {event.prior_task_id}: {event}")
     task_complete_vertices[event.prior_task_id] = vertex
 
@@ -292,9 +289,9 @@ for vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
     end_event = vertex['event']
     if isinstance(end_event, list):
         end_event = otter.utils.handlers.return_unique_taskgroup_complete_event(end_event)
-    assert otter.events.is_event(end_event)
+    assert otter.core.EventFactory.events.is_event(end_event)
     begin_event = vertex['_taskgroup_enter_event']
-    assert begin_event is not None and otter.events.is_event(begin_event)
+    assert begin_event is not None and otter.core.EventFactory.events.is_event(begin_event)
     taskgroup_vertices[end_event.encountering_task_id].append((begin_event, end_event, vertex))
     log.debug(f" - task {end_event.encountering_task_id}: {(begin_event, end_event, vertex)}")
 
@@ -341,7 +338,7 @@ if args.output:
 for vertex in g.vs:
     event = vertex['event']
     log.debug(f"unpacking vertex {event=}")
-    attributes = otter.unpack(event)
+    attributes = otter.core.events.unpack(event)
     if isinstance(attributes, dict):
         for key, value in attributes.items():
             log.debug(f"  got {key}={value}")
@@ -407,9 +404,9 @@ for name in g.vs.attribute_names():
 del g.vs['event']
 
 if args.report:
-    otter.style_graph(g)
-    otter.style_tasks(tasks.task_tree())
-    otter.write_report(args, g, tasks)
+    otter.styling.style_graph(g)
+    otter.styling.style_tasks(tasks.task_tree())
+    otter.reporting.write_report(args, g, tasks)
 
 if args.interact:
     otter.interact(locals(), g)

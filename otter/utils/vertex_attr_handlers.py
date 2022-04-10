@@ -5,7 +5,7 @@ from typing import Type, List, Union
 from .. import log
 from ..log import DEBUG, INFO
 from ..definitions import RegionType
-from ..EventFactory import events
+from ..core.events import events
 from ..utils import flatten
 from loggingdecorators import on_init, on_call
 
