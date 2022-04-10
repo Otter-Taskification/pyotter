@@ -54,7 +54,9 @@ task_attribute_names = {
     "id": "Unique ID",
     "parent_id": "Parent ID",
     "task_type": "Task Type",
-    "crt_ts": "Creation Time"
+    "crt_ts": "Creation Time",
+    "end_ts": "End Time",
+    "duration": "Duration"
 }
 
 colormap_task_type = defaultdict(lambda: 'black', **{

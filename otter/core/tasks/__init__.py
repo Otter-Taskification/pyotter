@@ -29,11 +29,13 @@ class Task:
         self._end_ts = None
 
     def __repr__(self):
-        return "{}(id={}, type={}, crt_ts={}, parent={}, children=({}))".format(
+        return "{}(id={}, type={}, crt_ts={}, end_ts={}, duration={}, parent={}, children=({}))".format(
             self.__class__,
             self.id,
             self.task_type,
             self.crt_ts,
+            self.end_ts,
+            self.duration,
             self.parent_id,
             ", ".join([str(c) for c in self.children])
         )
@@ -62,11 +64,15 @@ class Task:
 
     @property
     def duration(self):
+        if self.end_ts is None:
+            return None
         return self.end_ts - self.crt_ts
 
     def keys(self):
         exclude = ["logger"]
-        return (key for key in vars(self) if not key in exclude and not key.startswith("_"))
+        properties = ["end_ts", "duration"]
+        names = list(vars(self).keys()) + properties
+        return (name for name in names if not name in exclude and not name.startswith("_"))
 
     def as_dict(self):
         return {key: getattr(self, key) for key in self.keys()}

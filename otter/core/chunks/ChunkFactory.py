@@ -38,11 +38,14 @@ class ChunkFactory:
                 self.tasks.register_task(event)
 
             if event.is_task_complete_event:
-                self.log.debug(f"event <{event}> notifying task {event.encountering_task_id} of end_ts")
+                completed_task_id = event.get_task_completed()
+                self.log.debug(f"event <{event}> notifying task {completed_task_id} of end_ts")
                 try:
-                    self.tasks[event.get_task_completed()].end_ts = event.time
+                    completed_task = self.tasks[completed_task_id]
                 except tasks.NullTaskError:
                     pass
+                else:
+                    completed_task.end_ts = event.time
 
         self.log.debug(f"exhausted {self.events}")
 

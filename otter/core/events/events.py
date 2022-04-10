@@ -348,7 +348,7 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
 
     def get_task_completed(self):
         if not self.is_task_complete_event:
-            raise RuntimeErrpr("not a task-complete event: {self}")
+            raise RuntimeError("not a task-complete event: {self}")
         return self.encountering_task_id
 
     def __repr__(self):
