@@ -1,4 +1,5 @@
 import itertools as it
+from collections import defaultdict
 from collections.abc import Iterable
 
 def pairwise(iterable):
@@ -22,3 +23,11 @@ def flatten(args, exclude=(str, bytes, tuple)):
             yield from flatten(item, exclude=exclude)
         else:
             yield item
+
+def transpose_list_to_dict(list_of_dicts):
+    D = defaultdict(list)
+    all_keys = set(flatten(d.keys() for d in list_of_dicts))
+    for d in list_of_dicts:
+        for key in all_keys:
+            D[key].append(d.get(key, None))
+    return D

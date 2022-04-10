@@ -77,7 +77,7 @@ handlers = AttributeHandlerTable(g.vs.attribute_names(), level=otter.log.DEBUG)
 
 # Supply the logic to use when combining each of these vertex attributes
 attribute_handlers = [
-    ("_master_enter_event", otter.utils.handlers.return_unique_master_event, (type(None), otter.core.events.events._Event)),
+    ("_master_enter_event", otter.utils.handlers.return_unique_master_event, (type(None), otter.core.events._Event)),
     ("_task_cluster_id",    otter.utils.handlers.pass_the_unique_value,      (type(None), tuple)),
     ("_is_task_enter_node", otter.utils.handlers.pass_bool_value,            (type(None), bool)),
     ("_is_task_leave_node", otter.utils.handlers.pass_bool_value,            (type(None), bool))
@@ -124,8 +124,8 @@ log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 Intermediate clean-up: for each master region, remove edges that connect
 the same nodes as the master region
 """
-master_enter_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.core.events.events.MasterBegin), g.vs)
-master_leave_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.core.events.events.MasterEnd), g.vs)
+master_enter_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.core.events.MasterBegin), g.vs)
+master_leave_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.core.events.MasterEnd), g.vs)
 master_enter_vertex_map = {enter_vertex['event']: enter_vertex for enter_vertex in master_enter_vertices}
 master_vertex_pairs = ((master_enter_vertex_map[leave_vertex['_master_enter_event']], leave_vertex) for leave_vertex in master_leave_vertices)
 neighbour_pairs = {(enter.predecessors()[0], leave.successors()[0]) for enter, leave in master_vertex_pairs}

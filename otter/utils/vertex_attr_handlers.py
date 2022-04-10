@@ -5,7 +5,7 @@ from typing import Type, List, Union
 from .. import log
 from ..log import DEBUG, INFO
 from ..definitions import RegionType
-from ..core.events import events
+from ..core import events
 from ..utils import flatten
 from loggingdecorators import on_init, on_call
 
@@ -33,7 +33,7 @@ class AttributeHandlerTable(dict):
 class VertexAttributeCombiner:
 
     @on_init(logger=log.logger_getter("init_logger"))
-    def __init__(self, handler=None, accept: Union[Type, List[Type]]=[list, events._Event], msg="combining events"):
+    def __init__(self, handler=None, accept: Union[Type, List[Type]]=None, msg="combining events"):
         """
         Wraps a handler function to allow checking and logging of the arguments passed to it.
         Log invocations of the handler with an on_call decorator.
@@ -42,7 +42,7 @@ class VertexAttributeCombiner:
         accept: a type, or list of types, which each arg must conform to for the given handler to be applied
         """
         self.handler = handler if handler else (lambda arg: arg)
-        self.accept = accept
+        self.accept = accept or [list, events._Event]
         self.log = log.get_logger(self.__class__.__name__)
         call_decorator = on_call(self.log, msg=msg)
         self.handler = call_decorator(self.handler)

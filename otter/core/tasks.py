@@ -2,8 +2,8 @@ from functools import lru_cache
 from collections import deque
 import igraph as ig
 import loggingdecorators as logdec
-from ... import log
-from ... import definitions as defn
+from .. import log
+from .. import definitions as defn
 
 get_module_logger = log.logger_getter("tasks")
 
@@ -27,6 +27,8 @@ class Task:
         self.crt_ts = data[defn.Attr.time]
         self._children = deque()
         self._end_ts = None
+        self._excl_dur = None
+        self._incl_dur = None
 
     def __repr__(self):
         return "{}(id={}, type={}, crt_ts={}, end_ts={}, duration={}, parent={}, children=({}))".format(
@@ -68,9 +70,25 @@ class Task:
             return None
         return self.end_ts - self.crt_ts
 
+    @property
+    def exclusive_duration(self):
+        return self._excl_dur
+
+    @exclusive_duration.setter
+    def exclusive_duration(self, dt):
+        self._excl_dur = dt
+
+    @property
+    def inclusive_duration(self):
+        return self._incl_dur
+
+    @inclusive_duration.setter
+    def inclusive_duration(self, dt):
+        self._incl_dur = dt
+
     def keys(self):
         exclude = ["logger"]
-        properties = ["end_ts", "duration"]
+        properties = ["end_ts", "duration", "exclusive_duration"]
         names = list(vars(self).keys()) + properties
         return (name for name in names if not name in exclude and not name.startswith("_"))
 
@@ -154,3 +172,15 @@ class TaskRegistry:
     @property
     def data(self):
         return (task.as_dict() for task in self)
+
+    def calculate_exclusive_durations(self):
+        for task in self:
+            self.calculate_exclusive_duration(task)
+
+    def calculate_exclusive_duration(self, task):
+        if task.exclusive_duration is None:
+            child_duration = sum(self[child].duration for child in task.children)
+            task.exclusive_duration = task.duration - child_duration
+            if task.exclusive_duration < 0 and task.id != 0:
+                self.log.warn(f"negative exclusive task duration for task {task.id}")
+        return task.exclusive_duration

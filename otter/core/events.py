@@ -1,27 +1,141 @@
 from abc import ABC, abstractmethod
+from collections import defaultdict, deque
+from typing import Union, List, NewType
 import loggingdecorators as logdec
-from ... import log
-from ... import definitions as defn
+from .. import log
+from .. import utils
+from .. import definitions as defn
 
 get_module_logger = log.logger_getter("events")
 
-is_event = lambda item : isinstance(item, _Event)
-all_events = lambda args : all(map(is_event, args))
-any_events = lambda args : any(map(is_event, args))
+is_event = lambda item: isinstance(item, _Event)
+all_events = lambda args: all(map(is_event, args))
+any_events = lambda args: any(map(is_event, args))
+is_event_list = lambda args: isinstance(args, list) and all_events(args)
 
-def is_event_list(arg):
-    if not isinstance(arg, list):
-        return False
-    return all_events(arg)
+
+class Location:
+
+    @logdec.on_init(logger=log.logger_getter("init_logger"), level=log.DEBUG)
+    def __init__(self, location):
+        self.log = log.get_logger(self.__class__.__name__)
+        self._loc = location
+        self.parallel_region_deque = deque()
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(location={self._loc.name})"
+
+    @property
+    def name(self):
+        return self._loc.name
+
+    @property
+    def current_parallel_region(self):
+        return self.parallel_region_deque[-1]
+
+    def enter_parallel_region(self, id: int):
+        self.log.debug(f"{self} entered parallel region {id}")
+        self.parallel_region_deque.append(id)
+
+    def leave_parallel_region(self):
+        self.log.debug(f"{self} exited parallel region {self.current_parallel_region}")
+        self.parallel_region_deque.pop()
+
+
+class EventFactory:
+
+    @logdec.on_init(logger=log.logger_getter("init_logger"))
+    def __init__(self, reader, default_cls: type=None):
+        if default_cls is not None and not issubclass(default_cls, _Event):
+            raise TypeError(f"arg {default_cls=} is not subclass of _Event")
+        self.log = get_module_logger()
+        self.default_cls = default_cls
+        self.attr = {attr.name: attr for attr in reader.definitions.attributes}
+        self.location_registry = dict()
+        for location in reader.definitions.locations:
+            self.location_registry[location] = Location(location)
+            self.log.debug(f"got location: {location.name}(events={location.number_of_events}, type={location.type})")
+        self.events = reader.events
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(default_cls={self.default_cls})"
+
+    def __iter__(self):
+        self.log.debug(f"generating events from {self.events}")
+        for k, (location, event) in enumerate(self.events):
+            cls = self.get_class(
+                event.attributes[self.attr[defn.Attr.event_type]],
+                event.attributes.get(self.attr[defn.Attr.region_type],None)
+            )
+            self.log.debug(f"making event {k} {cls=}")
+            yield cls(event, self.location_registry[location], self.attr)
+
+    def get_class(self, event_type: defn.EventType, region_type: defn.RegionType) -> type:
+        try:
+            return self.get_region_event_class(region_type, event_type)
+        except KeyError:
+            pass # fallback to event_class_lookup
+        try:
+            return self.get_event_class(event_type)
+        except KeyError:
+            # no class found in either dict
+            if self.default_cls is not None:
+                return self.default_cls
+            else:
+                raise TypeError(
+                    f"{self.__class__.__name__} can't construct event of type '{event_type}' for {region_type} region")
+
+    @staticmethod
+    def get_event_class(event_type):
+
+        lookup = {
+            defn.EventType.thread_begin: ThreadBegin,
+            defn.EventType.thread_end: ThreadEnd,
+            defn.EventType.parallel_begin: ParallelBegin,
+            defn.EventType.parallel_end: ParallelEnd,
+            defn.EventType.workshare_begin: WorkshareBegin,
+            defn.EventType.workshare_end: WorkshareEnd,
+            defn.EventType.sync_begin: SyncBegin,
+            defn.EventType.sync_end: SyncEnd,
+            defn.EventType.master_begin: Master,
+            defn.EventType.master_end: Master,
+            defn.EventType.task_enter: TaskEnter,
+            defn.EventType.task_leave: TaskLeave,
+            defn.EventType.task_create: TaskCreate,
+            defn.EventType.task_schedule: TaskSchedule,
+            defn.EventType.task_switch: TaskSwitch
+        }
+
+        return lookup[event_type]
+
+    @staticmethod
+    def get_region_event_class(region_type, event_type):
+
+        lookup = {
+            (defn.RegionType.initial_task, defn.EventType.task_enter): InitialTaskEnter,
+            (defn.RegionType.initial_task, defn.EventType.task_leave): InitialTaskLeave,
+            (defn.RegionType.implicit_task, defn.EventType.task_enter): ImplicitTaskEnter,
+            (defn.RegionType.implicit_task, defn.EventType.task_leave): ImplicitTaskLeave,
+            (defn.RegionType.single_executor, defn.EventType.workshare_begin): SingleBegin,
+            (defn.RegionType.single_executor, defn.EventType.workshare_end): SingleEnd,
+            (defn.RegionType.master, defn.EventType.master_begin): MasterBegin,
+            (defn.RegionType.master, defn.EventType.master_end): MasterEnd,
+            (defn.RegionType.taskgroup, defn.EventType.sync_begin): TaskgroupBegin,
+            (defn.RegionType.taskgroup, defn.EventType.sync_end): TaskgroupEnd
+        }
+
+        return lookup[(region_type, event_type)]
 
 
 class _Event(ABC):
 
     is_enter_event = False
     is_leave_event = False
+    is_task_enter_event = False
     is_task_create_event = False
     is_task_register_event = False
     is_task_complete_event = False
+    is_task_leave_event = False
     is_task_switch_event = False
     is_task_switch_complete_event = False
     is_chunk_switch_event = False
@@ -76,6 +190,13 @@ class _Event(ABC):
 
     def get_task_completed(self):
         raise NotImplementedError()
+
+    @property
+    def is_update_duration_event(self):
+        return self.is_task_switch_event or self.is_task_enter_event or self.is_task_leave_event
+
+    def get_tasks_switched(self):
+        raise NotImplementedError("only implemented if event.is_update_duration_event == True")
 
 # mixin
 class ClassNotImplementedMixin(ABC):
@@ -253,7 +374,10 @@ class Task(_Event):
 
 
 class TaskEnter(RegisterTaskDataMixin, Task):
-    pass
+    is_task_enter_event = True
+
+    def get_tasks_switched(self):
+        return self.encountering_task_id, self.unique_id
 
 
 class InitialTaskEnter(ChunkSwitchEventMixin, TaskEnter):
@@ -282,9 +406,13 @@ class ImplicitTaskEnter(ChunkSwitchEventMixin, TaskEnter):
 
 class TaskLeave(Task):
     is_task_complete_event = True
+    is_task_leave_event = True
 
     def get_task_completed(self):
         return self.unique_id
+
+    def get_tasks_switched(self):
+        return self.encountering_task_id, self.unique_id
 
 
 class InitialTaskLeave(ChunkSwitchEventMixin, TaskLeave):
@@ -351,5 +479,19 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
             raise RuntimeError("not a task-complete event: {self}")
         return self.encountering_task_id
 
+    def get_tasks_switched(self):
+        return self.encountering_task_id, self.next_task_id
+
     def __repr__(self):
         return f"{self._base_repr} [{self.prior_task_id} ({self.prior_task_status}) -> {self.next_task_id}]"
+
+
+
+def unpack(event: Union[_Event, List[_Event]]) -> Union[dict, List[dict]]:
+    if is_event(event):
+        return dict(event.yield_attributes())
+    elif is_event_list(event):
+        l = [dict(e.yield_attributes()) for e in event]
+        return utils.transpose_list_to_dict(l)
+    else:
+        raise TypeError(f"{type()}")
