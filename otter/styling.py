@@ -1,5 +1,5 @@
 from collections import defaultdict
-from .. import log
+from . import log
 
 get_module_logger = log.logger_getter("styling")
 
@@ -56,8 +56,9 @@ task_attribute_names = {
     "task_type": "Task Type",
     "crt_ts": "Creation Time",
     "end_ts": "End Time",
-    "duration": "Duration",
-    "exclusive_duration": "Exclusive Duration"
+    # "duration": "Duration",
+    "exclusive_duration": "Exclusive Duration",
+    "inclusive_duration": "Inclusive Duration"
 }
 
 colormap_task_type = defaultdict(lambda: 'black', **{

@@ -27,17 +27,17 @@ class Task:
         self.crt_ts = data[defn.Attr.time]
         self._children = deque()
         self._end_ts = None
-        self._excl_dur = None
+        self._last_resumed_ts = None
+        self._excl_dur = 0
         self._incl_dur = None
 
     def __repr__(self):
-        return "{}(id={}, type={}, crt_ts={}, end_ts={}, duration={}, parent={}, children=({}))".format(
+        return "{}(id={}, type={}, crt_ts={}, end_ts={}, parent={}, children=({}))".format(
             self.__class__,
             self.id,
             self.task_type,
             self.crt_ts,
             self.end_ts,
-            self.duration,
             self.parent_id,
             ", ".join([str(c) for c in self.children])
         )
@@ -65,18 +65,22 @@ class Task:
         self._end_ts = time
 
     @property
-    def duration(self):
-        if self.end_ts is None:
-            return None
-        return self.end_ts - self.crt_ts
+    def last_resumed_ts(self):
+        return self._last_resumed_ts
+
+    def resumed_at(self, time):
+        self._last_resumed_ts = time
+        self.logger.debug(f"resumed task {self.id}, duration={self.exclusive_duration}")
 
     @property
     def exclusive_duration(self):
         return self._excl_dur
 
-    @exclusive_duration.setter
-    def exclusive_duration(self, dt):
-        self._excl_dur = dt
+    def update_exclusive_duration(self, time):
+        if self.last_resumed_ts is not None and self.task_type not in [defn.TaskType.initial, defn.TaskType.implicit]:
+            dt = time - self.last_resumed_ts
+            self.logger.debug(f"updated exclusive duration for task {self.id}: {self._excl_dur} -> {self._excl_dur + dt}")
+            self._excl_dur = self._excl_dur + dt
 
     @property
     def inclusive_duration(self):
@@ -88,7 +92,7 @@ class Task:
 
     def keys(self):
         exclude = ["logger"]
-        properties = ["end_ts", "duration", "exclusive_duration"]
+        properties = ["end_ts", "exclusive_duration", "inclusive_duration"]
         names = list(vars(self).keys()) + properties
         return (name for name in names if not name in exclude and not name.startswith("_"))
 
@@ -110,6 +114,7 @@ class TaskRegistry:
         self._task_attribute_set = set()
 
     def __getitem__(self, uid: int) -> Task:
+        assert isinstance(uid, int)
         if uid not in self._dict:
             if uid == defn.NullTask:
                 raise NullTaskError()
@@ -184,3 +189,17 @@ class TaskRegistry:
             if task.exclusive_duration < 0 and task.id != 0:
                 self.log.warn(f"negative exclusive task duration for task {task.id}")
         return task.exclusive_duration
+
+    def calculate_all_inclusive_duration(self):
+        for task in self:
+            if task.inclusive_duration is None:
+                self.calculate_inclusive_duration(task)
+
+    def calculate_inclusive_duration(self, task):
+        if task.inclusive_duration is None and task.task_type not in [defn.TaskType.initial, defn.TaskType.implicit]:
+            inclusive_duration = task.exclusive_duration
+            for child in (self[id] for id in task.children):
+                if child.inclusive_duration is None:
+                    child.inclusive_duration = self.calculate_inclusive_duration(child)
+                inclusive_duration += child.inclusive_duration
+            return inclusive_duration
