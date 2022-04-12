@@ -150,11 +150,14 @@ class _Event(ABC):
         self.time = self._event.time
 
     def __getattr__(self, item):
-        if item not in self.attr:
-            raise AttributeError(f"attribute '{item}' is not defined")
-        elif self.attr[item] not in self._event.attributes:
-            raise AttributeError(f"attribute '{item}' not found in {self._base_repr} object")
-        return self._event.attributes[self.attr[item]]
+        """
+        Allow subclasses to override event attributes as required e.g. unique_id for
+        TaskSwitch(complete) events - only look in event attributes if subclasses don't override an attribute
+        """
+        try:
+            return self._event.attributes[self.attr[item]]
+        except KeyError:
+            raise AttributeError(f"attribute '{item}' not found in {self._base_repr} object") from None
 
     @property
     def attributes(self):
@@ -183,10 +186,11 @@ class _Event(ABC):
 
     def yield_attributes(self):
         yield "time", str(self.time)
-        for name , attr in self.attr.items():
-            if attr in self._event.attributes:
-                value = self._event.attributes[attr]
-                yield name, value
+        for name in self.attr:
+            try:
+                yield name, getattr(self, name)
+            except AttributeError:
+                continue
 
     def get_task_completed(self):
         raise NotImplementedError()
@@ -459,6 +463,14 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
     def is_task_switch_complete_event(self):
         return self.prior_task_status in [defn.TaskStatus.complete, defn.TaskStatus.cancel]
 
+    @property
+    def unique_id(self):
+        """Override event attribute to replace with encountering_task_id for task-complete/cancel events"""
+        if self.prior_task_status in [defn.TaskStatus.complete, defn.TaskStatus.cancel]:
+            return self.encountering_task_id
+        else:
+            return self._event.attributes[self.attr[defn.Attr.unique_id]]
+
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         this_chunk_key = self.encountering_task_id
         next_chunk_key = self.next_task_id
@@ -486,12 +498,11 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
         return f"{self._base_repr} [{self.prior_task_id} ({self.prior_task_status}) -> {self.next_task_id}]"
 
 
-
-def unpack(event: Union[_Event, List[_Event]]) -> Union[dict, List[dict]]:
+def unpack(event: Union[_Event, List[_Event]]) -> dict:
     if is_event(event):
         return dict(event.yield_attributes())
     elif is_event_list(event):
         l = [dict(e.yield_attributes()) for e in event]
         return utils.transpose_list_to_dict(l)
     else:
-        raise TypeError(f"{type()}")
+        raise TypeError(f"{type(event)}")
