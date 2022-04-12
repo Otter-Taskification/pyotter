@@ -10,6 +10,7 @@ class Attr(str, Enum):
     task_type = "task_type"
     parent_task_id = "parent_task_id"
     edge_type = "edge_type"
+    prior_task_id = "prior_task_id"
 
 class EventType(str, Enum):
     thread_begin = "thread_begin"
