@@ -339,23 +339,21 @@ for vertex in g.vs:
     event = vertex['event']
     log.debug(f"unpacking vertex {event=}")
     attributes = otter.core.events.unpack(event)
-    if isinstance(attributes, dict):
-        for key, value in attributes.items():
-            log.debug(f"  got {key}={value}")
-            if isinstance(value, list):
-                s = set(value)
-                if len(s) == 1:
-                    value = s.pop()
-                else:
-                    value = ";".join(str(item) for item in value)
-            if isinstance(value, int):
-                value = str(value)
-            elif value == "":
-                value = None
-            log.debug(f"    unpacked {value=}")
-            vertex[key] = value
-    else:
-        raise TypeError(f"{type(attributes)}")
+    for key, value in attributes.items():
+        log.debug(f"  got {key}={value}")
+        if isinstance(value, list):
+            s = set(value)
+            if len(s) == 1:
+                value = s.pop()
+            else:
+                log.debug(f"  concatenate {len(value)} values")
+                value = ";".join(str(item) for item in value)
+        if isinstance(value, int):
+            value = str(value)
+        elif value == "":
+            value = None
+        log.debug(f"    unpacked {value=}")
+        vertex[key] = value
 
 # Dump graph details to file
 if args.loglevel == "DEBUG":
