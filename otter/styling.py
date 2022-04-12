@@ -50,16 +50,15 @@ shapemap_region_type = defaultdict(lambda: 'circle', **{
     'master': 'circle'
 })
 
-task_attribute_names = {
+task_attribute_names = defaultdict(lambda: 'UNDEFINED', **{
     "id": "Unique ID",
     "parent_id": "Parent ID",
     "task_type": "Task Type",
     "crt_ts": "Creation Time",
     "end_ts": "End Time",
-    # "duration": "Duration",
     "exclusive_duration": "Exclusive Duration",
     "inclusive_duration": "Inclusive Duration"
-}
+})
 
 colormap_task_type = defaultdict(lambda: 'black', **{
     'initial_task': 'cyan',
@@ -91,6 +90,8 @@ def style_graph(graph):
         logger.info(f"{line}")
 
     rtype = graph.vs['region_type']
+    etype = graph.es['edge_type']
     graph.vs['style'] = "filled"
     graph.vs['shape'] = [shapemap_region_type[key] for key in rtype]
     graph.vs['color'] = [colormap_region_type[key] for key in rtype]
+    graph.es['color'] = [colormap_edge_type[key] for key in etype]
