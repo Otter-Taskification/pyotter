@@ -150,10 +150,6 @@ class _Event(ABC):
         self.time = self._event.time
 
     def __getattr__(self, item):
-        """
-        Allow subclasses to override event attributes as required e.g. unique_id for
-        TaskSwitch(complete) events - only look in event attributes if subclasses don't override an attribute
-        """
         try:
             return self._event.attributes[self.attr[item]]
         except KeyError:
@@ -462,14 +458,6 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
     @property
     def is_task_switch_complete_event(self):
         return self.prior_task_status in [defn.TaskStatus.complete, defn.TaskStatus.cancel]
-
-    @property
-    def unique_id(self):
-        """Override event attribute to replace with encountering_task_id for task-complete/cancel events"""
-        if self.prior_task_status in [defn.TaskStatus.complete, defn.TaskStatus.cancel]:
-            return self.encountering_task_id
-        else:
-            return self._event.attributes[self.attr[defn.Attr.unique_id]]
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         this_chunk_key = self.encountering_task_id
