@@ -1,5 +1,6 @@
 from collections import defaultdict
 from . import log
+from . import definitions as defn
 
 get_module_logger = log.logger_getter("styling")
 
@@ -89,8 +90,13 @@ def style_graph(graph):
     for line in str(graph).split("\n"):
         logger.info(f"{line}")
 
-    rtype = graph.vs['region_type']
-    etype = graph.es['edge_type']
+    if 'name' in graph.vs.attribute_names():
+        raise ValueError()
+
+    graph.vs['label'] = [v[defn.Attr.unique_id] or " " for v in graph.vs]
+
+    rtype = graph.vs[defn.Attr.region_type]
+    etype = graph.es[defn.Attr.edge_type]
     graph.vs['style'] = "filled"
     graph.vs['shape'] = [shapemap_region_type[key] for key in rtype]
     graph.vs['color'] = [colormap_region_type[key] for key in rtype]
