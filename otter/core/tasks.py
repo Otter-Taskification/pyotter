@@ -30,6 +30,8 @@ class Task:
         self._last_resumed_ts = None
         self._excl_dur = 0
         self._incl_dur = None
+        self._num_descendants = None
+        self._start_ts = None
 
     def __repr__(self):
         return "{}(id={}, type={}, crt_ts={}, end_ts={}, parent={}, children=({}))".format(
@@ -50,6 +52,16 @@ class Task:
         return len(self._children)
 
     @property
+    def num_descendants(self):
+        return self._num_descendants
+
+    @num_descendants.setter
+    def num_descendants(self, n):
+        if self._num_descendants is not None:
+            raise RuntimeError(f"task {self} already notified of num. descendants")
+        self._num_descendants = n
+
+    @property
     def children(self):
         return (child for child in self._children)
 
@@ -63,6 +75,16 @@ class Task:
             raise RuntimeError(f"task {self} already notified of end time")
         self.logger.debug(f"{self} end_ts={time}")
         self._end_ts = time
+
+    @property
+    def start_ts(self):
+        return self._start_ts
+
+    @start_ts.setter
+    def start_ts(self, time):
+        if self.start_ts is not None:
+            raise RuntimeError(f"task start time already set: {self}")
+        self._start_ts = time
 
     @property
     def last_resumed_ts(self):
@@ -92,7 +114,7 @@ class Task:
 
     def keys(self):
         exclude = ["logger"]
-        properties = ["end_ts", "exclusive_duration", "inclusive_duration"]
+        properties = ["start_ts", "end_ts", "exclusive_duration", "inclusive_duration", "num_children", "num_descendants"]
         names = list(vars(self).keys()) + properties
         return (name for name in names if not name in exclude and not name.startswith("_"))
 
@@ -191,3 +213,16 @@ class TaskRegistry:
                     child.inclusive_duration = self.calculate_inclusive_duration(child)
                 inclusive_duration += child.inclusive_duration
             return inclusive_duration
+
+    def calculate_all_num_descendants(self):
+        for task in self:
+            if task.num_descendants is None:
+                task.num_descendants = self.calculate_num_descendants(task)
+
+    def calculate_num_descendants(self, task):
+        descendants = task.num_children
+        for child in (self[id] for id in task.children):
+            if child.num_descendants is None:
+                child.num_descendants = self.calculate_num_descendants(child)
+            descendants += child.num_descendants
+        return descendants
