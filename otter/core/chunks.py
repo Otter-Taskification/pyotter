@@ -31,7 +31,7 @@ class ChunkFactory:
     def __iter__(self):
         self.log.debug(f"{self.__class__.__name__}.__iter__ receiving events from {self.events}")
         for k, event in enumerate(self.events):
-            self.log.debug(f"got event {k}: {event}")
+            self.log.debug(f"got event {k} with vertex label {event.get('vertex_label')}: {event}")
 
             if event.is_chunk_switch_event:
                 self.log.debug(f"updating chunks")
