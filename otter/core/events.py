@@ -208,8 +208,15 @@ class _Event(ABC):
     def is_update_duration_event(self):
         return self.is_task_switch_event or self.is_task_enter_event or self.is_task_leave_event
 
+    @property
+    def is_update_task_start_ts_event(self):
+        return (self.is_task_switch_event and not self.is_task_complete_event) or self.is_task_enter_event
+
     def get_tasks_switched(self):
         raise NotImplementedError("only implemented if event.is_update_duration_event == True")
+
+    def get_task_entered(self):
+        raise NotImplementedError("only implemented if event.is_update_task_start_ts_event == True")
 
     @property
     def vertex_label(self):
@@ -404,6 +411,9 @@ class TaskEnter(RegisterTaskDataMixin, Task):
     def get_tasks_switched(self):
         return self.encountering_task_id, self.unique_id
 
+    def get_task_entered(self):
+        return self.unique_id
+
 
 class InitialTaskEnter(ChunkSwitchEventMixin, TaskEnter):
 
@@ -506,6 +516,9 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
 
     def get_tasks_switched(self):
         return self.encountering_task_id, self.next_task_id
+
+    def get_task_entered(self):
+        return self.next_task_id
 
     def __repr__(self):
         return f"{self._base_repr} [{self.prior_task_id} ({self.prior_task_status}) -> {self.next_task_id}]"
