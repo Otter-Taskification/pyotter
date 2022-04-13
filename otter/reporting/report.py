@@ -70,7 +70,7 @@ def prepare_html(tasks):
         tasks.data,
         attr={
             'table': {'border': '1', 'class': 'data-table'},
-            'tr': {'style': 'text-align: right;'}
+            'tr': {'style': 'text-align: center;'}
         }
     )
 
