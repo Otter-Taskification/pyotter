@@ -93,11 +93,13 @@ def style_graph(graph):
     if 'name' in graph.vs.attribute_names():
         raise ValueError()
 
-    graph.vs['label'] = [v[defn.Attr.unique_id] or " " for v in graph.vs]
+    if "label" in graph.vs.attribute_names():
+        logger.warn("vertex labels already defined, not overwritten")
+    else:
+        logger.debug("defining vertex labels")
+        graph.vs['label'] = [v['vertex_label'] or " " for v in graph.vs]
 
-    rtype = graph.vs[defn.Attr.region_type]
-    etype = graph.es[defn.Attr.edge_type]
     graph.vs['style'] = "filled"
-    graph.vs['shape'] = [shapemap_region_type[key] for key in rtype]
-    graph.vs['color'] = [colormap_region_type[key] for key in rtype]
-    graph.es['color'] = [colormap_edge_type[key] for key in etype]
+    graph.vs['shape'] = [shapemap_region_type[key] for key in graph.vs["vertex_color_key"]]
+    graph.vs['color'] = [colormap_region_type[key] for key in graph.vs["vertex_shape_key"]]
+    graph.es['color'] = [colormap_edge_type[key] for key in graph.es[defn.Attr.edge_type]]

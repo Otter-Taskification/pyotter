@@ -11,6 +11,8 @@ class Attr(str, Enum):
     parent_task_id = "parent_task_id"
     edge_type = "edge_type"
     prior_task_id = "prior_task_id"
+    prior_task_status = "prior_task_status"
+    next_task_region_type = "next_task_region_type"
 
 class EventType(str, Enum):
     thread_begin = "thread_begin"
