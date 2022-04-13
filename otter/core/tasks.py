@@ -178,22 +178,10 @@ class TaskRegistry:
     def data(self):
         return (task.as_dict() for task in self)
 
-    def calculate_exclusive_durations(self):
-        for task in self:
-            self.calculate_exclusive_duration(task)
-
-    def calculate_exclusive_duration(self, task):
-        if task.exclusive_duration is None:
-            child_duration = sum(self[child].duration for child in task.children)
-            task.exclusive_duration = task.duration - child_duration
-            if task.exclusive_duration < 0 and task.id != 0:
-                self.log.warn(f"negative exclusive task duration for task {task.id}")
-        return task.exclusive_duration
-
     def calculate_all_inclusive_duration(self):
         for task in self:
             if task.inclusive_duration is None:
-                self.calculate_inclusive_duration(task)
+                task.inclusive_duration = self.calculate_inclusive_duration(task)
 
     def calculate_inclusive_duration(self, task):
         if task.inclusive_duration is None and task.task_type not in [defn.TaskType.initial, defn.TaskType.implicit]:
