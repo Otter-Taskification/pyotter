@@ -42,6 +42,12 @@ class ChunkFactory:
             if event.is_task_register_event:
                 self.tasks.register_task(event)
 
+            if event.is_update_task_start_ts_event:
+                task = self.tasks[event.get_task_entered()]
+                self.log.debug(f"notifying task start time: {task.id} @ {event.time}")
+                if task.start_ts is None:
+                    task.start_ts = event.time
+
             if event.is_update_duration_event:
                 prior_task_id, next_task_id = event.get_tasks_switched()
                 self.log.debug(f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint:>8} {event}")
@@ -74,6 +80,10 @@ class ChunkFactory:
 
         self.log.debug(f"exhausted {self.events}")
         self.tasks.calculate_all_inclusive_duration()
+        self.tasks.calculate_all_num_descendants()
+
+        for task in self.tasks:
+            self.log.debug(f"task start time: {task.id}={task.start_ts}")
 
     def read(self):
         yield from filter(None, self)
