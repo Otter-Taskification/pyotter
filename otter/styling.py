@@ -58,7 +58,10 @@ task_attribute_names = defaultdict(lambda: 'UNDEFINED', **{
     "crt_ts": "Creation Time",
     "end_ts": "End Time",
     "exclusive_duration": "Exclusive Duration",
-    "inclusive_duration": "Inclusive Duration"
+    "inclusive_duration": "Inclusive Duration",
+    "num_children": "Child Tasks",
+    "num_descendants": "Descendant Tasks",
+    "start_ts": "Start Time"
 })
 
 colormap_task_type = defaultdict(lambda: 'black', **{
