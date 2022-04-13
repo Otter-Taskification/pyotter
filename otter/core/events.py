@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from typing import Union, List, NewType
+import itertools as it
 import loggingdecorators as logdec
 from .. import log
 from .. import utils
@@ -141,6 +142,12 @@ class _Event(ABC):
     is_chunk_switch_event = False
     is_task_group_end_event = False
 
+    _additional_attributes = [
+        "vertex_label",
+        "vertex_color_key",
+        "vertex_shape_key"
+    ]
+
     @logdec.on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, event, location, attr):
         self.log = get_module_logger()
@@ -154,6 +161,12 @@ class _Event(ABC):
             return self._event.attributes[self.attr[item]]
         except KeyError:
             raise AttributeError(f"attribute '{item}' not found in {self._base_repr} object") from None
+
+    def get(self, item, default=None):
+        try:
+            return getattr(self, item)
+        except AttributeError:
+            return default
 
     @property
     def attributes(self):
@@ -182,7 +195,7 @@ class _Event(ABC):
 
     def yield_attributes(self):
         yield "time", str(self.time)
-        for name in self.attr:
+        for name in it.chain(self.attr, self._additional_attributes):
             try:
                 yield name, getattr(self, name)
             except AttributeError:
@@ -197,6 +210,18 @@ class _Event(ABC):
 
     def get_tasks_switched(self):
         raise NotImplementedError("only implemented if event.is_update_duration_event == True")
+
+    @property
+    def vertex_label(self):
+        return self.unique_id
+
+    @property
+    def vertex_color_key(self):
+        return self.region_type
+
+    @property
+    def vertex_shape_key(self):
+        return self.vertex_color_key
 
 # mixin
 class ClassNotImplementedMixin(ABC):
@@ -485,12 +510,25 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
     def __repr__(self):
         return f"{self._base_repr} [{self.prior_task_id} ({self.prior_task_status}) -> {self.next_task_id}]"
 
+    @property
+    def vertex_label(self):
+        if self.prior_task_status in [defn.TaskStatus.complete, defn.TaskStatus.cancel]:
+            return self.prior_task_id
+        else:
+            return self.next_task_id
+
+    @property
+    def vertex_color_key(self):
+        if self.prior_task_status in [defn.TaskStatus.complete, defn.TaskStatus.cancel]:
+            return self.region_type
+        else:
+            return self.next_task_region_type
+
 
 def unpack(event: Union[_Event, List[_Event]]) -> dict:
     if is_event(event):
         return dict(event.yield_attributes())
     elif is_event_list(event):
-        l = [dict(e.yield_attributes()) for e in event]
-        return utils.transpose_list_to_dict(l)
+        return utils.transpose_list_to_dict([dict(e.yield_attributes()) for e in event])
     else:
         raise TypeError(f"{type(event)}")
