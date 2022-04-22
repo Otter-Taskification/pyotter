@@ -88,6 +88,9 @@ def style_tasks(t):
     t.vs['color'] = [colormap_task_type[t.task_type] for t in tasks]
 
 def style_graph(graph):
+
+    assert(defn.Attr.edge_type in graph.es.attribute_names())
+
     logger = get_module_logger()
     logger.info(f"styling graph:")
     for line in str(graph).split("\n"):

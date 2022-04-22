@@ -64,6 +64,11 @@ for name in ['_task_cluster_id', '_is_task_enter_node', '_is_task_leave_node', '
     if name not in g.vs.attribute_names():
         g.vs[name] = None
 
+# Define some edge attributes
+for name in [otter.Attr.edge_type]:
+    if name not in g.es.attribute_names():
+        g.es[name] = None
+
 # Create vertex labellers
 log.info("creating vertex labellers")
 parallel_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_parallel_sequence_id'), group_key='_parallel_sequence_id')

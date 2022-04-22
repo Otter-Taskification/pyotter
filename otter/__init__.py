@@ -1,5 +1,6 @@
 from .core import EventFactory, events, TaskRegistry, ChunkFactory
 from . import styling, reporting
+from .definitions import Attr
 
 # Check that the "dot" commandline utility is available
 from shutil import which
