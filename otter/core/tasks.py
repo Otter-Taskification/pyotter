@@ -25,6 +25,9 @@ class Task:
             self.parent_id = None
         self.task_type = data[defn.Attr.task_type]
         self.crt_ts = data[defn.Attr.time]
+        self.source_file_name = data[defn.Attr.source_file_name]
+        self.source_func_name = data[defn.Attr.source_func_name]
+        self.source_line_number = data[defn.Attr.source_line_number]
         self._children = deque()
         self._end_ts = None
         self._last_resumed_ts = None
@@ -114,7 +117,16 @@ class Task:
 
     def keys(self):
         exclude = ["logger"]
-        properties = ["start_ts", "end_ts", "exclusive_duration", "inclusive_duration", "num_children", "num_descendants"]
+        properties = ["start_ts",
+            "end_ts",
+            "exclusive_duration",
+            "inclusive_duration",
+            "num_children",
+            "num_descendants",
+            "source_file_name",
+            "source_func_name",
+            "source_line_number"
+        ]
         names = list(vars(self).keys()) + properties
         return (name for name in names if not name in exclude and not name.startswith("_"))
 
