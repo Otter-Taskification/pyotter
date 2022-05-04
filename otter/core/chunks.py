@@ -160,7 +160,7 @@ class Chunk:
     @cached_property
     def graph(self):
 
-        self.log.debug(f"transforming chunk to graph {self.first=}")
+        self.log.debug(f"transforming chunk to graph (type={self.type}) {self.first=}")
 
         g = ig.Graph(directed=True)
         v_prior = g.add_vertex(event=self.first)
@@ -221,6 +221,7 @@ class Chunk:
                 v["_parallel_sequence_id"] = (self.first.unique_id if event is self.last else event.unique_id, event.endpoint)
 
             # Add edge except for (single/master begin -> end) and (parallel N begin -> parallel N end)
+            # This avoids creating spurious edges between vertices representing nested chunks
             events_bridge_single_master = self.events_bridge_single_master_region(v_prior['event'], event)
             events_bridge_parallel = self.events_bridge_parallel_region(v_prior['event'], event)
             events_have_same_id = event.unique_id == v_prior['event'].unique_id if events_bridge_parallel else False
@@ -228,7 +229,9 @@ class Chunk:
                 self.log.debug(f"add edge from: {v_prior['event']} to: {event}")
                 g.add_edge(v_prior, v)
             else:
-                self.log.debug(f"edge skipped from: {v_prior['event']} to: {event}")
+                msg = f"edge skipped:\n  src: {v_prior['event']}\n  dst: {event}"
+                for line in msg.split("\n"):
+                    self.log.debug(line)
 
             # For task-create add dummy nodes for easier merging
             if event.is_task_create_event:
@@ -246,10 +249,16 @@ class Chunk:
         if self.type == defn.RegionType.explicit_task and len(self) <= 2:
             g.delete_edges([0])
 
-        # If no internal vertices (len(self) <= 2), require at least 1 edge (except for empty explicit task chunks)
-        # Require at least 1 edge between start & end vertices in single-executor chunk if disconnected
-        if self.type != defn.RegionType.explicit_task and len(self) <= 2 and g.ecount() == 0:
-            self.log.debug(f"no internal vertices - add edge from: {g.vs[0]['event']} to: {g.vs[1]['event']}")
-            g.add_edge(g.vs[0], g.vs[1])
+        # If no internal vertices, require at least 1 edge (except for empty explicit task chunks)
+        # Require at least 1 edge between start & end vertices in parallel & single-executor chunk if disconnected
+        if g.ecount() == 0:
+            self.log.debug(f"graph contains no edges (type={self.type}, events={len(self)})")
+            if self.type == defn.RegionType.explicit_task:
+                self.log.debug(f"don't add edges for empty explicit task chunks")
+                pass
+            elif len(self) <= 2 or (self.type == defn.RegionType.parallel and len(self) <= 4):
+                # Parallel chunks contain implicit-task-begin/end events which are skipped, but count towards len(self)
+                self.log.debug(f"no internal vertices - add edge from: {g.vs[0]['event']} to: {g.vs[1]['event']}")
+                g.add_edge(g.vs[0], g.vs[1])
 
         return g
