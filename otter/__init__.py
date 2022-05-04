@@ -53,6 +53,7 @@ def check_args(args):
     # Anchorfile must exist
     if not os.path.isfile(args.anchorfile):
         raise FileNotFoundError(args.anchorfile)
+    args.anchorfile = os.path.abspath(args.anchorfile)
 
 
     if args.report is not None:
