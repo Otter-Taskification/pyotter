@@ -26,10 +26,17 @@
             margin-right: auto;
             width: 80%;
         }
+
+        .mono-font {
+            font-family: monospace;
+            font-size: 18px;
+        }
+
         </style>
 </head>
 <body>
     <h1>Otter Report</h1>
+    <h3 class="mono-font">$ANCHORFILE</h3>
     <hr/>
     <h2>Computational Flow Graph</h2>
     <a href="$GRAPH_SVG" target="_blank"><img class="main-graph" src="$GRAPH_SVG"></a>

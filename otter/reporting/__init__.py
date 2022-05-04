@@ -23,7 +23,7 @@ def write_report(args, g, tasks):
         report.convert_to_svg(dot, svg)
 
     # Write HTML report
-    html = report.prepare_html(tasks)
+    html = report.prepare_html(args, tasks)
     html_file = os.path.join(args.report, "report.html")
     get_module_logger().info(f"writing report: {html_file}")
     with open(html_file, "w") as f:

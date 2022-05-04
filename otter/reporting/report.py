@@ -52,7 +52,7 @@ def convert_to_svg(dot, svg):
             get_module_logger().error(f"{line}")
 
 
-def prepare_html(tasks):
+def prepare_html(args, tasks):
     from string import Template
     from . import templates
     from . import make
@@ -79,6 +79,7 @@ def prepare_html(tasks):
 
     # Insert data into template
     content = Template(html).safe_substitute(
+        ANCHORFILE=args.anchorfile,
         GRAPH_SVG="img/graph.svg",
         TREE_SVG="img/tree.svg",
         TASK_ATTRIBUTES_TABLE=task_table
