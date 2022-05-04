@@ -52,6 +52,8 @@ class EventFactory:
         self.log = get_module_logger()
         self.default_cls = default_cls
         self.attr = {attr.name: attr for attr in reader.definitions.attributes}
+        for key, value in self.attr.items():
+            self.log.debug(f"got attribute: {key}={value}")
         self.location_registry = dict()
         for location in reader.definitions.locations:
             self.location_registry[location] = Location(location)
@@ -188,7 +190,7 @@ class _Event(ABC):
         raise NotImplementedError(f"method not implemented for {type(self)}")
 
     def __repr__(self):
-        return " ".join([self._base_repr, self._attr_repr])
+        return f"{self._base_repr} {self._attr_repr}"
 
     def as_row(self, fmt="{type:<22} {time} {region_type:<16} {endpoint}"):
         return fmt.format(type=self.__class__.__name__, time=self.time, region_type=getattr(self, "region_type", None), endpoint=self.endpoint)
@@ -267,7 +269,10 @@ class RegisterTaskDataMixin(ABC):
             defn.Attr.unique_id:         self.unique_id,
             defn.Attr.task_type:         self.task_type,
             defn.Attr.parent_task_id:    self.parent_task_id,
-            defn.Attr.time:              self._event.time
+            defn.Attr.time:              self._event.time,
+            defn.Attr.source_file_name:  self.source_file_name,
+            defn.Attr.source_func_name:  self.source_func_name,
+            defn.Attr.source_line_number:  self.source_line_number
         }
 
 
@@ -476,7 +481,7 @@ class TaskCreate(RegisterTaskDataMixin, DefaultUpdateChunksMixin, Task):
     is_task_create_event = True
 
     def __repr__(self):
-        return f"{self._base_repr} {self.parent_task_id} created {self.unique_id}"
+        return f"{self._base_repr} {self._attr_repr}"
 
 
 class TaskSchedule(Task):
