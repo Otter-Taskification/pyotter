@@ -1,6 +1,6 @@
-# pyotter - The post-processing package for [Otter](https://github.com/adamtuft/otter)
+# pyotter - The post-processing package for [Otter](https://github.com/Otter-Taskification/otter)
 
-This is the post-processing package for use with Otter - please see [the main Otter repo](https://github.com/adamtuft/otter) for details.
+This is the post-processing package for use with Otter - please see [the main Otter repo](https://github.com/Otter-Taskification/otter) for details.
 
 ## Getting Started
 
@@ -16,8 +16,8 @@ The following dependencies should be installed before installing pyotter:
 To install pyotter from github:
 
 ```bash
-git clone https://github.com/adamtuft/pyotter.git && cd pyotter
-git checkout main
+git clone https://github.com/Otter-Taskification/pyotter.git && cd pyotter
+git checkout dev
 pip install .
 ```
 
@@ -53,7 +53,7 @@ Contributions are welcome! If you would like to contribute, please fork the repo
 
 ## Issues, Questions and Feature Requests
 
-Please post any of the above [in the main Otter repo](https://github.com/adamtuft/otter/issues) so as to keep everything in one place.
+Please post any of the above [in the main Otter repo](https://github.com/Otter-Taskification/otter/issues) so as to keep everything in one place.
 
 ## Licensing
 
