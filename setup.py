@@ -17,6 +17,7 @@ setup(name="pyotter",
     packages=find_packages(),
     package_data={'otter': ['templates/*', 'log/config/*.yaml']},
     install_requires=[
+        'pyyaml>=6.0',
         'python-igraph==0.9.1',
         'loggingdecorators>=0.1.3'
     ],
