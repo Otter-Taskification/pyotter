@@ -15,9 +15,15 @@ otter.core.chunks module
 otter.core.events module
 ------------------------
 
+.. autoclass:: otter.core.events._Event
+    :members:
+    :undoc-members:
+    :private-members: _event, _additional_attributes
+    :special-members: __init__, __getattr__
+
 .. automodule:: otter.core.events
+   :exclude-members: _Event
    :members:
-   :private-members:
    :undoc-members:
    :show-inheritance:
 

@@ -16,37 +16,82 @@ is_event_list = lambda args: isinstance(args, list) and all_events(args)
 
 
 class Location:
+    """Wraps an OTF2 location (essentially a thread) defined in a trace.
+    
+    OTF2 yields event-location pairs (a location and the event which recorded it)
+    from the trace and it is occasionally convenient to be able to refer to
+    the location which recorded an event; that is the purpose of this class.
+
+    When iterating over the events of a trace, a location may keep track of the
+    nested sequence of parallel regions in which it recorded each event using
+    :meth:`enter_parallel_region` and :meth:`leave_parallel_region`.
+    """
 
     @logdec.on_init(logger=log.logger_getter("init_logger"), level=log.DEBUG)
     def __init__(self, location):
+        """Initialise a location from an OTF2 location. Maintains a stack which,
+        when iterating over the events in a trace, records the sequence of active
+        parallel regions in which it participated.
+
+        :param location: a location defined in an Otter OTF2 trace.
+        :type location: OTF2 location
+        """
         self.log = log.get_logger(self.__class__.__name__)
         self._loc = location
-        self.parallel_region_deque = deque()
+        self._parallel_region_deque = deque()
+        """The stack of currently active parallel regions"""
 
     def __repr__(self):
         return f"{self.__class__.__name__}(location={self._loc.name})"
 
     @property
     def name(self):
+        """The name of this location."""
         return self._loc.name
 
     @property
     def current_parallel_region(self):
-        return self.parallel_region_deque[-1]
+        """The currently active parallel region in which this location is 
+        participating.
+        """
+        return self._parallel_region_deque[-1]
 
     def enter_parallel_region(self, id: int):
+        """Record that the location entered a new parallel region.
+
+        :param id: The ID of the parallel region
+        :type id: int
+        """
         self.log.debug(f"{self} entered parallel region {id}")
-        self.parallel_region_deque.append(id)
+        self._parallel_region_deque.append(id)
 
     def leave_parallel_region(self):
+        """Record that the location left a parallel region."""
         self.log.debug(f"{self} exited parallel region {self.current_parallel_region}")
-        self.parallel_region_deque.pop()
+        self._parallel_region_deque.pop()
 
 
 class EventFactory:
+    """_summary_
+
+    :raises TypeError: _description_
+    :raises TypeError: _description_
+    :return: _description_
+    :rtype: _type_
+    :yield: _description_
+    :rtype: _type_
+    """
 
     @logdec.on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, reader, default_cls: type=None):
+        """_summary_
+
+        :param reader: _description_
+        :type reader: _type_
+        :param default_cls: _description_, defaults to None
+        :type default_cls: type, optional
+        :raises TypeError: _description_
+        """
         if default_cls is not None and not issubclass(default_cls, _Event):
             raise TypeError(f"arg {default_cls=} is not subclass of _Event")
         self.log = get_module_logger()
@@ -64,6 +109,11 @@ class EventFactory:
         return f"{self.__class__.__name__}(default_cls={self.default_cls})"
 
     def __iter__(self):
+        """_summary_
+
+        :yield: _description_
+        :rtype: _type_
+        """
         self.log.debug(f"generating events from {self.events}")
         for k, (location, event) in enumerate(self.events):
             cls = self.get_class(
@@ -74,6 +124,16 @@ class EventFactory:
             yield cls(event, self.location_registry[location], self.attr)
 
     def get_class(self, event_type: defn.EventType, region_type: defn.RegionType) -> type:
+        """_summary_
+
+        :param event_type: _description_
+        :type event_type: defn.EventType
+        :param region_type: _description_
+        :type region_type: defn.RegionType
+        :raises TypeError: _description_
+        :return: _description_
+        :rtype: type
+        """
         try:
             return self.get_region_event_class(region_type, event_type)
         except KeyError:
@@ -90,6 +150,13 @@ class EventFactory:
 
     @staticmethod
     def get_event_class(event_type):
+        """_summary_
+
+        :param event_type: _description_
+        :type event_type: _type_
+        :return: _description_
+        :rtype: _type_
+        """
 
         lookup = {
             defn.EventType.thread_begin: ThreadBegin,
@@ -113,6 +180,15 @@ class EventFactory:
 
     @staticmethod
     def get_region_event_class(region_type, event_type):
+        """_summary_
+
+        :param region_type: _description_
+        :type region_type: _type_
+        :param event_type: _description_
+        :type event_type: _type_
+        :return: _description_
+        :rtype: _type_
+        """
 
         lookup = {
             (defn.RegionType.initial_task, defn.EventType.task_enter): InitialTaskEnter,
@@ -131,27 +207,56 @@ class EventFactory:
 
 
 class _Event(ABC):
+    """The abstract base class which all concrete event types implement.
 
-    is_enter_event = False
-    is_leave_event = False
-    is_task_enter_event = False
-    is_task_create_event = False
-    is_task_register_event = False
-    is_task_complete_event = False
-    is_task_leave_event = False
-    is_task_switch_event = False
-    is_task_switch_complete_event = False
-    is_chunk_switch_event = False
-    is_task_group_end_event = False
+    Encapsulates an OTF2 event and provides easier access to
+    the event's attributes. It also "knows" through :meth:`update_chunks`
+    how it should update the chunk(s) in which it participates.
 
+    Various flags and methods defined here are overridden by derived classes and
+    mixin classes to specialise the behaviour for particular subsets of events.
+
+    :var _event: The encapsulated OTF2 event.
+    :var _location: The OTF2 location which recorded this event.
+    :var attr: The OTF2 attributes which may be defined for this event.
+
+    :raises AttributeError: when an attribute is not found by :meth:`__getattr__`.
+    :raises NotImplementedError: by default in :meth:`get_task_data`, :meth:`get_task_completed`\
+    , :meth:`get_tasks_switched` and :meth:`get_task_entered` - this behaviour must be\
+    overridden by the relevant derived classes. If this exception is ever raised\
+    by one of these functions, this indicates a developer error.
+    :raises NotImplementedError: by default in :meth:`update_chunks` so that derived\
+    classes may not call `super().update_chunks(...)`
+    """
+
+    is_enter_event = False                 #: set to True by :class:`.EnterMixin`
+    is_leave_event = False                 #: set to True by :class:`.LeaveMixin`
+    is_task_enter_event = False            #: set to True by :class:`.TaskEnter`
+    is_task_create_event = False           #: set to True by :class:`.TaskCreate`
+    is_task_register_event = False         #: set to True by :class:`.RegisterTaskDataMixin`
+    is_task_complete_event = False         #: set to True by :class:`.TaskLeave` and overridden by :class:`TaskSwitch`
+    is_task_leave_event = False            #: set to True by :class:`.TaskLeave`
+    is_task_switch_event = False           #: set to True by :class:`.TaskSwitch`
+    is_task_switch_complete_event = False  #: overridden by :class:`TaskSwitch`
+    is_chunk_switch_event = False          #: set to True by :class:`._Event`
+    is_task_group_end_event = False        #: set to True by :class:`._Event`
+
+    
     _additional_attributes = [
         "vertex_label",
         "vertex_color_key",
         "vertex_shape_key"
-    ]
+    ] #: Names attributes which should be returned by :meth:`yield_attributes` in addition to the underlying OTF2 attributes.
 
     @logdec.on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, event, location, attr):
+        """Initialise self from an OTF2 event, recording references to the event,
+        the location which recorded it and the OTF2 attributes it may contain.
+
+        :param event: The OTF2 event to encapsulate.
+        :param location: The OTF2 location which recorded this event.
+        :param attr: The OTF2 attributes which may be defined for this event.
+        """
         self.log = get_module_logger()
         self._event = event
         self._location = location
@@ -159,12 +264,29 @@ class _Event(ABC):
         self.time = self._event.time
 
     def __getattr__(self, item):
+        """When an attribute is not otherwise defined for an :class:`_Event`, look up the
+        named attribute in :attr:`self._event`, raising :class:`AttributeError`
+        if it is not defined there either.
+
+        As this method is called only when the attribute is not found in the
+        class or object instance, this means an :class:`_Event` can shadow or
+        override OTF2 event attributes.
+
+        :param item: _description_
+        :raises AttributeError: _description_
+        :return: _description_
+        """
         try:
             return self._event.attributes[self.attr[item]]
         except KeyError:
             raise AttributeError(f"attribute '{item}' not found in {self._base_repr} object") from None
 
     def get(self, item, default=None):
+        """Get an attribute or the given default value if the attribute is not found.
+
+        :param item: Attribute name
+        :param default: default value if named attribute not found, defaults to None
+        """
         try:
             return getattr(self, item)
         except AttributeError:
@@ -172,6 +294,11 @@ class _Event(ABC):
 
     @property
     def attributes(self):
+        """Return a generator which yields name-value pairs of the OTF2 attributes
+        defined for this event.
+
+        :return: A generator yielding name-value pairs.
+        """
         return ((attr.name, self._event.attributes[attr]) for attr in self._event.attributes)
 
     @property
@@ -183,19 +310,37 @@ class _Event(ABC):
         return ", ".join([f"{name}:{value}" for name, value in self.attributes if name != 'time'])
 
     def get_task_data(self):
+        """Implemented by :class:`.RegisterTaskDataMixin` for events which define a task.
+        
+        :raises NotImplementedError: where not explicitly overridden
+        """
         raise NotImplementedError(f"method not implemented for {type(self)}")
 
     @abstractmethod
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
+        """Implemented by concrete event classes to control how to update the
+        chunks in which an event participates. This logic depends on the attributes
+        of the event, so each event specialises this logic to its needs.
+
+        :param chunk_dict: A dictionary of chunks in which an event looks up the chunk\
+        in which it participates
+        :param chunk_stack: A dictionary of stacks of chunks which an event can use to store an\
+        enclosing chunk when it participates in nested chunks.
+        :raises NotImplementedError: if not explicitly overridden
+        """
         raise NotImplementedError(f"method not implemented for {type(self)}")
 
     def __repr__(self):
         return f"{self._base_repr} {self._attr_repr}"
 
-    def as_row(self, fmt="{type:<22} {time} {region_type:<16} {endpoint}"):
-        return fmt.format(type=self.__class__.__name__, time=self.time, region_type=getattr(self, "region_type", None), endpoint=self.endpoint)
+    # This function appears unused - REMOVE
+    # def as_row(self, fmt="{type:<22} {time} {region_type:<16} {endpoint}"):
+    #     return fmt.format(type=self.__class__.__name__, time=self.time, region_type=getattr(self, "region_type", None), endpoint=self.endpoint)
 
     def yield_attributes(self):
+        """Yield name-value pairs of the OTF2 attributes defined for this event,
+        the event's :attr:`time` and the attributes listed in :attr:`_additional_attributes`.
+        """
         yield "time", str(self.time)
         for name in it.chain(self.attr, self._additional_attributes):
             try:
@@ -204,32 +349,49 @@ class _Event(ABC):
                 continue
 
     def get_task_completed(self):
+        """Implemented by :class:`.TaskLeave` and :class:`.TaskSwitch`
+
+        :raises NotImplementedError: where not explicitly overridden
+        """
         raise NotImplementedError()
 
     @property
     def is_update_duration_event(self):
+        """True if an event updates a task's duration."""
         return self.is_task_switch_event or self.is_task_enter_event or self.is_task_leave_event
 
     @property
     def is_update_task_start_ts_event(self):
+        """True if an event updates a task's start timestamp."""
         return (self.is_task_switch_event and not self.is_task_complete_event) or self.is_task_enter_event
 
     def get_tasks_switched(self):
+        """Implemented by :class:`.TaskEnter`, :class:`.TaskLeave` and :class:`.TaskSwitch`
+
+        :raises NotImplementedError: where not explicitly overridden
+        """
         raise NotImplementedError("only implemented if event.is_update_duration_event == True")
 
     def get_task_entered(self):
+        """Implemented by :class:`.TaskEnter` and :class:`.TaskSwitch`
+
+        :raises NotImplementedError: where not explicitly overridden
+        """
         raise NotImplementedError("only implemented if event.is_update_task_start_ts_event == True")
 
     @property
     def vertex_label(self):
+        """The value used to label a vertex representing this event."""
         return self.unique_id
 
     @property
     def vertex_color_key(self):
+        """The key used to look up the colour of a vertex representing this event."""
         return self.region_type
 
     @property
     def vertex_shape_key(self):
+        """The key used to look up the shape of a vertex representing this event."""
         return self.vertex_color_key
 
 # mixin
@@ -493,10 +655,14 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
 
     @property
     def is_task_complete_event(self):
+        """Aliases :meth:`.is_task_switch_complete_event`
+        """
         return self.is_task_switch_complete_event
 
     @property
     def is_task_switch_complete_event(self):
+        """Overrides :attr:`._Event.is_task_switch_complete_event`. True if the 
+        task being suspended in this event is complete or cancelled."""
         return self.prior_task_status in [defn.TaskStatus.complete, defn.TaskStatus.cancel]
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
