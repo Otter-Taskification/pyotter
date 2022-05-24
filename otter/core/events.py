@@ -237,8 +237,8 @@ class _Event(ABC):
     is_task_complete_event = False         #: set to True by :class:`.TaskLeave` and overridden by :class:`TaskSwitch`
     is_task_leave_event = False            #: set to True by :class:`.TaskLeave`
     is_task_switch_event = False           #: set to True by :class:`.TaskSwitch`
-    is_task_switch_complete_event = False  #: overridden by :class:`TaskSwitch`
-    is_chunk_switch_event = False          #: set to True by :class:`._Event`
+    is_task_switch_complete_event = False  #: overridden by :class:`.TaskSwitch`
+    is_chunk_switch_event = False          #: set to True by :class:`.ChunkSwitchEventMixin`
     is_task_group_end_event = False        #: set to True by :class:`._Event`
 
     
@@ -272,9 +272,8 @@ class _Event(ABC):
         class or object instance, this means an :class:`_Event` can shadow or
         override OTF2 event attributes.
 
-        :param item: _description_
-        :raises AttributeError: _description_
-        :return: _description_
+        :param item: attribute name to look up.
+        :raises AttributeError: when the named attribute is not fouund.
         """
         try:
             return self._event.attributes[self.attr[item]]
@@ -327,6 +326,9 @@ class _Event(ABC):
         :param chunk_stack: A dictionary of stacks of chunks which an event can use to store an\
         enclosing chunk when it participates in nested chunks.
         :raises NotImplementedError: if not explicitly overridden
+
+        :yields: The chunk which the event completes, or `None` if it does not complete\
+        a chunk.
         """
         raise NotImplementedError(f"method not implemented for {type(self)}")
 
