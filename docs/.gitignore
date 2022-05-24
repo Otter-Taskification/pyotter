@@ -1,0 +1,2 @@
+# Only track files required to generate documentation
+/_build/*
