@@ -72,25 +72,25 @@ class Location:
 
 
 class EventFactory:
-    """_summary_
+    """A container which stores a reference to an OTF2 reader handle.
 
-    :raises TypeError: _description_
-    :raises TypeError: _description_
-    :return: _description_
-    :rtype: _type_
-    :yield: _description_
-    :rtype: _type_
+    When iterated over, yields a sequence of :class:`_Event` objects by
+    traversing the events in the stored OTF2 reader.
+
+    Maps an OTF2 event's ``event_type`` and ``region_type`` attribute to the
+    concrete :class:`_Event` class to instantiate using the :meth:`get_class`
+    method.
     """
 
     @logdec.on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, reader, default_cls: type=None):
-        """_summary_
+        """Initialise an ``EventFactory`` from an OTF2 reader, specifying an
+        optional default class to instantiate if an event does not match
+        any ``_Event`` concrete class.
 
-        :param reader: _description_
-        :type reader: _type_
-        :param default_cls: _description_, defaults to None
-        :type default_cls: type, optional
-        :raises TypeError: _description_
+        :param reader: An OTF2 reader handle
+        :param default_cls: default ``_Event`` subclass to instantiate, defaults to None
+        :raises TypeError: if ``default_cls`` is not a subclass of ``_Event``.
         """
         if default_cls is not None and not issubclass(default_cls, _Event):
             raise TypeError(f"arg {default_cls=} is not subclass of _Event")
@@ -109,10 +109,10 @@ class EventFactory:
         return f"{self.__class__.__name__}(default_cls={self.default_cls})"
 
     def __iter__(self):
-        """_summary_
+        """Yield a sequence of concrete ``_Event`` objects from the events in an
+        OTF2 trace.
 
-        :yield: _description_
-        :rtype: _type_
+        :yield: an ``_Event`` object.
         """
         self.log.debug(f"generating events from {self.events}")
         for k, (location, event) in enumerate(self.events):
@@ -124,13 +124,13 @@ class EventFactory:
             yield cls(event, self.location_registry[location], self.attr)
 
     def get_class(self, event_type: defn.EventType, region_type: defn.RegionType) -> type:
-        """_summary_
+        """Look up the ``_Event`` subclass to instantiate from an OTF2 event's
+        ``event_type`` and ``region_type`` attributes.
 
-        :param event_type: _description_
-        :type event_type: defn.EventType
-        :param region_type: _description_
-        :type region_type: defn.RegionType
-        :raises TypeError: _description_
+        :param event_type: OTF2 event attribute
+        :param region_type: OTF2 event attribute
+        :raises TypeError: if no ``_Event`` subclass matches the arguments and \
+        ``self.default_cls`` is ``None``.
         :return: _description_
         :rtype: type
         """
@@ -150,12 +150,12 @@ class EventFactory:
 
     @staticmethod
     def get_event_class(event_type):
-        """_summary_
+        """Map an OTF2 event's ``event_type`` attribute to an ``_Event``
+        subclass to instantiate.
 
-        :param event_type: _description_
-        :type event_type: _type_
-        :return: _description_
-        :rtype: _type_
+        :param event_type: OTF2 event attribute.
+        :raises KeyError: if no matching class found.
+        :return: An ``_Event`` subclass to instantiate.
         """
 
         lookup = {
@@ -180,14 +180,13 @@ class EventFactory:
 
     @staticmethod
     def get_region_event_class(region_type, event_type):
-        """_summary_
+        """Map an OTF2 event's ``region_type`` and ``event_type`` attributes
+        to an ``_Event`` subclass to instantiate.
 
-        :param region_type: _description_
-        :type region_type: _type_
-        :param event_type: _description_
-        :type event_type: _type_
-        :return: _description_
-        :rtype: _type_
+        :param region_type: OTF2 event attribute.
+        :param event_type: OTF2 event attribute.
+        :raises KeyError: if no matching class found.
+        :return: An ``_Event`` subclass to instantiate.
         """
 
         lookup = {

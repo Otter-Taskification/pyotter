@@ -9,14 +9,11 @@ otter.core.events
 The ``EventFactory`` class
 -----------------------------------
 
-Generates instances of :class:`_Event` subclasses by iterating over a sequence
-of OTF2 events.
-
 .. autoclass:: otter.core.events.EventFactory
     :members:
     :undoc-members:
     :private-members:
-..    :special-members:
+    :special-members: __init__, __iter__
 
 
 The ``_Event`` abstract base class
@@ -68,6 +65,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: GenericEvent
     :private-bases:
@@ -81,6 +79,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: ImplicitTaskEnter
     :private-bases:
@@ -94,6 +93,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: ImplicitTaskLeave
     :private-bases:
@@ -107,6 +107,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: InitialTaskEnter
     :private-bases:
@@ -120,6 +121,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: InitialTaskLeave
     :private-bases:
@@ -133,6 +135,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: Master
     :private-bases:
@@ -146,6 +149,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: MasterBegin
     :private-bases:
@@ -159,6 +163,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: MasterEnd
     :private-bases:
@@ -172,6 +177,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: ParallelBegin
     :private-bases:
@@ -185,6 +191,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: ParallelEnd
     :private-bases:
@@ -198,6 +205,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: SingleBegin
     :private-bases:
@@ -211,6 +219,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: SingleEnd
     :private-bases:
@@ -224,6 +233,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: Sync
     :private-bases:
@@ -237,6 +247,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: SyncBegin
     :private-bases:
@@ -250,6 +261,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: SyncEnd
     :private-bases:
@@ -263,6 +275,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: Task
     :private-bases:
@@ -276,6 +289,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: TaskCreate
     :private-bases:
@@ -289,6 +303,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: TaskEnter
     :private-bases:
@@ -302,6 +317,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: TaskLeave
     :private-bases:
@@ -315,6 +331,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: TaskSchedule
     :private-bases:
@@ -328,6 +345,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: TaskSwitch
     :private-bases:
@@ -341,6 +359,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: TaskgroupBegin
     :private-bases:
@@ -354,6 +373,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: TaskgroupEnd
     :private-bases:
@@ -367,6 +387,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: ThreadBegin
     :private-bases:
@@ -380,6 +401,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: ThreadEnd
     :private-bases:
@@ -393,6 +415,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: WorkshareBegin
     :private-bases:
@@ -406,6 +429,7 @@ Concrete event classes
     :members:
     :undoc-members:
     :private-members:
+    :show-inheritance:
 
 .. inheritance-diagram:: WorkshareEnd
     :private-bases:
@@ -427,8 +451,4 @@ Class inheritance diagram
 
 .. inheritance-diagram:: otter.core.events
     :private-bases:
-    :parts: 1
-
-.. inheritance-diagram:: otter.core.events.EnterMixin
-    :top-classes: EnterMixin
     :parts: 1
