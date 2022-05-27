@@ -61,7 +61,7 @@ html_static_path = ['_static']
 
 inheritance_graph_attrs = dict(
     rankdir="LR",
-    size='"20, 40"',
+    size='"200, 100"',
     fontsize=30
 )
 

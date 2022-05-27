@@ -209,8 +209,9 @@ class _Event(ABC):
     """The abstract base class which all concrete event types implement.
 
     Encapsulates an OTF2 event and provides easier access to
-    the event's attributes. It also "knows" through :meth:`update_chunks`
-    how it should update the chunk(s) in which it participates.
+    the event's attributes. An event implements :meth:`update_chunks` to update
+    the chunk(s) in which it participates. The details depend on the exact
+    event class.
 
     Various flags and methods defined here are overridden by derived classes and
     mixin classes to specialise the behaviour for particular subsets of events.
@@ -397,6 +398,11 @@ class _Event(ABC):
 
 # mixin
 class ClassNotImplementedMixin(ABC):
+    """Placeholder to indicate that some event is not implemented.
+
+    .. warning::
+        Not currently used anywhere! Consider removing to reduce code bloat.
+    """
 
     @logdec.on_init(logger=log.logger_getter("init_logger"), level=log.ERROR)
     def __init__(self, *args, **kwargs):
@@ -405,6 +411,12 @@ class ClassNotImplementedMixin(ABC):
 
 # mixin
 class DefaultUpdateChunksMixin(ABC):
+    """Events use this mixin to use the default logic for updating the chunk
+    in which they participate.
+
+    Implements the default logic for :meth:`_Event.update_chunks` which is to
+    append the event to the chunk belonging to the encountering task.
+    """
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         encountering_task_id = self.encountering_task_id
@@ -414,20 +426,48 @@ class DefaultUpdateChunksMixin(ABC):
 
 # mixin
 class EnterMixin(ABC):
+    """
+    Events use this mixin to indicate that they represent the start of some non-task
+    region.
+
+    Sets ``is_enter_event`` to ``True``.
+
+    .. note::
+        Thie mixin is **not** used by task-related events as :class:`TaskEnter` events
+        have a different meaning to normal `region`-enter events.
+    """
     is_enter_event = True
     is_leave_event = False
 
 # mixin
 class LeaveMixin(ABC):
+    """
+    Events use this mixin to indicate that they represent the end of some non-task
+    region.
+
+    Sets ``is_leave_event`` to ``True``.
+    """
     is_enter_event = False
     is_leave_event = True
 
 
 # mixin
 class RegisterTaskDataMixin(ABC):
+    """Events which inherit this mixin are events which indicate the creation
+    of an explicit task, or the beginning of an initial or implicit task.
+
+    Overrides the :meth:`_Event:get_task_data` method to supply data describing
+    the task which was created or entered by this event.
+
+    Used by: :class:`TaskCreate`, :class:`TaskEnter`
+    """
     is_task_register_event = True
 
     def get_task_data(self):
+        """Returns a dictionary of task attributes indexed by attribute name
+
+        :return: dictionary of task attributes.
+        """
         return {
             defn.Attr.unique_id:         self.unique_id,
             defn.Attr.task_type:         self.task_type,
@@ -441,6 +481,15 @@ class RegisterTaskDataMixin(ABC):
 
 # mixin
 class ChunkSwitchEventMixin(ABC):
+    """
+    Events use this mixin to indicate that they represent a transition from an
+    the chunk in which the event participates to a nested chunk.
+
+    Examples are: :class:`ParallelBegin` and :class:`ParallelBegin` events.
+
+    Use of this mixin indicates that the event implements some special logic
+    for :meth:`_Event.update_chunks`.
+    """
     is_chunk_switch_event = True
 
 
@@ -570,6 +619,8 @@ class Master(_Event):
 
 
 class Task(_Event):
+    """Overrides no class members or methods. Seems to have no function.
+    """
     pass
 
 
