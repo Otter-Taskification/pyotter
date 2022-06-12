@@ -173,8 +173,8 @@ class Chunk:
         taskwait_enter_event = None
 
         # Used to attach dummy label to matching taskwait-enter/leave nodes
-        taskwait_cluster_labeller = count()
-        taskwait_label = None
+        taskwait_cluster_id = None
+        taskwait_cluster_label = 0
 
         # Match master-enter event to corresponding master-leave
         master_enter_event = self.first if self.first.region_type == defn.RegionType.master else None
@@ -211,16 +211,14 @@ class Chunk:
             # Match taskwait-enter/-leave events
             if event.region_type == defn.RegionType.taskwait:
                 if event.is_enter_event:
-                    taskwait_label = next(taskwait_cluster_labeller)
-                    v['_sync_cluster_id'] = taskwait_label
-                    taskwait_enter_event = event
+                    taskwait_cluster_id = (event.encountering_task_id, event.region_type, taskwait_cluster_label)
+                    v['_sync_cluster_id'] = taskwait_cluster_id
                 elif event.is_leave_event:
-                    if taskwait_enter_event is None or taskwait_label is None:
+                    if taskwait_cluster_id is None:
                         raise RuntimeError("taskwait-enter event was None")
-                    v['_taskwait_enter_event'] = taskwait_enter_event
-                    taskwait_enter_event = None
-                    v['_sync_cluster_id'] = taskwait_label
-                    taskwait_label = None
+                    v['_sync_cluster_id'] = taskwait_cluster_id
+                    taskwait_cluster_label += 1
+                    taskwait_cluster_id = None
 
             # Match master-enter/-leave events
             elif event.region_type == defn.RegionType.master:
