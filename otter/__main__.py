@@ -161,13 +161,6 @@ vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 #         v['task_id'] = v['task_cluster_id'][0]
 
-# Define _sync_cluster_id to identify pairs of connected nodes to contract
-# the dummy value is used as a label to contract vertices
-# dummy_counter = count()
-# g.vs['_sync_cluster_id'] = None
-# for edge in g.es:
-#     if otter.utils.edge_connects_same_type(edge, [RegionType.barrier_implicit, RegionType.barrier_explicit, RegionType.taskwait, RegionType.loop]):
-#         edge.source_vertex['_sync_cluster_id'] = edge.target_vertex['_sync_cluster_id'] = next(dummy_counter)
 
 """
 Contract pairs of directly connected vertices which represent empty barriers, taskwait & loop regions.  
@@ -263,6 +256,10 @@ for task_id, event_vertex_dicts in taskwait_vertices.items():
             next_record = next(event_vertex_pairs_iter, None)
             next_event = next_record['event'] if next_record else None
             next_vertex = next_record['vertex'] if next_record else None
+
+        if next_event is None:
+            """Ran out of taskwait barriers in the parent task which could synchronise the child task"""
+            break
 
         task_complete_vertex = task_complete_vertices[child]
         assert next_event.time > tasks[child].crt_ts and (previous_event is None or previous_event.time < tasks[child].crt_ts)
