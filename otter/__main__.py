@@ -163,11 +163,11 @@ log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
 # Define _sync_cluster_id to identify pairs of connected nodes to contract
 # the dummy value is used as a label to contract vertices
-dummy_counter = count()
-g.vs['_sync_cluster_id'] = None
-for edge in g.es:
-    if otter.utils.edge_connects_same_type(edge, [RegionType.barrier_implicit, RegionType.barrier_explicit, RegionType.taskwait, RegionType.loop]):
-        edge.source_vertex['_sync_cluster_id'] = edge.target_vertex['_sync_cluster_id'] = next(dummy_counter)
+# dummy_counter = count()
+# g.vs['_sync_cluster_id'] = None
+# for edge in g.es:
+#     if otter.utils.edge_connects_same_type(edge, [RegionType.barrier_implicit, RegionType.barrier_explicit, RegionType.taskwait, RegionType.loop]):
+#         edge.source_vertex['_sync_cluster_id'] = edge.target_vertex['_sync_cluster_id'] = next(dummy_counter)
 
 """
 Contract pairs of directly connected vertices which represent empty barriers, taskwait & loop regions.  
