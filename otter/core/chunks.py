@@ -196,7 +196,8 @@ class Chunk:
                 continue
 
             # The vertex representing this event
-            v = g.add_vertex(event=event)
+            # vertex['event'] is always a list of 1 or more events
+            v = g.add_vertex(event=[event])
 
             # Match taskgroup-enter/-leave events
             if event.region_type == defn.RegionType.taskgroup:
