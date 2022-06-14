@@ -163,8 +163,8 @@ class Chunk:
         self.log.debug(f"transforming chunk to graph (type={self.type}) {self.first=}")
 
         g = ig.Graph(directed=True)
-        v_prior = g.add_vertex(event=self.first)
-        v_root = v_prior
+        prior_vertex = g.add_vertex(event=[self.first])
+        prior_event = self.first
 
         # Used to save taskgroup-enter event to match to taskgroup-leave event
         taskgroup_enter_event = None
@@ -181,12 +181,14 @@ class Chunk:
 
         # Add attributes to the first node depending on chunk region type
         if self.type == defn.RegionType.parallel:
-            v_prior["_parallel_sequence_id"] = (self.first.unique_id, self.first.endpoint)
+            prior_vertex["_parallel_sequence_id"] = (self.first.unique_id, self.first.endpoint)
         elif self.type == defn.RegionType.explicit_task:
-            v_prior['_is_task_enter_node'] = True
-            v_prior['_task_cluster_id'] = (self.first.unique_id, defn.Endpoint.enter)
+            prior_vertex['_is_task_enter_node'] = True
+            prior_vertex['_task_cluster_id'] = (self.first.unique_id, defn.Endpoint.enter)
 
+        # Used for labelling sequences of certain events in a parallel chunk
         sequence_count = 1
+
         for event in islice(self._events, 1, None):
 
             if event.region_type in [defn.RegionType.implicit_task]:
@@ -209,7 +211,7 @@ class Chunk:
                     v['_taskgroup_enter_event'] = taskgroup_enter_event
                     taskgroup_enter_event = None
 
-            # Match taskwait-enter/-leave events
+            # Label corresponding taskwait-enter/-leave events so they can be contracted later
             if event.region_type == defn.RegionType.taskwait:
                 if event.is_enter_event:
                     taskwait_cluster_id = (event.encountering_task_id, event.region_type, taskwait_cluster_label)
@@ -242,29 +244,30 @@ class Chunk:
 
             # Add edge except for (single/master begin -> end) and (parallel N begin -> parallel N end)
             # This avoids creating spurious edges between vertices representing nested chunks
-            events_bridge_single_master = self.events_bridge_single_master_region(v_prior['event'], event)
-            events_bridge_parallel = self.events_bridge_parallel_region(v_prior['event'], event)
-            events_have_same_id = event.unique_id == v_prior['event'].unique_id if events_bridge_parallel else False
+            events_bridge_single_master = self.events_bridge_single_master_region(prior_event, event)
+            events_bridge_parallel = self.events_bridge_parallel_region(prior_event, event)
+            events_have_same_id = event.unique_id == prior_event.unique_id if events_bridge_parallel else False
             if not (events_bridge_single_master or (events_bridge_parallel and events_have_same_id)):
-                self.log.debug(f"add edge from: {v_prior['event']} to: {event}")
-                g.add_edge(v_prior, v)
+                self.log.debug(f"add edge from: {prior_event} to: {event}")
+                g.add_edge(prior_vertex, v)
             else:
-                msg = f"edge skipped:\n  src: {v_prior['event']}\n  dst: {event}"
+                msg = f"edge skipped:\n  src: {prior_event}\n  dst: {event}"
                 for line in msg.split("\n"):
                     self.log.debug(line)
 
             # For task-create add dummy nodes for easier merging
             if event.is_task_create_event:
                 v['_task_cluster_id'] = (event.unique_id, defn.Endpoint.enter)
-                dummy_vertex = g.add_vertex(event=event)
+                dummy_vertex = g.add_vertex(event=[event])
                 dummy_vertex['_task_cluster_id'] = (event.unique_id, defn.Endpoint.leave)
-                continue  # to skip updating v_prior
+                continue  # to skip updating prior_vertex
 
             if event is self.last and self.type == defn.RegionType.explicit_task:
                 v['_is_task_leave_node'] = True
                 v['_task_cluster_id'] = (event.encountering_task_id, defn.Endpoint.leave)
 
-            v_prior = v
+            prior_vertex = v
+            prior_event = event
 
         if self.type == defn.RegionType.explicit_task and len(self) <= 2:
             g.delete_edges([0])
