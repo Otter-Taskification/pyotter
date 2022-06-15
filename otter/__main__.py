@@ -109,7 +109,8 @@ Contract those vertices which refer to the same single-executor event. This conn
 chunks containing them, as both chunks contain references to the single-exec-begin/end events.
 """
 log.info(f"combining vertices by single-begin/end event")
-labeller = VertexLabeller(otter.utils.is_region_type(RegionType.single_executor), group_key='event')
+# group_key needs to return a bare event from a list of 1 event list because the list can't be used as a dict key in VertexLabeller.label()...
+labeller = VertexLabeller(otter.utils.is_region_type(RegionType.single_executor), group_key=lambda vertex: vertex['event'][0])
 g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")

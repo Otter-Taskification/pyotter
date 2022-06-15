@@ -73,7 +73,7 @@ class VertexAttributeCombiner:
         if len(args) == 1:
             item = args[0]
             self.log.debug(f"list contains 1 item: {item}", stacklevel=4)
-            return item
+            return [item] if events.is_event(item) else item
 
         # Each arg must be of the given type (or one of the given list of types) for this handler
         A = isinstance(self.accept, Iterable) and all(isinstance(arg, tuple(self.accept)) for arg in args)
@@ -137,9 +137,7 @@ def _return_unique_event(args, region_type):
     Expects to find & return exactly 1 single-executor event in this list
     Error otherwise
     """
-    is_event_list = lambda this : all(isinstance(thing, events._Event) for thing in this)
-    assert isinstance(args, list)
-    assert is_event_list(args)
+    assert events.is_event_list(args)
 
     # args is guaranteed to be a list of events
     unique_events = set(e for e in args if e.region_type == region_type)
@@ -148,35 +146,38 @@ def _return_unique_event(args, region_type):
     if len(unique_events) == 1:
         event = unique_events.pop()
         logger.debug(f"returning event: {event}")
-        return event
+        result = [event]
     elif len(unique_events) == 0:
         event_types = set(type(e).__name__ for e in args)
         logger.debug(f"no {region_type} events, returning event list ({event_types=})")
-        return args
+        result = args
     else:
         # error: if >1 event arrived here, the vertices were somehow mis-labelled
         logger.error(f"multiple {region_type} events received: {args}")
         raise ValueError(f"multiple {region_type} events received: {args}")
+    
+    assert events.is_event_list(result)
+    return result
 
 
 def return_unique_single_executor_event(args):
-    return _return_unique_event(args, RegionType.single_executor)
+    result = _return_unique_event(args, RegionType.single_executor)
+    assert events.is_event_list(result)
+    return result
 
 
 def return_unique_master_event(args):
     return _return_unique_event(args, RegionType.single_executor)
 
 def return_unique_taskswitch_complete_event(args):
-    assert isinstance(args, list)
-    assert all(events.is_event(item) for item in args)
+    assert events.is_event_list(args)
     assert all(event.is_task_switch_event for event in args)
     event_set = set(event for event in args if event.is_task_switch_complete_event)
     assert len(event_set) == 1
     return event_set.pop()
 
 def return_unique_taskgroup_complete_event(args):
-    assert isinstance(args, list)
-    assert all(events.is_event(item) for item in args)
+    assert events.is_event_list(args)
     assert all(event.is_task_switch_event for event in args)
     event_set = set(event for event in args if event.is_task_group_end_event)
     assert len(event_set) == 1
@@ -185,7 +186,7 @@ def return_unique_taskgroup_complete_event(args):
 def reject_task_create(args):
     events_filtered = [event for event in args if not event.is_task_create_event]
     if len(events_filtered) == 1:
-        return events_filtered[0]
+        return events_filtered
     elif len(events_filtered) == 0:
         raise NotImplementedError("No events remain after filtering")
     else:

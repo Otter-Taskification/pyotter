@@ -543,7 +543,8 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
             return self.next_task_region_type
 
 
-def unpack(event: Union[_Event, List[_Event]]) -> dict:
+def unpack(event: List[_Event]) -> dict:
+    assert is_event_list(event)
     if is_event(event):
         return dict(event.yield_attributes())
     elif is_event_list(event):
