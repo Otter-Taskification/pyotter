@@ -72,8 +72,8 @@ for name in [otter.Attr.edge_type]:
 # Create vertex labellers
 log.info("creating vertex labellers")
 parallel_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_parallel_sequence_id'), group_key='_parallel_sequence_id')
-single_vertex_labeller = VertexLabeller(otter.utils.is_region_type(RegionType.single_executor), group_key='event')
-master_vertex_labeller = VertexLabeller(otter.utils.is_region_type(RegionType.master), group_key='event')
+single_vertex_labeller = VertexLabeller(otter.utils.is_single_executor, group_key='event')
+master_vertex_labeller = VertexLabeller(otter.utils.is_master, group_key='event')
 task_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_task_cluster_id'), group_key='_task_cluster_id')
 empty_task_vertex_labeller = VertexLabeller(otter.utils.is_empty_task_region, group_key=lambda v: v['_task_cluster_id'][0])
 
@@ -110,7 +110,7 @@ chunks containing them, as both chunks contain references to the single-exec-beg
 """
 log.info(f"combining vertices by single-begin/end event")
 # group_key needs to return a bare event from a list of 1 event list because the list can't be used as a dict key in VertexLabeller.label()...
-labeller = VertexLabeller(otter.utils.is_region_type(RegionType.single_executor), group_key=lambda vertex: vertex['event'][0])
+labeller = VertexLabeller(otter.utils.is_single_executor, group_key=lambda vertex: vertex['event'][0])
 g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
@@ -120,7 +120,7 @@ master-leave vertices (which refer to their master-leave event) refer to their c
 """
 log.info(f"combining vertices by master-begin/end event")
 handlers['event'] = VertexAttributeCombiner(otter.utils.handlers.return_unique_master_event)
-labeller = VertexLabeller(otter.utils.is_region_type(RegionType.master), group_key='event')
+labeller = VertexLabeller(otter.utils.is_master, group_key='event')
 g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
@@ -202,7 +202,7 @@ which refers to these events
 """
 log.debug(f"gathering taskwait vertices by encountering task ID")
 taskwait_vertices = defaultdict(list)
-for vertex in filter(otter.utils.is_region_type(RegionType.taskwait), g.vs):
+for vertex in filter(otter.utils.is_taskwait, g.vs):
     log.debug(f"got taskwait vertex {vertex} with events:")
     for event in vertex['event']: # now guaranteed to have exactly 2 event instances per vertex (tw-begin+end)
         log.debug(f" - {event}")
