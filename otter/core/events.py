@@ -265,15 +265,21 @@ class RegisterTaskDataMixin(ABC):
     is_task_register_event = True
 
     def get_task_data(self):
-        return {
+        data = {
             defn.Attr.unique_id:         self.unique_id,
             defn.Attr.task_type:         self.task_type,
             defn.Attr.parent_task_id:    self.parent_task_id,
-            defn.Attr.time:              self._event.time,
-            defn.Attr.source_file_name:  self.source_file_name,
-            defn.Attr.source_func_name:  self.source_func_name,
-            defn.Attr.source_line_number:  self.source_line_number
+            defn.Attr.time:              self._event.time
         }
+
+        try:
+            data[defn.Attr.source_file_name] = self.source_file_name
+            data[defn.Attr.source_func_name] = self.source_func_name
+            data[defn.Attr.source_line_number] = self.source_line_number
+        except AttributeError as e:
+            self.log.debug("couldn't return source file data")
+
+        return data
 
 
 # mixin

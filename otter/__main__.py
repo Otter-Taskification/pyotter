@@ -131,7 +131,7 @@ log.info(f"combining vertices by master-begin/end event")
 # Label vertices which refer to the same master-begin/end event
 # SUSPECT THIS SHOULD BE "vertex['event'][0]"
 # NOT TESTED!
-labeller = label_groups_if(otter.utils.is_master, group_by='event')
+labeller = label_groups_if(otter.utils.is_master, group_by=lambda vertex: vertex['event'][0])
 
 # When combining events, there should be exactly 1 unique master-begin/end event
 strategies['event'] = combine_attribute_strategy(otter.utils.handlers.return_unique_master_event)
