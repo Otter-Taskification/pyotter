@@ -12,14 +12,12 @@ from loggingdecorators import on_init, on_call
 get_module_logger = log.logger_getter("vertex.attr")
 
 
-class AttributeHandlerTable(dict):
+class strategy_lookup(dict):
+    """Map attribute names onto strategies for combining values of that attribute
+    """
 
     @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, names, default_handler=None, logger=None, level=DEBUG):
-        """
-        dict which maps attribute names to handlers for combining that attribute
-        overrides __setitem__ to log each time a handler is set
-        """
         self.log = logger or log.get_logger(self.__class__.__name__)
         self.level = level
         handler = default_handler or pass_first_arg
@@ -30,7 +28,9 @@ class AttributeHandlerTable(dict):
         return super().__setitem__(event, handler)
 
 
-class VertexAttributeCombiner:
+class combine_attribute_strategy:
+    """Apply a strategy for combining a set of values of some attribute
+    """
 
     @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, handler=None, accept: Union[Type, List[Type]]=None, msg="combining events"):
@@ -88,7 +88,7 @@ class VertexAttributeCombiner:
         return f"{self.__class__.__name__}({self.handler.__module__}.{self.handler.__name__})"
 
 
-### Handlers
+### Strategies for reducing lists of attribute values to one value
 
 def are(reduce, args, T):
     return reduce(isinstance(x, T) for x in args)
@@ -161,13 +161,17 @@ def _return_unique_event(args, region_type):
 
 
 def return_unique_single_executor_event(args):
+    assert events.is_event_list(args)
     result = _return_unique_event(args, RegionType.single_executor)
     assert events.is_event_list(result)
     return result
 
 
 def return_unique_master_event(args):
-    return _return_unique_event(args, RegionType.single_executor)
+    assert events.is_event_list(args)
+    result = _return_unique_event(args, RegionType.master)
+    assert events.is_event_list(result)
+    return result
 
 def return_unique_taskswitch_complete_event(args):
     assert events.is_event_list(args)

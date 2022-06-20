@@ -9,5 +9,5 @@ from .vertex_predicates import key_is_not_none, \
     is_master, \
     is_taskwait
 from .edge_predicates import edge_connects_same_type
-from .vertex_attr_handlers import VertexAttributeCombiner, AttributeHandlerTable
+from .vertex_attr_handlers import combine_attribute_strategy, strategy_lookup
 from . import vertex_attr_handlers as handlers
