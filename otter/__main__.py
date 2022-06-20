@@ -3,8 +3,8 @@ from collections import defaultdict, Counter
 import otf2
 import igraph as ig
 import otter
-from otter.utils import VertexLabeller, VertexAttributeCombiner, AttributeHandlerTable
-from otter.definitions import RegionType, Endpoint, EdgeType
+from otter.utils import label_groups_if, VertexAttributeCombiner, AttributeHandlerTable
+from otter.definitions import RegionType, Endpoint, EdgeType, TaskType
 
 args = otter.get_args()
 otter.log.initialise(args)
@@ -59,8 +59,17 @@ g = ig.disjoint_union([c.graph for c in chunks])
 vcount = g.vcount()
 log.info(f"graph disjoint union has {vcount} vertices")
 
-# Define some vertex attributes
-for name in ['_task_cluster_id', '_is_task_enter_node', '_is_task_leave_node', '_region_type', '_master_enter_event', '_taskgroup_enter_event']:
+vertex_attribute_names = ['_task_cluster_id',
+    '_is_task_enter_node',
+    '_is_task_leave_node',
+    '_region_type',
+    '_master_enter_event',
+    '_taskgroup_enter_event',
+    '_sync_cluster_id'
+]
+
+# Ensure some vertex attributes are defined
+for name in vertex_attribute_names:
     if name not in g.vs.attribute_names():
         g.vs[name] = None
 
@@ -68,14 +77,6 @@ for name in ['_task_cluster_id', '_is_task_enter_node', '_is_task_leave_node', '
 for name in [otter.Attr.edge_type]:
     if name not in g.es.attribute_names():
         g.es[name] = None
-
-# Create vertex labellers
-log.info("creating vertex labellers")
-parallel_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_parallel_sequence_id'), group_key='_parallel_sequence_id')
-single_vertex_labeller = VertexLabeller(otter.utils.is_single_executor, group_key='event')
-master_vertex_labeller = VertexLabeller(otter.utils.is_master, group_key='event')
-task_vertex_labeller = VertexLabeller(otter.utils.key_is_not_none('_task_cluster_id'), group_key='_task_cluster_id')
-empty_task_vertex_labeller = VertexLabeller(otter.utils.is_empty_task_region, group_key=lambda v: v['_task_cluster_id'][0])
 
 # Make a table for mapping vertex attributes to handlers - used by ig.Graph.contract_vertices
 handlers = AttributeHandlerTable(g.vs.attribute_names(), level=otter.log.DEBUG)
@@ -98,9 +99,14 @@ When combining the 'event' vertex attribute, keep single-executor events over si
 should be combined in a list. 
 """
 log.info(f"combining vertices by parallel sequence ID")
+
+# Label vertices with the same _parallel_sequence_id
+labeller = label_groups_if(otter.utils.key_is_not_none('_parallel_sequence_id'), group_by='_parallel_sequence_id')
+
+# When combining the event vertex attribute, prioritise single-executor over single-other
 handlers['event'] = VertexAttributeCombiner(otter.utils.handlers.return_unique_single_executor_event)
-labeller = VertexLabeller(otter.utils.key_is_not_none('_parallel_sequence_id'), group_key='_parallel_sequence_id')
-g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+
+g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=handlers)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
@@ -109,9 +115,11 @@ Contract those vertices which refer to the same single-executor event. This conn
 chunks containing them, as both chunks contain references to the single-exec-begin/end events.
 """
 log.info(f"combining vertices by single-begin/end event")
-# group_key needs to return a bare event from a list of 1 event list because the list can't be used as a dict key in VertexLabeller.label()...
-labeller = VertexLabeller(otter.utils.is_single_executor, group_key=lambda vertex: vertex['event'][0])
-g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+
+# Label single-executor vertices which refer to the same event.
+labeller = label_groups_if(otter.utils.is_single_executor, group_by=lambda vertex: vertex['event'][0])
+
+g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=handlers)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
@@ -119,9 +127,16 @@ log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 master-leave vertices (which refer to their master-leave event) refer to their corresponding master-enter event.
 """
 log.info(f"combining vertices by master-begin/end event")
+
+# Label vertices which refer to the same master-begin/end event
+# SUSPECT THIS SHOULD BE "vertex['event'][0]"
+# NOT TESTED!
+labeller = label_groups_if(otter.utils.is_master, group_by='event')
+
+# When combining events, there should be exactly 1 unique master-begin/end event
 handlers['event'] = VertexAttributeCombiner(otter.utils.handlers.return_unique_master_event)
-labeller = VertexLabeller(otter.utils.is_master, group_key='event')
-g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+
+g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=handlers)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
@@ -129,7 +144,13 @@ log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 """
 Intermediate clean-up: for each master region, remove edges that connect
 the same nodes as the master region
+
+*** WARNING ********************************************************************
+********************************************************************************
+
+*** This step assumes vertex['event'] is a bare event instead of an event list ***
 """
+
 master_enter_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.core.events.MasterBegin), g.vs)
 master_leave_vertices = filter(lambda vertex: isinstance(vertex['event'], otter.core.events.MasterEnd), g.vs)
 master_enter_vertex_map = {enter_vertex['event']: enter_vertex for enter_vertex in master_enter_vertices}
@@ -140,13 +161,22 @@ log.info(f"deleting redundant edges due to master regions: {len(redundant_edges)
 g.delete_edges(redundant_edges)
 
 """
-Contract by _task_cluster_id, rejecting task-create vertices to replace task-create vertices with the corresponding
-task's chunk.
+********************************************************************************
+********************************************************************************
+"""
+
+"""
+Contract by _task_cluster_id, rejecting task-create vertices to replace them with the corresponding task's chunk.
 """
 log.info("combining vertices by task ID & endpoint")
+
+# Label vertices which have the same _task_cluster_id
+labeller = label_groups_if(otter.utils.key_is_not_none('_task_cluster_id'), group_by='_task_cluster_id')
+
+# When combining events by _task_cluster_id, reject task-create events (in favour of task-switch events)
 handlers['event'] = VertexAttributeCombiner(otter.utils.handlers.reject_task_create)
-labeller = VertexLabeller(otter.utils.key_is_not_none('_task_cluster_id'), group_key='_task_cluster_id')
-g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+
+g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=handlers)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
@@ -155,21 +185,30 @@ Contract vertices with the same task ID where the task chunk contains no interna
 task region.
 """
 log.info("combining vertices by task ID where there are no nested nodes")
+
+# Label vertices which represent empty tasks and have the same task ID
+labeller = label_groups_if(otter.utils.is_empty_task_region, group_by=lambda v: v['_task_cluster_id'][0])
+
+# Combine _task_cluster_id tuples in a set (to remove duplicates)
 handlers['_task_cluster_id'] = VertexAttributeCombiner(otter.utils.handlers.pass_the_set_of_values, accept=tuple, msg="combining attribute: _task_cluster_id")
-labeller = VertexLabeller(otter.utils.is_empty_task_region, group_key=lambda v: v['_task_cluster_id'][0])
-g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+
+g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=handlers)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
-#         v['task_id'] = v['task_cluster_id'][0]
 
 
 """
 Contract pairs of directly connected vertices which represent empty barriers, taskwait & loop regions.  
 """
 log.info("combining redundant sync and loop enter/leave node pairs")
+
+# Label vertices with the same _sync_cluster_id
+labeller= label_groups_if(otter.utils.key_is_not_none('_sync_cluster_id'), group_by='_sync_cluster_id')
+
+# Silently return the list of combined arguments
 handlers['event'] = VertexAttributeCombiner(otter.utils.handlers.pass_args)
-labeller= VertexLabeller(otter.utils.key_is_not_none('_sync_cluster_id'), group_key='_sync_cluster_id')
-g.contract_vertices(labeller.label(g.vs), combine_attrs=handlers)
+
+g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=handlers)
 vcount_prev, vcount = vcount, g.vcount()
 log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
@@ -290,13 +329,16 @@ log.debug(f"gathering taskgroup regions by encountering task ID")
 taskgroup_vertices = defaultdict(list)
 for vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
     end_event = vertex['event']
-    if isinstance(end_event, list):
+    assert otter.core.is_event_list(end_event)
+    if otter.core.is_event_list(end_event) and len(end_event) > 1:
         end_event = otter.utils.handlers.return_unique_taskgroup_complete_event(end_event)
-    assert otter.core.EventFactory.events.is_event(end_event)
+    assert otter.core.is_event_list(end_event)
+    assert len(end_event) == 1
     begin_event = vertex['_taskgroup_enter_event']
-    assert begin_event is not None and otter.core.EventFactory.events.is_event(begin_event)
-    taskgroup_vertices[end_event.encountering_task_id].append((begin_event, end_event, vertex))
-    log.debug(f" - task {end_event.encountering_task_id}: {(begin_event, end_event, vertex)}")
+    assert begin_event is not None
+    assert otter.core.is_event(begin_event)
+    taskgroup_vertices[end_event[0].encountering_task_id].append((begin_event, end_event[0], vertex))
+    log.debug(f" - task {end_event[0].encountering_task_id}: {(begin_event, end_event[0], vertex)}")
 
 
 """
@@ -318,10 +360,21 @@ for task_id, taskgroup_vertex_pairs in taskgroup_vertices.items():
             log.debug(f" - task {desc_id} {desc_task.crt_ts=} not synchronised by taskgroup region")
         else:
             assert len(match) == 1
+            assert isinstance(match, list)
+            assert isinstance(match[0], tuple)
+            assert any(map(otter.core.is_event, match[0]))
+            assert all(map(otter.core.is_event, match[0][0:2]))
+            assert otter.core.is_event(match[0][0])
+            assert otter.core.is_event(match[0][1])
             *_, tg_end_vertex = match[0]
-            edge = g.add_edge(task_complete_vertices[desc_id], tg_end_vertex)
+            try:
+                edge = g.add_edge(task_complete_vertices[desc_id], tg_end_vertex)
+            except TypeError as e:
+                print(type(task_complete_vertices[desc_id]))
+                print(type(tg_end_vertex))
+                raise e
             edge['edge_type'] = EdgeType.taskgroup
-            log.debug(f" - task {desc_id} synchronised by taskgroup-end event at {tg_end_vertex['event'].time}")
+            log.debug(f" - task {desc_id} synchronised by taskgroup-end event")
 
 
 g.simplify(combine_edges='first')
