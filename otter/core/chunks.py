@@ -176,6 +176,12 @@ class Chunk:
         taskwait_cluster_id = None
         taskwait_cluster_label = 0
 
+        # task-create vertices synchronised within a taskgroup region
+        taskgroup_task_create_vertices = list()
+
+        # task-create vertices synchronised when they reach a taskwait barrier
+        taskwait_task_create_vertices = list()
+
         # Match master-enter event to corresponding master-leave
         master_enter_event = self.first if self.first.region_type == defn.RegionType.master else None
 
@@ -211,11 +217,25 @@ class Chunk:
                     v['_taskgroup_enter_event'] = taskgroup_enter_event
                     taskgroup_enter_event = None
 
+                    # Connect all task-create vertices created within this taskgroup to the current vertex
+                    # and reset the list of task-create vertices to be synchronised
+                    for task_create_vertex in taskgroup_task_create_vertices:
+                        edge = g.add_edge(task_create_vertex, v)
+                        edge[defn.Attr.edge_type] = event.region_type
+                    taskgroup_task_create_vertices = list()
+
             # Label corresponding taskwait-enter/-leave events so they can be contracted later
             if event.region_type == defn.RegionType.taskwait:
                 if event.is_enter_event:
                     taskwait_cluster_id = (event.encountering_task_id, event.region_type, taskwait_cluster_label)
                     v['_sync_cluster_id'] = taskwait_cluster_id
+
+                    # Add edges for the tasks created prior to this taskwait barrier
+                    for task_create_vertex in taskwait_task_create_vertices:
+                        edge = g.add_edge(task_create_vertex, v)
+                        edge[defn.Attr.edge_type] = event.region_type
+                    taskwait_task_create_vertices = list()
+
                 elif event.is_leave_event:
                     if taskwait_cluster_id is None:
                         raise RuntimeError("taskwait-enter event was None")
@@ -260,6 +280,14 @@ class Chunk:
                 v['_task_cluster_id'] = (event.unique_id, defn.Endpoint.enter)
                 dummy_vertex = g.add_vertex(event=[event])
                 dummy_vertex['_task_cluster_id'] = (event.unique_id, defn.Endpoint.leave)
+
+                # Append for the next taskwait barrier encountered
+                taskwait_task_create_vertices.append(dummy_vertex)
+
+                # If inside a taskgroup, record this task to be synchronised
+                if taskgroup_enter_event is not None:
+                    taskgroup_task_create_vertices.append(dummy_vertex)
+                
                 continue  # to skip updating prior_vertex
 
             if event is self.last and self.type == defn.RegionType.explicit_task:
