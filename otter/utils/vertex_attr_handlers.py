@@ -182,8 +182,8 @@ def return_unique_taskswitch_complete_event(args):
 
 def return_unique_taskgroup_complete_event(args):
     assert events.is_event_list(args)
-    assert all(event.is_task_switch_event for event in args)
-    event_set = set(event for event in args if event.is_task_group_end_event)
+    assert all(event.is_task_group_end_event for event in args)
+    event_set = set(args)
     assert len(event_set) == 1
     return event_set.pop()
 
