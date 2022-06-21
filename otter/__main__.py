@@ -215,166 +215,177 @@ log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 # Unpack the region_type attribute
 
 
-"""
-        Apply taskwait synchronisation
-        ==============================
+# """
+#         Apply taskwait synchronisation
+#         ==============================
 
-1. Give each explicit task a reference to the last vertex which represents its chunk. This is the vertex which will be
-connected to the corresponding taskwait vertex, if applicable. The correct vertex will contain exactly 1 TaskSwitch(complete)
-event for the corresponding task.
-"""
-log.debug(f"filtering for task-complete vertices")
-task_complete_vertices = dict()
-for vertex in filter(otter.utils.is_terminal_task_vertex, g.vs):
-    event = vertex['event']
-    if isinstance(event, list):
-        event = otter.utils.handlers.return_unique_taskswitch_complete_event(event)
-    assert otter.core.is_event(event)
-    log.debug(f" - task {event.prior_task_id}: {event}")
-    task_complete_vertices[event.prior_task_id] = vertex
+# 1. Give each explicit task a reference to the last vertex which represents its chunk. This is the vertex which will be
+# connected to the corresponding taskwait vertex, if applicable. The correct vertex will contain exactly 1 TaskSwitch(complete)
+# event for the corresponding task.
+# """
+# log.debug(f"filtering for task-complete vertices")
+# task_complete_vertices = dict()
+# for vertex in filter(otter.utils.is_terminal_task_vertex, g.vs):
+#     event = vertex['event']
+#     if isinstance(event, list):
+#         event = otter.utils.handlers.return_unique_taskswitch_complete_event(event)
+#     assert otter.core.is_event(event)
+#     log.debug(f" - task {event.prior_task_id}: {event}")
+#     task_complete_vertices[event.prior_task_id] = vertex
 
-log.info("applying taskwait synchronisation")
+# log.info("applying taskwait synchronisation")
 
-"""
-2. For each task that encountered a taskwait barrier, make a list of the taskwait-begin/end event pairs & the vertex
-which refers to these events
-"""
-log.debug(f"gathering taskwait vertices by encountering task ID")
-taskwait_vertices = defaultdict(list)
-for vertex in filter(otter.utils.is_taskwait, g.vs):
-    log.debug(f"got taskwait vertex {vertex} with events:")
-    for event in vertex['event']: # now guaranteed to have exactly 2 event instances per vertex (tw-begin+end)
-        log.debug(f" - {event}")
-        taskwait_vertices[event.encountering_task_id].append(dict(event=event, vertex=vertex))
+# """
+# 2. For each task that encountered a taskwait barrier, make a list of the taskwait-begin/end event pairs & the vertex
+# which refers to these events
+# """
+# log.debug(f"gathering taskwait vertices by encountering task ID")
+# taskwait_vertices = defaultdict(list)
+# for vertex in filter(otter.utils.is_taskwait, g.vs):
+#     log.debug(f"got taskwait vertex {vertex} with events:")
+#     for event in vertex['event']: # now guaranteed to have exactly 2 event instances per vertex (tw-begin+end)
+#         log.debug(f" - {event}")
+#         taskwait_vertices[event.encountering_task_id].append(dict(event=event, vertex=vertex))
 
-"""
-3. For each task that encountered a taskwait barrier, connect child tasks to the correct taskwait barrier (if any).
-"""
-for task_id, event_vertex_dicts in taskwait_vertices.items():
+# """
+# 3. For each task that encountered a taskwait barrier, connect child tasks to the correct taskwait barrier (if any).
+# """
+# for task_id, event_vertex_dicts in taskwait_vertices.items():
 
-    log.debug(f"applying taskwait synchronisation for children of task {task_id}: {list(tasks[task_id].children)}")
+#     log.debug(f"applying taskwait synchronisation for children of task {task_id}: {list(tasks[task_id].children)}")
 
-    """
-    Keep the event-vertex pairs for which the event is the taskwait-enter event
-    """
-    event_vertex_dicts = sorted(filter(lambda d: d['event'].endpoint == Endpoint.enter, event_vertex_dicts), key=lambda d: d['event'].time)
-    log.debug(f"task {task_id} encountered {(len(event_vertex_dicts))} taskwait barriers:")
-    for record in event_vertex_dicts:
-        log.debug(f" - task {task_id} encountered {record['event']} {record['vertex']}")
+#     """
+#     Keep the event-vertex pairs for which the event is the taskwait-enter event
+#     """
+#     event_vertex_dicts = sorted(filter(lambda d: d['event'].endpoint == Endpoint.enter, event_vertex_dicts), key=lambda d: d['event'].time)
+#     log.debug(f"task {task_id} encountered {(len(event_vertex_dicts))} taskwait barriers:")
+#     for record in event_vertex_dicts:
+#         log.debug(f" - task {task_id} encountered {record['event']} {record['vertex']}")
 
-    """Iterate over the taskwait-enter events for this taskID, in chronological order"""
-    event_vertex_pairs_iter = iter(event_vertex_dicts)
+#     """Iterate over the taskwait-enter events for this taskID, in chronological order"""
+#     event_vertex_pairs_iter = iter(event_vertex_dicts)
 
-    """Iterate over the children of this task in the order they were created"""
-    children_iter = iter(sorted(tasks[task_id].children, key=lambda id: tasks[id].crt_ts))
+#     """Iterate over the children of this task in the order they were created"""
+#     children_iter = iter(sorted(tasks[task_id].children, key=lambda id: tasks[id].crt_ts))
 
-    """Get the first pair of taskwait-enter events"""
-    previous_event, previous_vertex = None, None
-    next_record = next(event_vertex_pairs_iter, None)
-    next_event = next_record['event'] if next_record else None
-    next_vertex = next_record['vertex'] if next_record else None
-
-
-    while True:
-
-        """Get the next child task if any are left to be synchronised"""
-        try:
-            child = next(children_iter)
-        except StopIteration:
-            """ran out of child tasks"""
-            break
-
-        """Assert: expect that we haven't already missed the taskwait barrier for this child task"""
-        if previous_event and tasks[child].crt_ts < previous_event.time:
-            print(tasks[child])
-            print(previous_event)
-            raise ValueError("child created before previous")
-
-        """This child is synchronised by either "next_event" or a subsequent taskwait barrier"""
-        while next_event and next_event.time <= tasks[child].crt_ts:
-            previous_event, previous_vertex = next_event, next_vertex
-            next_record = next(event_vertex_pairs_iter, None)
-            next_event = next_record['event'] if next_record else None
-            next_vertex = next_record['vertex'] if next_record else None
-
-        if next_event is None:
-            """Ran out of taskwait barriers in the parent task which could synchronise the child task"""
-            break
-
-        task_complete_vertex = task_complete_vertices[child]
-        assert next_event.time > tasks[child].crt_ts and (previous_event is None or previous_event.time < tasks[child].crt_ts)
-        edge = g.add_edge(task_complete_vertex, next_vertex)
-        edge['edge_type'] = EdgeType.taskwait
-        log.debug(f"synchronised task {child}:")
-        log.debug(f"  from: {task_complete_vertex}")
-        log.debug(f"    to: {next_vertex}")
-
-        if previous_event is None and next_event is None:
-            """ran out of taskwait barriers - no further taskwait synchronisation to apply to children of this task"""
-            break
-
-del taskwait_vertices
-
-"""
-        Apply taskgroup synchronisation
-        ===============================
-
-For each task that encountered a taskgroup region, gather a list of the taskgroup begin/end events and the vertex which
-represents the taskgroup-end event.
-"""
-
-log.info("applying taskgroup synchronisation")
-
-log.debug(f"gathering taskgroup regions by encountering task ID")
-taskgroup_vertices = defaultdict(list)
-for vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
-    end_event = vertex['event']
-    assert otter.core.is_event_list(end_event)
-    if otter.core.is_event_list(end_event) and len(end_event) > 1:
-        end_event = otter.utils.handlers.return_unique_taskgroup_complete_event(end_event)
-    assert otter.core.is_event_list(end_event)
-    assert len(end_event) == 1
-    begin_event = vertex['_taskgroup_enter_event']
-    assert begin_event is not None
-    assert otter.core.is_event(begin_event)
-    taskgroup_vertices[end_event[0].encountering_task_id].append((begin_event, end_event[0], vertex))
-    log.debug(f" - task {end_event[0].encountering_task_id}: {(begin_event, end_event[0], vertex)}")
+#     """Get the first pair of taskwait-enter events"""
+#     previous_event, previous_vertex = None, None
+#     next_record = next(event_vertex_pairs_iter, None)
+#     next_event = next_record['event'] if next_record else None
+#     next_vertex = next_record['vertex'] if next_record else None
 
 
-"""
-For each task that encountered any taskgroup regions:
-"""
-was_created_during = lambda crt_ts: (lambda items: items[0].time < crt_ts < items[1].time)
-for task_id, taskgroup_vertex_pairs in taskgroup_vertices.items():
-    descendants = tasks.descendants_while(task_id, lambda t : t.task_type != TaskType.implicit)
-    log.debug(f"applying taskgroup synchronisation for descendants of task {task_id} {descendants}")
-    log.debug(f"task {task_id} encountered {(len(taskgroup_vertex_pairs))} taskgroup regions")
+#     while True:
 
-    """
-    For each descendant task (stopping at descendants which are implicit tasks...
-    """
-    for desc_id in descendants:
-        desc_task = tasks[desc_id]
-        match = list(filter(was_created_during(desc_task.crt_ts), taskgroup_vertex_pairs))
-        if len(match) == 0:
-            log.debug(f" - task {desc_id} {desc_task.crt_ts=} not synchronised by taskgroup region")
-        else:
-            assert len(match) == 1
-            assert isinstance(match, list)
-            assert isinstance(match[0], tuple)
-            assert any(map(otter.core.is_event, match[0]))
-            assert all(map(otter.core.is_event, match[0][0:2]))
-            assert otter.core.is_event(match[0][0])
-            assert otter.core.is_event(match[0][1])
-            *_, tg_end_vertex = match[0]
-            try:
-                edge = g.add_edge(task_complete_vertices[desc_id], tg_end_vertex)
-            except TypeError as e:
-                print(type(task_complete_vertices[desc_id]))
-                print(type(tg_end_vertex))
-                raise e
-            edge['edge_type'] = EdgeType.taskgroup
-            log.debug(f" - task {desc_id} synchronised by taskgroup-end event")
+#         """Get the next child task if any are left to be synchronised"""
+#         try:
+#             child = next(children_iter)
+#         except StopIteration:
+#             """ran out of child tasks"""
+#             break
+
+#         """Assert: expect that we haven't already missed the taskwait barrier for this child task"""
+#         if previous_event and tasks[child].crt_ts < previous_event.time:
+#             print(tasks[child])
+#             print(previous_event)
+#             raise ValueError("child created before previous")
+
+#         """This child is synchronised by either "next_event" or a subsequent taskwait barrier"""
+#         while next_event and next_event.time <= tasks[child].crt_ts:
+#             previous_event, previous_vertex = next_event, next_vertex
+#             next_record = next(event_vertex_pairs_iter, None)
+#             next_event = next_record['event'] if next_record else None
+#             next_vertex = next_record['vertex'] if next_record else None
+
+#         if next_event is None:
+#             """Ran out of taskwait barriers in the parent task which could synchronise the child task"""
+#             break
+
+#         task_complete_vertex = task_complete_vertices[child]
+#         assert next_event.time > tasks[child].crt_ts and (previous_event is None or previous_event.time < tasks[child].crt_ts)
+#         edge = g.add_edge(task_complete_vertex, next_vertex)
+#         edge['edge_type'] = EdgeType.taskwait
+#         log.debug(f"synchronised task {child}:")
+#         log.debug(f"  from: {task_complete_vertex}")
+#         log.debug(f"    to: {next_vertex}")
+
+#         if previous_event is None and next_event is None:
+#             """ran out of taskwait barriers - no further taskwait synchronisation to apply to children of this task"""
+#             break
+
+# del taskwait_vertices
+
+# """
+#         Apply taskgroup synchronisation
+#         ===============================
+
+# For each task that encountered a taskgroup region, gather a list of the taskgroup begin/end events and the vertex which
+# represents the taskgroup-end event.
+# """
+
+# log.info("applying taskgroup synchronisation")
+
+# """
+# Contractions applied at this stage:
+#     - (between chunks) same _parallel_sequence_id
+#     - (between chunks) same single-executor events
+#     - (between chunks) same master events
+#     - (between chunks) same _task_cluster_id to connect task chunks
+#     - (along edges) empty tasks chunks
+#     - (along edges) _sync_cluster_id (collapse taskwait enter/leave vertices)
+# """
+
+# log.debug(f"gathering taskgroup regions by encountering task ID")
+# taskgroup_vertices = defaultdict(list)
+# for vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
+#     end_event = vertex['event']
+#     assert otter.core.is_event_list(end_event)
+#     log.debug(f"taskgroup-end event ({len(end_event)}): {end_event}")
+#     if otter.core.is_event_list(end_event) and len(end_event) > 1:
+#         end_event = otter.utils.handlers.return_unique_taskgroup_complete_event(end_event)
+#     assert otter.core.is_event_list(end_event)
+#     assert len(end_event) == 1
+#     begin_event = vertex['_taskgroup_enter_event']
+#     assert begin_event is not None
+#     assert otter.core.is_event(begin_event)
+#     taskgroup_vertices[end_event[0].encountering_task_id].append((begin_event, end_event[0], vertex))
+#     log.debug(f" - task {end_event[0].encountering_task_id}: {(begin_event, end_event[0], vertex)}")
+
+
+# """
+# For each task that encountered any taskgroup regions:
+# """
+# was_created_during = lambda crt_ts: (lambda items: items[0].time < crt_ts < items[1].time)
+# for task_id, taskgroup_vertex_pairs in taskgroup_vertices.items():
+#     descendants = tasks.descendants_while(task_id, lambda t : t.task_type != TaskType.implicit)
+#     log.debug(f"applying taskgroup synchronisation for descendants of task {task_id} {descendants}")
+#     log.debug(f"task {task_id} encountered {(len(taskgroup_vertex_pairs))} taskgroup regions")
+
+    # """
+    # For each descendant task (stopping at descendants which are implicit tasks...
+    # """
+    # for desc_id in descendants:
+    #     desc_task = tasks[desc_id]
+    #     match = list(filter(was_created_during(desc_task.crt_ts), taskgroup_vertex_pairs))
+    #     if len(match) == 0:
+    #         log.debug(f" - task {desc_id} {desc_task.crt_ts=} not synchronised by taskgroup region")
+    #     else:
+    #         assert len(match) == 1
+    #         assert isinstance(match, list)
+    #         assert isinstance(match[0], tuple)
+    #         assert any(map(otter.core.is_event, match[0]))
+    #         assert all(map(otter.core.is_event, match[0][0:2]))
+    #         assert otter.core.is_event(match[0][0])
+    #         assert otter.core.is_event(match[0][1])
+    #         *_, tg_end_vertex = match[0]
+    #         try:
+    #             edge = g.add_edge(task_complete_vertices[desc_id], tg_end_vertex)
+    #         except TypeError as e:
+    #             print(type(task_complete_vertices[desc_id]))
+    #             print(type(tg_end_vertex))
+    #             raise e
+    #         edge['edge_type'] = EdgeType.taskgroup
+    #         log.debug(f" - task {desc_id} synchronised by taskgroup-end event")
 
 
 g.simplify(combine_edges='first')
