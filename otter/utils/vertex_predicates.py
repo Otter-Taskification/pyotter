@@ -38,9 +38,8 @@ def is_terminal_task_vertex(vertex) -> bool:
     return any(e.is_task_switch_complete_event for e in event)
 
 def is_task_group_end_vertex(vertex) -> bool:
-    event = vertex['event']
-    assert events.is_event_list(event)
-    return any(e.is_task_group_end_event for e in event)
+    assert events.is_event_list(vertex['event'])
+    return all(e.is_task_group_end_event for e in vertex['event'])
 
 is_single_executor = is_region_type(RegionType.single_executor)
 is_master = is_region_type(RegionType.master)

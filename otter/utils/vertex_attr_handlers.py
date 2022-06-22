@@ -188,10 +188,11 @@ def return_unique_taskgroup_complete_event(args):
     return event_set.pop()
 
 def reject_task_create(args):
+    logger = get_module_logger()
     events_filtered = [event for event in args if not event.is_task_create_event]
-    if len(events_filtered) == 1:
-        return events_filtered
-    elif len(events_filtered) == 0:
+    if len(events_filtered) == 0:
         raise NotImplementedError("No events remain after filtering")
-    else:
-        return events_filtered
+    n_args = len(args)
+    n_accept = len(events_filtered)
+    logger.debug(f"return {n_accept}/{n_args}: {events_filtered}")
+    return events_filtered
