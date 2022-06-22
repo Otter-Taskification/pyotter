@@ -62,6 +62,7 @@ log.info(f"graph disjoint union has {vcount} vertices")
 vertex_attribute_names = ['_task_cluster_id',
     '_is_task_enter_node',
     '_is_task_leave_node',
+    '_is_dummy_task_vertex',
     '_region_type',
     '_master_enter_event',
     '_taskgroup_enter_event',
@@ -120,6 +121,8 @@ for taskgroup_end_vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
             continue
         synchronised_task_vertex = in_edge.source_vertex
 
+        assert synchronised_task_vertex['_is_dummy_task_vertex'] == True
+
         assert otter.events.is_event_list(synchronised_task_vertex['event'])
 
         for e in synchronised_task_vertex['event']:
@@ -140,6 +143,7 @@ for taskgroup_end_vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
             log.debug(f" + {descendant_task}")
 
 # pdb.set_trace()
+
 
 log.info(f"combining vertices...")
 
