@@ -280,6 +280,7 @@ class Chunk:
                 v['_task_cluster_id'] = (event.unique_id, defn.Endpoint.enter)
                 dummy_vertex = g.add_vertex(event=[event])
                 dummy_vertex['_task_cluster_id'] = (event.unique_id, defn.Endpoint.leave)
+                dummy_vertex['_is_dummy_task_vertex'] = True
 
                 # Append for the next taskwait barrier encountered
                 taskwait_task_create_vertices.append(dummy_vertex)
