@@ -109,6 +109,17 @@ Algorithm:
 
 import pdb
 
+log.debug(f"notify each task of its dummy task-create vertex")
+for dummy_vertex in filter(lambda v: v['_is_dummy_task_vertex'], g.vs):
+    assert otter.events.is_event_list(dummy_vertex['event'])
+    assert len(dummy_vertex['event']) == 1
+    event = dummy_vertex['event'][0]
+    assert event.is_task_create_event
+    task_id = event.get_task_created()
+    task_created = tasks[task_id]
+    setattr(task_created, '_dummy_vertex', dummy_vertex)
+    log.debug(f" - notify task {task_id} of vertex {task_created._dummy_vertex}")
+
 log.debug(f"Filtering for taskgroup-end vertices")
 
 # For each taskgroup-end vertex V:
@@ -116,7 +127,8 @@ for taskgroup_end_vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
     log.debug(f"taskgroup-end vertex: {taskgroup_end_vertex}")
 
     # For each task t currently synchronised by V:
-    for in_edge in taskgroup_end_vertex.in_edges():
+    in_edges = taskgroup_end_vertex.in_edges()
+    for in_edge in in_edges:
         if in_edge[otter.Attr.edge_type] != EdgeType.taskgroup:
             continue
         synchronised_task_vertex = in_edge.source_vertex
@@ -138,8 +150,11 @@ for taskgroup_end_vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
 
         # For each task d which is a descendant task of t, stopping at descendants which are implicit tasks:
         stop_at_implicit_task = lambda t : t.task_type != TaskType.implicit
-        for descendant_task in tasks.descendants_while(task_synchronised, stop_at_implicit_task):
-            log.debug(f"   + {descendant_task}")
+        for descendant_task_id in tasks.descendants_while(task_synchronised, stop_at_implicit_task):
+            descendant_task = tasks[descendant_task_id]
+            edge = g.add_edge(descendant_task._dummy_vertex, taskgroup_end_vertex)
+            edge[otter.Attr.edge_type] = EdgeType.taskgroup
+            log.debug(f"   + {descendant_task_id}")
 
 # pdb.set_trace()
 
