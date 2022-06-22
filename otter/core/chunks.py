@@ -298,11 +298,14 @@ class Chunk:
             prior_vertex = v
             prior_event = event
 
+        final_vertex = prior_vertex
+        first_vertex = g.vs[0]
+
         if self.type == defn.RegionType.explicit_task and len(self) <= 2:
             g.delete_edges([0])
 
         # If no internal vertices, require at least 1 edge (except for empty explicit task chunks)
-        # Require at least 1 edge between start & end vertices in parallel & single-executor chunk if disconnected
+        # Require at least 1 edge between start & end vertices in EMPTY parallel & single-executor chunk if disconnected
         if g.ecount() == 0:
             self.log.debug(f"graph contains no edges (type={self.type}, events={len(self)})")
             if self.type == defn.RegionType.explicit_task:
@@ -312,5 +315,13 @@ class Chunk:
                 # Parallel chunks contain implicit-task-begin/end events which are skipped, but count towards len(self)
                 self.log.debug(f"no internal vertices - add edge from: {g.vs[0]['event']} to: {g.vs[1]['event']}")
                 g.add_edge(g.vs[0], g.vs[1])
+
+        # For parallel & single-executor chunks which are disconnected and have internal vertices (and thus some edges), connect start & end vertices
+        if (len(final_vertex.in_edges()) == 0) and (
+            (self.type == defn.RegionType.single_executor and len(self) > 2) or 
+            (self.type == defn.RegionType.parallel and len(self) > 4)
+        ):
+            self.log.debug(f"detected disconnected chunk of type {self.type}")
+            edge = g.add_edge(first_vertex, final_vertex)
 
         return g
