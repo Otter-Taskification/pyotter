@@ -125,9 +125,6 @@ for taskgroup_end_vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
 
         assert otter.events.is_event_list(synchronised_task_vertex['event'])
 
-        for e in synchronised_task_vertex['event']:
-            log.debug(f"{e=}")
-
         assert len(synchronised_task_vertex['event']) == 1
         assert otter.events.is_event(synchronised_task_vertex['event'][0])
         
@@ -137,12 +134,12 @@ for taskgroup_end_vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
 
         task_synchronised = event.get_task_created()
 
-        log.debug(f"{event} for task {task_synchronised}")
+        log.debug(f" synchronise child task {task_synchronised}")
 
         # For each task d which is a descendant task of t, stopping at descendants which are implicit tasks:
         stop_at_implicit_task = lambda t : t.task_type != TaskType.implicit
         for descendant_task in tasks.descendants_while(task_synchronised, stop_at_implicit_task):
-            log.debug(f" + {descendant_task}")
+            log.debug(f"   + {descendant_task}")
 
 # pdb.set_trace()
 
