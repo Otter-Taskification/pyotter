@@ -220,6 +220,9 @@ class _Event(ABC):
     def get_task_entered(self):
         raise NotImplementedError("only implemented if event.is_update_task_start_ts_event == True")
 
+    def get_task_created(self):
+        raise NotImplementedError("only implemented if event.is_task_create_event == True")
+
     @property
     def vertex_label(self):
         return self.unique_id
@@ -488,6 +491,9 @@ class TaskCreate(RegisterTaskDataMixin, DefaultUpdateChunksMixin, Task):
 
     def __repr__(self):
         return f"{self._base_repr} {self._attr_repr}"
+
+    def get_task_created(self):
+        return self.unique_id
 
 
 class TaskSchedule(Task):
