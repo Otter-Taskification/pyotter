@@ -12,6 +12,30 @@ class NullTaskError(Exception):
     pass
 
 
+class TaskSynchronisationContext:
+    """Represents a context within which one or more tasks are synchronised"""
+
+    @logdec.on_init(logger=log.logger_getter("init_logger"))
+    def __init__(self, tasks=None, descendants=False):
+        self.logger = get_module_logger()
+        self._tasks = list()
+        self._descendants = descendants
+        if tasks is not None:
+            for t in tasks:
+                self.synchronise(t)
+
+    def synchronise(self, task):
+        assert isinstance(task, Task)
+        self.logger.debug(f" -- synchronised task {task.id}")
+        self._tasks.append(task)
+
+    def __iter__(self):
+        yield from self._tasks
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(descendants={self._descendants}, tasks=[{', '.join(str(t.id) for t in self._tasks)}])"
+
+
 class Task:
     """Represents an instance of a task"""
 
@@ -39,6 +63,9 @@ class Task:
         self._num_descendants = None
         self._start_ts = None
 
+        self._task_sync_group_stack = deque()
+        self._task_barrier_cache = list()
+
     def __repr__(self):
         return "{}(id={}, type={}, crt_ts={}, end_ts={}, parent={}, children=({}))".format(
             self.__class__,
@@ -49,6 +76,52 @@ class Task:
             self.parent_id,
             ", ".join([str(c) for c in self.children])
         )
+
+    def append_to_barrier_cache(self, task):
+        assert isinstance(task, Task)
+        self.logger.debug(f"add task to barrier cache: task {self.id} added task {task.id}")
+        self._task_barrier_cache.append(task)
+
+    def synchronise_tasks_at_barrier(self, tasks=None, from_cache=False, descendants=False):
+        tasks = self._task_barrier_cache if from_cache else tasks
+        assert tasks is not None
+        self.logger.debug(f"task {self.id} registering tasks synchronised at barrier")
+        barrier_context = TaskSynchronisationContext(tasks, descendants=descendants)
+        if from_cache:
+            self._task_barrier_cache = list()
+        return barrier_context
+
+    @property
+    def has_active_task_group(self):
+        return self.num_enclosing_task_sync_groups > 0
+
+    @property
+    def num_enclosing_task_sync_groups(self):
+        return len(self._task_sync_group_stack)
+
+    def synchronise_task_in_current_group(self, task):
+        if self.has_active_task_group:
+            # get enclosing group context
+            self.logger.debug(f"task {self.id} registering task {task.id} in current group")
+            group_context = self.get_current_task_sync_group()
+            group_context.synchronise(task)
+
+    def enter_task_sync_group(self, descendants=True):
+        self.logger.debug(f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})")
+        group_context = TaskSynchronisationContext(tasks=None, descendants=descendants)
+        self._task_sync_group_stack.append(group_context)
+
+    def leave_task_sync_group(self):
+        assert self.has_active_task_group
+        group_context = self._task_sync_group_stack.pop()
+        self.logger.debug(f"task {self.id} left task sync group (levels={self.num_enclosing_task_sync_groups})")
+        return group_context
+
+    def get_current_task_sync_group(self):
+        assert self.has_active_task_group
+        self.logger.debug(f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})")
+        group_context = self._task_sync_group_stack[-1]
+        return group_context
 
     def append_child(self, child: int):
         self._children.append(child)
