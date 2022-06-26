@@ -66,7 +66,10 @@ vertex_attribute_names = ['_task_cluster_id',
     '_region_type',
     '_master_enter_event',
     '_taskgroup_enter_event',
-    '_sync_cluster_id'
+    '_sync_cluster_id',
+    '_barrier_context',
+    '_group_context',
+    '_task_sync_context'
 ]
 
 # Ensure some vertex attributes are defined
@@ -106,6 +109,18 @@ for dummy_vertex in filter(lambda v: v['_is_dummy_task_vertex'], g.vs):
     setattr(task_created, '_dummy_vertex', dummy_vertex)
     log.debug(f" - notify task {task_id} of vertex {task_created._dummy_vertex}")
 
+
+# Get all the task sync contexts from the taskwait & taskgroup vertices and create edges for them
+log.debug(f"getting taskwait barrier contexts")
+for task_sync_vertex in filter(lambda v: v['_task_sync_context'] is not None, g.vs):
+    log.debug(f"task sync vertex: {task_sync_vertex}")
+    edge_type, context = task_sync_vertex['_task_sync_context']
+    assert context is not None
+    log.debug(f" ++ got context: {context}")
+    for synchronised_task in context:
+        log.debug(f"    got synchronised task {synchronised_task.id}")
+        edge = g.add_edge(synchronised_task._dummy_vertex, task_sync_vertex)
+        edge[otter.Attr.edge_type] = edge_type
 
 """
 Apply taskgroup synchronisation
