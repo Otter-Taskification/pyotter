@@ -449,7 +449,12 @@ class ImplicitTaskEnter(ChunkSwitchEventMixin, TaskEnter):
         chunk = chunk_dict[chunk_key]
         chunk.append_event(self)
         # Ensure implicit-task-id points to the same chunk for later events in this task
-        chunk_dict[self.unique_id] = chunk_dict[chunk_key]
+        chunk_dict[self.unique_id] = chunk
+
+        # Allow nested parallel regions to find the chunk for this implicit task
+        implicit_task_chunk_key = self._location.name, self.unique_id, defn.RegionType.task
+        chunk_dict[implicit_task_chunk_key] = chunk
+
         yield None
 
 
@@ -525,6 +530,11 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {self} updating chunk key={next_chunk_key}")
         next_chunk = chunk_dict[next_chunk_key]
         next_chunk.append_event(self)
+
+        # Allow nested parallel regions to append to next_chunk where a task
+        # creates a nested parallel region?
+        nested_parallel_region_chunk_key = (self._location.name, self.unique_id, defn.RegionType.task)
+        chunk_dict[nested_parallel_region_chunk_key] = next_chunk
 
     def get_task_completed(self):
         if not self.is_task_complete_event:
