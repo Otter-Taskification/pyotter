@@ -21,7 +21,7 @@ class ChunkFactory:
         self.events = e
         self.tasks = t
         # Track all chunks currently under construction according to key
-        self.chunk_dict = defaultdict(lambda : Chunk())
+        self.chunk_dict = defaultdict(lambda : Chunk(self.tasks))
         # Record the enclosing chunk when an event indicates a nested chunk
         self.chunk_stack = defaultdict(deque)
 
@@ -96,10 +96,11 @@ class ChunkFactory:
 class Chunk:
 
     @logdec.on_init(logger=log.logger_getter("init_logger"), level=log.DEBUG)
-    def __init__(self):
+    def __init__(self, tasks):
         self.log = get_module_logger()
         self._events = deque()
         self._type = None
+        self.tasks = tasks
 
     def __len__(self):
         return len(self._events)
@@ -176,12 +177,6 @@ class Chunk:
         taskwait_cluster_id = None
         taskwait_cluster_label = 0
 
-        # task-create vertices synchronised within a taskgroup region
-        taskgroup_task_create_vertices = list()
-
-        # task-create vertices synchronised when they reach a taskwait barrier
-        taskwait_task_create_vertices = list()
-
         # Match master-enter event to corresponding master-leave
         master_enter_event = self.first if self.first.region_type == defn.RegionType.master else None
 
@@ -211,18 +206,22 @@ class Chunk:
             if event.region_type == defn.RegionType.taskgroup:
                 if event.is_enter_event:
                     taskgroup_enter_event = event
+
+                    # Create a context for this taskgroup
+                    encountering_task = self.tasks[event.encountering_task_id]
+                    encountering_task.enter_task_sync_group()
+
                 elif event.is_leave_event:
                     if taskgroup_enter_event is None:
                         raise RuntimeError("taskgroup-enter event was None")
                     v['_taskgroup_enter_event'] = taskgroup_enter_event
                     taskgroup_enter_event = None
 
-                    # Connect all task-create vertices created within this taskgroup to the current vertex
-                    # and reset the list of task-create vertices to be synchronised
-                    for task_create_vertex in taskgroup_task_create_vertices:
-                        edge = g.add_edge(task_create_vertex, v)
-                        edge[defn.Attr.edge_type] = event.region_type
-                    taskgroup_task_create_vertices = list()
+                    # Leave the context for this taskgroup
+                    encountering_task = self.tasks[event.encountering_task_id]
+                    group_context = encountering_task.leave_task_sync_group()
+                    v['_group_context'] = group_context
+                    v['_task_sync_context'] = (defn.EdgeType.taskgroup, group_context)
 
             # Label corresponding taskwait-enter/-leave events so they can be contracted later
             if event.region_type == defn.RegionType.taskwait:
@@ -230,11 +229,12 @@ class Chunk:
                     taskwait_cluster_id = (event.encountering_task_id, event.region_type, taskwait_cluster_label)
                     v['_sync_cluster_id'] = taskwait_cluster_id
 
-                    # Add edges for the tasks created prior to this taskwait barrier
-                    for task_create_vertex in taskwait_task_create_vertices:
-                        edge = g.add_edge(task_create_vertex, v)
-                        edge[defn.Attr.edge_type] = event.region_type
-                    taskwait_task_create_vertices = list()
+                    # Register that these tasks were synchronised at a barrier
+                    # encountered by their parent task
+                    self.log.debug(f"registering tasks at taskwait barrier")
+                    barrier_context = self.tasks[event.encountering_task_id].synchronise_tasks_at_barrier(from_cache=True)
+                    v['_barrier_context'] = barrier_context
+                    v['_task_sync_context'] = (defn.EdgeType.taskwait, barrier_context)
 
                 elif event.is_leave_event:
                     if taskwait_cluster_id is None:
@@ -282,13 +282,18 @@ class Chunk:
                 dummy_vertex['_task_cluster_id'] = (event.unique_id, defn.Endpoint.leave)
                 dummy_vertex['_is_dummy_task_vertex'] = True
 
-                # Append for the next taskwait barrier encountered
-                taskwait_task_create_vertices.append(dummy_vertex)
+                encountering_task = self.tasks[event.encountering_task_id]
+                created_task = self.tasks[event.unique_id]
 
-                # If inside a taskgroup, record this task to be synchronised
-                if taskgroup_enter_event is not None:
-                    taskgroup_task_create_vertices.append(dummy_vertex)
-                
+                # If there is a task group context currently active, add the created task to it
+                # Otherwise add to the encountering task's barrier cache
+                if encountering_task.has_active_task_group:
+                    self.log.debug(f"registering new task in active task group: parent={encountering_task.id}, child={created_task.id}")
+                    encountering_task.synchronise_task_in_current_group(created_task)
+                else:
+                    self.log.debug(f"registering new task in task barrier cache: parent={encountering_task.id}, child={created_task.id}")
+                    encountering_task.append_to_barrier_cache(created_task)
+
                 continue  # to skip updating prior_vertex
 
             if event is self.last and self.type == defn.RegionType.explicit_task:
