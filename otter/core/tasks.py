@@ -105,10 +105,11 @@ class Task:
         return self._excl_dur
 
     def update_exclusive_duration(self, time):
-        if self.last_resumed_ts is not None and self.task_type not in [defn.TaskType.initial, defn.TaskType.implicit]:
-            dt = time - self.last_resumed_ts
-            self.logger.debug(f"updated exclusive duration for task {self.id}: {self._excl_dur} -> {self._excl_dur + dt}")
-            self._excl_dur = self._excl_dur + dt
+        if self.last_resumed_ts is None:
+            raise RuntimeError("last resumed time was None")
+        dt = time - self.last_resumed_ts
+        self.logger.debug(f"updated exclusive duration for task {self.id}: {self._excl_dur} -> {self._excl_dur + dt}")
+        self._excl_dur = self._excl_dur + dt
 
     @property
     def inclusive_duration(self):
@@ -221,13 +222,14 @@ class TaskRegistry:
                 task.inclusive_duration = self.calculate_inclusive_duration(task)
 
     def calculate_inclusive_duration(self, task):
-        if task.inclusive_duration is None and task.task_type not in [defn.TaskType.initial, defn.TaskType.implicit]:
-            inclusive_duration = task.exclusive_duration
-            for child in (self[id] for id in task.children):
-                if child.inclusive_duration is None:
-                    child.inclusive_duration = self.calculate_inclusive_duration(child)
-                inclusive_duration += child.inclusive_duration
-            return inclusive_duration
+        if task.inclusive_duration is not None:
+            return task.inclusive_duration
+        inclusive_duration = task.exclusive_duration
+        for child in (self[id] for id in task.children):
+            if child.inclusive_duration is None:
+                child.inclusive_duration = self.calculate_inclusive_duration(child)
+            inclusive_duration += child.inclusive_duration
+        return inclusive_duration
 
     def calculate_all_num_descendants(self):
         for task in self:
