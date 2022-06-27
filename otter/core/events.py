@@ -224,6 +224,13 @@ class _Event(ABC):
         raise NotImplementedError("only implemented if event.is_task_create_event == True")
 
     @property
+    def task_synchronisation_cache(self):
+        raise NotImplementedError()
+
+    def clear_task_synchronisation_cache(self):
+        raise NotImplementedError()
+
+    @property
     def vertex_label(self):
         return self.unique_id
 
@@ -376,6 +383,18 @@ class WorkshareEnd(LeaveMixin, DefaultUpdateChunksMixin, _Event):
 
 
 class SingleBegin(ChunkSwitchEventMixin, WorkshareBegin):
+
+    @logdec.on_init(logger=log.logger_getter("init_logger"))
+    def __init__(self, event, location, attr):
+        self._task_sync_cache = list()
+        super().__init__(event, location, attr)
+
+    @property
+    def task_synchronisation_cache(self):
+        return self._task_sync_cache
+
+    def clear_task_synchronisation_cache(self):
+        self._task_sync_cache.clear()
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         # Nested region - append to task chunk, push onto stack, create nested chunk
