@@ -202,13 +202,17 @@ class Chunk:
             # vertex['event'] is always a list of 1 or more events
             v = g.add_vertex(event=[event])
 
+            try:
+                encountering_task = self.tasks[event.encountering_task_id]
+            except tasks.NullTaskError:
+                encountering_task = None
+
             # Match taskgroup-enter/-leave events
             if event.region_type == defn.RegionType.taskgroup:
                 if event.is_enter_event:
                     taskgroup_enter_event = event
 
                     # Create a context for this taskgroup
-                    encountering_task = self.tasks[event.encountering_task_id]
                     encountering_task.enter_task_sync_group()
 
                 elif event.is_leave_event:
@@ -218,7 +222,6 @@ class Chunk:
                     taskgroup_enter_event = None
 
                     # Leave the context for this taskgroup
-                    encountering_task = self.tasks[event.encountering_task_id]
                     group_context = encountering_task.leave_task_sync_group()
                     v['_group_context'] = group_context
                     v['_task_sync_context'] = (defn.EdgeType.taskgroup, group_context)
@@ -229,10 +232,35 @@ class Chunk:
                     taskwait_cluster_id = (event.encountering_task_id, event.region_type, taskwait_cluster_label)
                     v['_sync_cluster_id'] = taskwait_cluster_id
 
-                    # Register that these tasks were synchronised at a barrier
-                    # encountered by their parent task
-                    self.log.debug(f"registering tasks at taskwait barrier")
-                    barrier_context = self.tasks[event.encountering_task_id].synchronise_tasks_at_barrier(from_cache=True)
+                    # Create a context for the tasks synchronised at this barrier
+                    barrier_context = tasks.TaskSynchronisationContext(tasks=None, descendants=False)
+
+                    # In a single-exec region, created tasks are recorded in the
+                    # first event's cache rather than in the parent task's cache.
+                    if self.type == defn.RegionType.single_executor:
+                        self.log.debug(f"registering tasks at taskwait barrier inside a single-executor chunk")
+                        barrier_context.synchronise_from(self.first.task_synchronisation_cache)
+
+                        # Forget about events which have been synchronised
+                        self.first.clear_task_synchronisation_cache()
+
+                    # Register tasks synchronised at a barrier
+                    else:
+                        self.log.debug(f"registering tasks at taskwait barrier")
+                        barrier_context.synchronise_from(encountering_task.task_barrier_cache)
+
+                        # If the parent task encountered any single-exec regions
+                        # ensure that tasks created and not synchronised in those
+                        # regions are now synchronised at this barrier. Must be
+                        # done lazily as the enclosed chunk may not have been
+                        # parsed fully yet.
+                        for iterable in encountering_task.task_barrier_iterables_cache:
+                            barrier_context.synchronise_lazy(iterable)
+
+                        # Forget about tasks and task iterables synchronised here
+                        encountering_task.clear_task_barrier_cache()
+                        encountering_task.clear_task_barrier_iterables_cache()
+                        
                     v['_barrier_context'] = barrier_context
                     v['_task_sync_context'] = (defn.EdgeType.taskwait, barrier_context)
 
@@ -242,6 +270,19 @@ class Chunk:
                     v['_sync_cluster_id'] = taskwait_cluster_id
                     taskwait_cluster_label += 1
                     taskwait_cluster_id = None
+
+            # Store a reference to the single-exec event's task-sync cache so
+            # that the parent task can synchronise any remaining tasks not
+            # synchronised inside the single-exec region
+            if event.region_type == defn.RegionType.single_executor and event.endpoint == defn.Endpoint.enter:
+                if encountering_task.has_active_task_group:
+                    # Lazily add the single-exec event's cache to the active context
+                    group_context = encountering_task.get_current_task_sync_group()
+                    group_context.synchronise_lazy(event.task_synchronisation_cache)
+                else:
+                    # Record a reference to the cache to later add lazily to the next
+                    # task-sync barrier this task encounters.
+                    encountering_task.append_to_barrier_iterables_cache(event.task_synchronisation_cache)
 
             # Match master-enter/-leave events
             elif event.region_type == defn.RegionType.master:
@@ -282,17 +323,29 @@ class Chunk:
                 dummy_vertex['_task_cluster_id'] = (event.unique_id, defn.Endpoint.leave)
                 dummy_vertex['_is_dummy_task_vertex'] = True
 
-                encountering_task = self.tasks[event.encountering_task_id]
                 created_task = self.tasks[event.unique_id]
 
                 # If there is a task group context currently active, add the created task to it
-                # Otherwise add to the encountering task's barrier cache
+                # Otherwise add to the relevant cache
                 if encountering_task.has_active_task_group:
                     self.log.debug(f"registering new task in active task group: parent={encountering_task.id}, child={created_task.id}")
                     encountering_task.synchronise_task_in_current_group(created_task)
                 else:
-                    self.log.debug(f"registering new task in task barrier cache: parent={encountering_task.id}, child={created_task.id}")
-                    encountering_task.append_to_barrier_cache(created_task)
+
+                    # In a single-executor chunk, record tasks in the single-exec-enter
+                    # event's task-sync cache so that any tasks not synchronised
+                    # at the end of this chunk are made available to the enclosing
+                    # chunk to synchronise after the single region.
+                    if self.type == defn.RegionType.single_executor:
+                        self.log.debug(f"registering new task in single-executor cache: parent={encountering_task.id}, child={created_task.id}")
+                        self.first.task_synchronisation_cache.append(created_task)
+
+                    # For all other chunk types, record the task created in the
+                    # parent task's task-sync cache, to be added to the next task
+                    # synchronisation barrier.
+                    else:
+                        self.log.debug(f"registering new task in task barrier cache: parent={encountering_task.id}, child={created_task.id}")
+                        encountering_task.append_to_barrier_cache(created_task)
 
                 continue  # to skip updating prior_vertex
 
