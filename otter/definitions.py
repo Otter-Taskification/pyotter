@@ -86,6 +86,10 @@ class EdgeType(str, Enum):
     taskwait = "taskwait"
     taskgroup = "taskgroup"
 
+class TaskSyncType(int, Enum):
+    children = 0
+    descendants = 1
+
 class TaskEvent(str, Enum):
     CREATE = EventType.task_create.value
     SWITCH = EventType.task_switch.value
