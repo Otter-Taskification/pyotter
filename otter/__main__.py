@@ -112,7 +112,8 @@ for dummy_vertex in filter(lambda v: v['_is_dummy_task_vertex'], g.vs):
 
 
 # Get all the task sync contexts from the taskwait & taskgroup vertices and create edges for them
-log.debug(f"getting taskwait barrier contexts")
+log.debug(f"getting task synchronisation contexts")
+stop_at_implicit_task = lambda t : t.task_type != TaskType.implicit
 for task_sync_vertex in filter(lambda v: v['_task_sync_context'] is not None, g.vs):
     log.debug(f"task sync vertex: {task_sync_vertex}")
     edge_type, context = task_sync_vertex['_task_sync_context']
@@ -122,48 +123,14 @@ for task_sync_vertex in filter(lambda v: v['_task_sync_context'] is not None, g.
         log.debug(f"    got synchronised task {synchronised_task.id}")
         edge = g.add_edge(synchronised_task._dummy_vertex, task_sync_vertex)
         edge[otter.Attr.edge_type] = edge_type
-
-"""
-Apply taskgroup synchronisation
-===============================
-
-Assumptions:
-    - child tasks created in a chunk which encountered a taskgroup construct are already synchronised by that taskgroup
-
-Algorithm:
-    For each taskgroup-end vertex V:
-        For each task t currently synchronised by V:
-            For each task d which is a descendant task of t, stopping at descendants which are implicit tasks:
-                d is synchronised by V
-"""
-log.debug(f"filtering for taskgroup-end vertices")
-
-# For each taskgroup-end vertex V:
-for taskgroup_end_vertex in filter(otter.utils.is_task_group_end_vertex, g.vs):
-    log.debug(f"taskgroup-end vertex: {taskgroup_end_vertex}")
-    # For each task t currently synchronised by V:
-    in_edges = taskgroup_end_vertex.in_edges()
-    for in_edge in in_edges:
-        if in_edge[otter.Attr.edge_type] != EdgeType.taskgroup:
-            continue
-        synchronised_task_vertex = in_edge.source_vertex
-        assert synchronised_task_vertex['_is_dummy_task_vertex'] == True
-        assert otter.events.is_event_list(synchronised_task_vertex['event'])
-        assert len(synchronised_task_vertex['event']) == 1
-        assert otter.events.is_event(synchronised_task_vertex['event'][0])
-        event = synchronised_task_vertex['event'][0]
-        assert event.is_task_create_event
-        task_synchronised = event.get_task_created()
-        log.debug(f" synchronise child task {task_synchronised}")
-        # For each task d which is a descendant task of t, stopping at descendants which are implicit tasks:
-        stop_at_implicit_task = lambda t : t.task_type != TaskType.implicit
-        for descendant_task_id in tasks.descendants_while(task_synchronised, stop_at_implicit_task):
-            descendant_task = tasks[descendant_task_id]
-            # This task is synchronised by the taskgroup
-            edge = g.add_edge(descendant_task._dummy_vertex, taskgroup_end_vertex)
-            edge[otter.Attr.edge_type] = EdgeType.taskgroup
-            log.debug(f"   + {descendant_task_id}")
-
+        if context.synchronise_descendants:
+            # Add edges for descendants of synchronised_task
+            for descendant_task_id in tasks.descendants_while(synchronised_task.id, stop_at_implicit_task):
+                descendant_task = tasks[descendant_task_id]
+                # This task is synchronised by the context
+                edge = g.add_edge(descendant_task._dummy_vertex, task_sync_vertex)
+                edge[otter.Attr.edge_type] = edge_type
+                log.debug(f"    ++ got synchronised descendant task {descendant_task_id}")
 
 log.info(f"combining vertices...")
 
