@@ -51,6 +51,10 @@ class TaskSynchronisationContext:
         for task in iterable:
             self.synchronise(task)
 
+    @property
+    def synchronise_descendants(self):
+        return self._descendants
+
     def __iter__(self):
         """Yield tasks from the context, including from any iterables added
         lazily"""
