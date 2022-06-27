@@ -1,4 +1,5 @@
 from functools import lru_cache
+from itertools import chain
 from collections import deque
 import igraph as ig
 import loggingdecorators as logdec
@@ -13,27 +14,53 @@ class NullTaskError(Exception):
 
 
 class TaskSynchronisationContext:
-    """Represents a context within which one or more tasks are synchronised"""
+    """
+    Represents a context, such as a taskgroup or taskwait barrier within which
+    one or more tasks are synchronised.
+
+    Stores references to tasks which are synchronised at the same point, as well
+    as references to iterables containing tasks to synchronise. Iterables are
+    evaluated lazily when the context is iterated over.
+
+    A context only includes those tasks explicitly passed to it. It can record
+    whether the descendants of those tasks should also be synchronised, although
+    it does not record any information about any descendant tasks.    
+    """
 
     @logdec.on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, tasks=None, descendants=False):
         self.logger = get_module_logger()
         self._tasks = list()
         self._descendants = descendants
+        self._iterables = list()
         if tasks is not None:
-            for t in tasks:
-                self.synchronise(t)
+            self.synchronise_from(tasks)
 
     def synchronise(self, task):
+        """Add a task to the context"""
         assert isinstance(task, Task)
         self.logger.debug(f" -- synchronised task {task.id}")
         self._tasks.append(task)
 
+    def synchronise_lazy(self, iterable):
+        """Lazily add an iterable of tasks to the context"""
+        self._iterables.append(iterable)
+
+    def synchronise_from(self, iterable):
+        """Add tasks from an iterable to the context"""
+        for task in iterable:
+            self.synchronise(task)
+
     def __iter__(self):
-        yield from self._tasks
+        """Yield tasks from the context, including from any iterables added
+        lazily"""
+        items = chain(self._tasks, *self._iterables)
+        for task in items:
+            assert isinstance(task, Task)
+            yield task
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(descendants={self._descendants}, tasks=[{', '.join(str(t.id) for t in self._tasks)}])"
+        return f"{self.__class__.__name__}(descendants={self._descendants})"
 
 
 class Task:
@@ -63,8 +90,14 @@ class Task:
         self._num_descendants = None
         self._start_ts = None
 
+        # Stack of TaskSynchronisationContext to manage nested contexts
         self._task_sync_group_stack = deque()
+
+        # Stores child tasks created when parsing a chunk into its graph representation
         self._task_barrier_cache = list()
+
+        # Stores iterables of child tasks created when parsing a chunk into its graph representation
+        self._task_barrier_iterables_cache = list()
 
     def __repr__(self):
         return "{}(id={}, type={}, crt_ts={}, end_ts={}, parent={}, children=({}))".format(
@@ -78,18 +111,45 @@ class Task:
         )
 
     def append_to_barrier_cache(self, task):
+        """Add a task to the barrier cache, ready to be passed to a synchronisation
+        context upon encountering a task synchronisation barrier
+        """
         assert isinstance(task, Task)
         self.logger.debug(f"add task to barrier cache: task {self.id} added task {task.id}")
         self._task_barrier_cache.append(task)
 
+    def append_to_barrier_iterables_cache(self, iterable):
+        """Add an iterable to the barrier iterables cache, ready to be passed to a synchronisation
+        context upon encountering a task synchronisation barrier
+        """
+        self.logger.debug(f"add iterable to iterables cache: task {self.id} added iterable")
+        self._task_barrier_iterables_cache.append(iterable)
+
     def synchronise_tasks_at_barrier(self, tasks=None, from_cache=False, descendants=False):
+        """At a task synchronisation barrier, add a set of tasks to a synchronisation
+        context. The tasks may be from the internal cache, or supplied externally.
+        """
         tasks = self._task_barrier_cache if from_cache else tasks
         assert tasks is not None
         self.logger.debug(f"task {self.id} registering tasks synchronised at barrier")
         barrier_context = TaskSynchronisationContext(tasks, descendants=descendants)
         if from_cache:
-            self._task_barrier_cache = list()
+            self.clear_task_barrier_cache()
         return barrier_context
+
+    @property
+    def task_barrier_cache(self):
+        return self._task_barrier_cache
+
+    def clear_task_barrier_cache(self):
+        self._task_barrier_cache.clear()
+
+    @property
+    def task_barrier_iterables_cache(self):
+        return self._task_barrier_iterables_cache
+
+    def clear_task_barrier_iterables_cache(self):
+        self._task_barrier_iterables_cache.clear()
 
     @property
     def has_active_task_group(self):
