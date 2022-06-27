@@ -59,7 +59,8 @@ g = ig.disjoint_union([c.graph for c in chunks])
 vcount = g.vcount()
 log.info(f"graph disjoint union has {vcount} vertices")
 
-vertex_attribute_names = ['_task_cluster_id',
+vertex_attribute_names = ['_parallel_sequence_id',
+    '_task_cluster_id',
     '_is_task_enter_node',
     '_is_task_leave_node',
     '_is_dummy_task_vertex',
