@@ -6,7 +6,14 @@ from typing import Callable
 get_module_logger = log.logger_getter("vertex.pred")
 
 def key_is_not_none(key) -> Callable:
-    return lambda vertex: vertex[key] is not None
+    # return lambda vertex: vertex[key] is not None
+    def check_key(vertex):
+        try:
+            return vertex[key] is not None
+        except KeyError as e:
+            get_module_logger().error(f"exception: {e} for {key=}")
+            raise e
+    return check_key
 
 def _is_event_region_type(event, region_type) -> bool:
     assert events.is_event(event)
