@@ -228,12 +228,14 @@ class Chunk:
 
             # Label corresponding taskwait-enter/-leave events so they can be contracted later
             if event.region_type == defn.RegionType.taskwait:
+                self.log.debug(f"encountered taskwait barrier: endpoint={event.endpoint}, descendants={event.sync_descendant_tasks==defn.TaskSyncType.descendants}")
                 if event.is_enter_event:
                     taskwait_cluster_id = (event.encountering_task_id, event.region_type, taskwait_cluster_label)
                     v['_sync_cluster_id'] = taskwait_cluster_id
 
                     # Create a context for the tasks synchronised at this barrier
-                    barrier_context = tasks.TaskSynchronisationContext(tasks=None, descendants=False)
+                    descendants = event.sync_descendant_tasks==defn.TaskSyncType.descendants
+                    barrier_context = tasks.TaskSynchronisationContext(tasks=None, descendants=descendants)
 
                     # In a single-exec region, created tasks are recorded in the
                     # first event's cache rather than in the parent task's cache.
