@@ -177,6 +177,9 @@ class Chunk:
         taskwait_cluster_id = None
         taskwait_cluster_label = 0
 
+        barrier_cluster_id = None
+        barrier_cluster_label = 0
+
         # Match master-enter event to corresponding master-leave
         master_enter_event = self.first if self.first.region_type == defn.RegionType.master else None
 
@@ -225,6 +228,18 @@ class Chunk:
                     group_context = encountering_task.leave_task_sync_group()
                     v['_group_context'] = group_context
                     v['_task_sync_context'] = (defn.EdgeType.taskgroup, group_context)
+
+            # Label corresponding barrier-enter/leave events so they can be contracted
+            if event.region_type == defn.RegionType.barrier_implicit:
+                if event.is_enter_event:
+                    barrier_cluster_id = (event.encountering_task_id, event.region_type, barrier_cluster_label)
+                    v['_sync_cluster_id'] = barrier_cluster_id
+                elif event.is_leave_event:
+                    if barrier_cluster_id is None:
+                        raise RuntimeError("barrier-enter event was None")
+                    v['_sync_cluster_id'] = barrier_cluster_id
+                    barrier_cluster_label += 1
+                    barrier_cluster_id = None
 
             # Label corresponding taskwait-enter/-leave events so they can be contracted later
             if event.region_type == defn.RegionType.taskwait:
