@@ -189,6 +189,8 @@ class Chunk:
         elif self.type == defn.RegionType.explicit_task:
             prior_vertex['_is_task_enter_node'] = True
             prior_vertex['_task_cluster_id'] = (self.first.unique_id, defn.Endpoint.enter)
+        elif self.type == defn.RegionType.single_executor:
+            vcount = 1
 
         # Used for labelling sequences of certain events in a parallel chunk
         sequence_count = 1
@@ -291,15 +293,23 @@ class Chunk:
             # Store a reference to the single-exec event's task-sync cache so
             # that the parent task can synchronise any remaining tasks not
             # synchronised inside the single-exec region
-            if event.region_type == defn.RegionType.single_executor and event.endpoint == defn.Endpoint.enter:
-                if encountering_task.has_active_task_group:
-                    # Lazily add the single-exec event's cache to the active context
-                    group_context = encountering_task.get_current_task_sync_group()
-                    group_context.synchronise_lazy(event.task_synchronisation_cache)
-                else:
-                    # Record a reference to the cache to later add lazily to the next
-                    # task-sync barrier this task encounters.
-                    encountering_task.append_to_barrier_iterables_cache(event.task_synchronisation_cache)
+            if event.region_type == defn.RegionType.single_executor:
+                if event.is_enter_event:
+                    if encountering_task.has_active_task_group:
+                        # Lazily add the single-exec event's cache to the active context
+                        group_context = encountering_task.get_current_task_sync_group()
+                        group_context.synchronise_lazy(event.task_synchronisation_cache)
+                    else:
+                        # Record a reference to the cache to later add lazily to the next
+                        # task-sync barrier this task encounters.
+                        encountering_task.append_to_barrier_iterables_cache(event.task_synchronisation_cache)
+                elif event.is_leave_event and self.type == defn.RegionType.single_executor:
+                    if g.vcount() == vcount+1:
+                        # No new vertices were added since the single-executor-begin event, so label the vertices with _sync_cluster_id to contract later
+                        assert(prior_event.region_type == defn.RegionType.single_executor)
+                        assert(prior_event.is_enter_event)
+                        v['_sync_cluster_id'] = (event.encountering_task_id, event.region_type, sequence_count)
+                        prior_vertex['_sync_cluster_id'] = v['_sync_cluster_id']
 
             # Match master-enter/-leave events
             elif event.region_type == defn.RegionType.master:
