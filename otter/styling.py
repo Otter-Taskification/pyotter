@@ -16,6 +16,7 @@ colormap_region_type = defaultdict(lambda: 'grey', **{
     'taskgroup': 'purple',
     'barrier_implicit': 'darkgreen',
     'master': 'magenta',
+    'generic_phase': 'fuchsia',
 
     # Workshare regions
     'loop': 'brown',
@@ -48,7 +49,10 @@ shapemap_region_type = defaultdict(lambda: 'circle', **{
     'single_executor': 'diamond',
 
     # Master
-    'master': 'circle'
+    'master': 'circle',
+
+    # Phases
+    'generic_phase': 'box'
 })
 
 task_attribute_names = defaultdict(lambda: 'UNDEFINED', **{

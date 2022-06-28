@@ -16,6 +16,7 @@ class Attr(str, Enum):
     source_file_name = "source_file_name"
     source_func_name = "source_func_name"
     source_line_number = "source_line_number"
+    phase_type = "phase_type"
 
 class EventType(str, Enum):
     thread_begin = "thread_begin"
@@ -33,6 +34,8 @@ class EventType(str, Enum):
     task_switch = "task_switch"
     master_begin = "master_begin"
     master_end = "master_end"
+    phase_begin = "phase_begin"
+    phase_end = "phase_end"
 
 class RegionType(str, Enum):
     parallel = "parallel"
@@ -56,6 +59,7 @@ class RegionType(str, Enum):
     barrier_implementation = "barrier_implementation"
     taskwait = "taskwait"
     taskgroup = "taskgroup"
+    generic_phase = "generic_phase"
     PARALLEL = "parallel"
     WORKSHARE = "workshare"
     SYNC = "sync"

@@ -85,8 +85,7 @@ class EventFactory:
             if self.default_cls is not None:
                 return self.default_cls
             else:
-                raise TypeError(
-                    f"{self.__class__.__name__} can't construct event of type '{event_type}' for {region_type} region")
+                raise TypeError(f"{self.__class__.__name__} can't construct event of type '{event_type}' for {region_type} region") from None
 
     @staticmethod
     def get_event_class(event_type):
@@ -106,7 +105,9 @@ class EventFactory:
             defn.EventType.task_leave: TaskLeave,
             defn.EventType.task_create: TaskCreate,
             defn.EventType.task_schedule: TaskSchedule,
-            defn.EventType.task_switch: TaskSwitch
+            defn.EventType.task_switch: TaskSwitch,
+            defn.EventType.phase_begin: PhaseBegin,
+            defn.EventType.phase_end: PhaseEnd,
         }
 
         return lookup[event_type]
@@ -456,6 +457,13 @@ class InitialTaskEnter(ChunkSwitchEventMixin, TaskEnter):
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {chunk_key=}")
         chunk = chunk_dict[chunk_key]
         chunk.append_event(self)
+
+        # Ensure the initial task's ID gives the correct chunk so that events
+        # nested between it and an enclosed parallel region can get the correct
+        # chunk for the initial task
+        task_chunk_key = self.unique_id
+        chunk_dict[task_chunk_key] = chunk
+        
         yield None
 
 
@@ -582,6 +590,20 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
             return self.region_type
         else:
             return self.next_task_region_type
+
+
+class PhaseBegin(EnterMixin, DefaultUpdateChunksMixin, _Event):
+    
+    @property
+    def vertex_label(self):
+        return self.phase_name
+
+
+class PhaseEnd(LeaveMixin, DefaultUpdateChunksMixin, _Event):
+    
+    @property
+    def vertex_label(self):
+        return self.phase_name
 
 
 def unpack(event: List[_Event]) -> dict:
