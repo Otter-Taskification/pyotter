@@ -20,38 +20,7 @@ with otf2.reader.open(args.anchorfile) as r:
 
 # Dump chunks and graphs to log file
 if args.loglevel == "DEBUG":
-    chunk_log = otter.log.get_logger("chunks_debug")
-    graph_log = otter.log.get_logger("graphs_debug")
-    task_log = otter.log.get_logger("tasks_debug")
-
-    graph_log.debug(">>> BEGIN GRAPHS <<<")
-    chunk_log.debug(f">>> BEGIN CHUNKS <<<")
-
-    for chunk in chunks:
-
-        # write chunk
-        for line in chunk.to_text():
-            chunk_log.debug(f"{line}")
-
-        # write graph
-        graph_log.debug(f"Chunk type: {chunk.type}")
-        g = chunk.graph
-        lines = [" ".join(f"{g}".split("\n"))]
-        for line in lines:
-            graph_log.debug(f"{line}")
-        for v in g.vs:
-            graph_log.debug(f"{v}")
-        graph_log.debug("")
-
-    chunk_log.debug(f">>> END CHUNKS <<<")
-    graph_log.debug(">>> END GRAPHS <<<")
-
-    task_log.debug(">>> BEGIN TASKS <<<")
-    attributes = ",".join(tasks.attributes)
-    task_log.debug(f"{attributes=}")
-    for record in tasks.data:
-        task_log.debug(f"{record}")
-    task_log.debug(">>> END TASKS <<<")
+    otter.utils.dump_to_log_file(chunks, tasks)
 
 # Collect all chunks
 log.info("combining chunks")
