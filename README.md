@@ -29,31 +29,19 @@ pip install pyotter
 
 ### Using pyotter
 
-A trace recorded by Otter can be converted into a graph in `graph.dot` with:
+To process an Otter trace with pyotter and produce a report:
 
 ```bash
-python3 -m otter my-otter-trace/my-otter-trace.otf2 -o graph.dot
+python3 -m otter path/to/anchor-file.otf2 --report my-report-name
 ```
 
-The graph, saved to `graph.dot`, can then be visualised using the `dot` command line tool included with [Graphviz](https://graphviz.org/) or a graph visualisation tool such as [yEd-Desktop or yEd-Live](https://www.yworks.com/\#products).
+This will create a folder `./my-report-name` containing the report output. If the folder already exists, pyotter will fail unless the `--force` option is specified.
 
-## Future Work
-
-The future direction of development may include, in no particular order:
-
-- [ ] Visualise actual work done per task.
-- [ ] Automatic detection of the critical path.
-- [ ] Support for MPI+OpenMP applications.
-- [ ] Support for GPU-offloaded tasks.
-- [ ] Stronger graph visualisation capabilities.
+The `--logdir` and `--loglevel` options control where log files are created and the verbosity of logging.
 
 ## Contributing
 
-Contributions are welcome! If you would like to contribute, please fork the repository and use the `contributions` branch. There is no specific style guide, although I would be grateful if you could code in a style consistent with that of the main project.
-
-## Issues, Questions and Feature Requests
-
-Please post any of the above [in the main Otter repo](https://github.com/Otter-Taskification/otter/issues) so as to keep everything in one place.
+Contributions are welcome! If you would like to contribute, please fork the repository and branch from the latest tag. There is no specific style guide, although I would be grateful if you could code in a style consistent with that of the main project.
 
 ## Licensing
 
