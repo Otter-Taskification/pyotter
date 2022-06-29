@@ -224,17 +224,6 @@ log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
 g.simplify(combine_edges='first')
 
-if args.output:
-    log.info(f"writing graph to {args.output}")
-    import warnings
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        try:
-            g.write(args.output)
-        except OSError as oserr:
-            print(f"igraph error: {oserr}")
-            print(f"failed to write to file '{args.output}'")
-
 # Unpack vertex event attributes
 for vertex in g.vs:
     event = vertex['event']
