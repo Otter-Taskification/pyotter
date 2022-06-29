@@ -1,5 +1,6 @@
 from setuptools import find_packages, setup
-from pyotter_version import version
+
+version = ("0", "2", "0")
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
