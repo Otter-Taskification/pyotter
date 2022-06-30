@@ -232,7 +232,7 @@ class Chunk:
                     v['_task_sync_context'] = (defn.EdgeType.taskgroup, group_context)
 
             # Label corresponding barrier-enter/leave events so they can be contracted
-            if event.region_type == defn.RegionType.barrier_implicit:
+            if event.region_type in [defn.RegionType.barrier_implicit, defn.RegionType.barrier_explicit]:
                 if event.is_enter_event:
                     barrier_cluster_id = (event.encountering_task_id, event.region_type, barrier_cluster_label)
                     v['_sync_cluster_id'] = barrier_cluster_id
