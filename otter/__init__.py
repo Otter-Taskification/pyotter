@@ -27,7 +27,8 @@ def get_args():
     args = parser.parse_args()
 
     if args.report is None:
-        parser.error("must specify the report output path with --report")
+        # parser.error("must specify the report output path with --report")
+        args.report = "otter-report"
 
     try:
         check_args(args)
