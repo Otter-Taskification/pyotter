@@ -1,6 +1,5 @@
 from itertools import count
 from collections import defaultdict, Counter
-import otf2
 import igraph as ig
 import otter
 from otter.utils import label_groups_if, combine_attribute_strategy, strategy_lookup
@@ -11,11 +10,14 @@ otter.log.initialise(args)
 log = otter.log.get_logger("main")
 
 log.info(f"reading OTF2 anchorfile: {args.anchorfile}")
-with otf2.reader.open(args.anchorfile) as r:
-    events = otter.EventFactory(r)
+with otter.get_otf2_reader(args.anchorfile) as reader:
+    properties = reader.get_properties()
+    event_model = properties.get(otter.TraceAttr.event_model)
+    log.debug(f"{event_model=}")
+    events = otter.EventFactory(reader)
     tasks = otter.TaskRegistry()
     log.info(f"generating chunks")
-    chunks = otter.ChunkFactory(events, tasks).chunks
+    chunks = list(otter.yield_chunks(events, tasks))
     graphs = list(chunk.graph for chunk in chunks)
 
 # Dump chunks and graphs to log file
@@ -24,7 +26,7 @@ if args.loglevel == "DEBUG":
 
 # Collect all chunks
 log.info("combining chunks")
-g = ig.disjoint_union([c.graph for c in chunks])
+g = ig.disjoint_union(graphs)
 vcount = g.vcount()
 log.info(f"graph disjoint union has {vcount} vertices")
 
