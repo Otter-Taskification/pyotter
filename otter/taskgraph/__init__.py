@@ -6,20 +6,18 @@ from . import graph_styling as styling
 
 TaskVertexTuple = namedtuple("TaskVertexTuple", "enter leave")
 
-class EventReader():
+class EventReader:
     """Reads events from an OTF2 task-graph trace"""
 
     def __init__(self, otf2_reader) -> None:
         self._otf2_reader = otf2_reader
         self._attribute_lookup = {attribute.name: attribute for attribute in otf2_reader.definitions.attributes}
 
-    @property
-    def events(self):
-        for _, e in self._otf2_reader.events:
-            yield Event(e, self._attribute_lookup)
+    def read(self):
+        yield from (Event(e, self._attribute_lookup) for _, e in self._otf2_reader.events)
 
 
-class Event():
+class Event:
     """A basic wrapper for OTF2 events"""
 
     def __init__(self, otf2_event, attribute_lookup) -> None:
@@ -64,7 +62,7 @@ class Event():
         return dict()
 
 
-class EventGraph():
+class EventGraph:
 
     def __init__(self, style: styling.GraphStylingStrategy = styling.DefaultGraphStyle()) -> None:
         self.graph = ig.Graph(directed=True)
