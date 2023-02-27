@@ -1,105 +1,68 @@
 from collections import defaultdict, deque
 from functools import cached_property
-from typing import List
+from typing import List, Generator, Iterable
 from itertools import islice, count
 import otf2
 import igraph as ig
 import loggingdecorators as logdec
-from .. import log
+
+import otter
+# from .. import log
+from ..log import logger_getter, DEBUG
 from .. import definitions as defn
-from . import tasks
-from . import events
+from .tasks import TaskRegistry, TaskSynchronisationContext, NullTaskError
+from .events import EventFactory, is_event, EventType
 
-get_module_logger = log.logger_getter("chunks")
+get_module_logger = logger_getter("chunks")
 
-class ChunkFactory:
-    """Aggregates a sequence of events into a sequence of Chunks."""
-
-    @logdec.on_init(logger=log.logger_getter("init_logger"))
-    def __init__(self, e, t):
-        self.log = get_module_logger()
-        self.events = e
-        self.tasks = t
-        # Track all chunks currently under construction according to key
-        self.chunk_dict = defaultdict(lambda : Chunk(self.tasks))
-        # Record the enclosing chunk when an event indicates a nested chunk
-        self.chunk_stack = defaultdict(deque)
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({len(self.chunk_dict)} chunks)"
-
-    def __iter__(self):
-        self.log.debug(f"{self.__class__.__name__}.__iter__ receiving events from {self.events}")
-        for k, event in enumerate(self.events):
-            self.log.debug(f"got event {k} with vertex label {event.get('vertex_label')}: {event}")
-
-            if event.is_chunk_switch_event:
-                self.log.debug(f"updating chunks")
-                yield from event.update_chunks(self.chunk_dict, self.chunk_stack)
-            else:
-                self.chunk_dict[event.encountering_task_id].append_event(event)
-
-            if event.is_task_register_event:
-                self.tasks.register_task(event)
-
-            if event.is_update_task_start_ts_event:
-                task = self.tasks[event.get_task_entered()]
-                self.log.debug(f"notifying task start time: {task.id} @ {event.time}")
-                if task.start_ts is None:
-                    task.start_ts = event.time
-
-            if event.is_update_duration_event:
-                prior_task_id, next_task_id = event.get_tasks_switched()
-                self.log.debug(f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint:>8} {event}")
-
-                try:
-                    prior_task = self.tasks[prior_task_id]
-                except tasks.NullTaskError:
-                    pass
-                else:
-                    self.log.debug(f"got prior task: {prior_task}")
-                    prior_task.update_exclusive_duration(event.time)
-
-                try:
-                    next_task = self.tasks[next_task_id]
-                except tasks.NullTaskError:
-                    pass
-                else:
-                    self.log.debug(f"got next task: {next_task}")
-                    next_task.resumed_at(event.time)
-
-            if event.is_task_complete_event:
-                completed_task_id = event.get_task_completed()
-                self.log.debug(f"event <{event}> notifying task {completed_task_id} of end_ts")
-                try:
-                    completed_task = self.tasks[completed_task_id]
-                except tasks.NullTaskError:
-                    pass
-                else:
-                    completed_task.end_ts = event.time
-
-        self.log.debug(f"exhausted {self.events}")
-        self.tasks.calculate_all_inclusive_duration()
-        self.tasks.calculate_all_num_descendants()
-
-        for task in self.tasks:
-            self.log.debug(f"task start time: {task.id}={task.start_ts}")
-
-    def read(self):
-        yield from filter(None, self)
-
-    @cached_property
-    def chunks(self):
-        return list(self.read())
+# NOTE: in otter.__main__.py I don't actually keep the ChunkFactory object
+# NOTE: so why do we bother with a class? Why not just a function that yields
+# NOTE: chunks? All of the state in the ChunkFactory instance is used solely
+# NOTE: when iterating and then discarded...
+# class ChunkFactory:
+#     """Aggregates a sequence of events into a sequence of Chunks."""
+#
+#     # Stores references to an EventFactory and a TaskRegistry
+#     # Stores a dict of chunks under construction
+#     # Stores a dict of deques to record the chunks enclosing a nested chunk
+#     # Iterates over the events in the EventFactory, yielding chunks from
+#     # each event's update_chunks() method.
+#
+#     @logdec.on_init(logger=log.logger_getter("init_logger"))
+#     def __init__(self, event_factory, task_registry):
+#         self.log = get_module_logger()
+#         self.events = event_factory
+#         self.tasks = task_registry
+#         # Track all chunks currently under construction according to key
+#         self.chunk_dict = defaultdict(lambda : Chunk(self.tasks))
+#         # Record the enclosing chunk when an event indicates a nested chunk
+#         self.chunk_stack = defaultdict(deque)
+#
+#     def __repr__(self):
+#         return f"{self.__class__.__name__}({len(self.chunk_dict)} chunks)"
+#
+#     def __iter__(self):
+#         pass
+#
+#     def read(self):
+#         # NOTE: "None" is here because not all events with a specialised update_chunks
+#         # NOTE: method can yield a completed chunk - some yield None (this is a design flaw!)
+#         yield from filter(None, self)
+#
+#     # NOTE: don't make this a property - it isn't obvious that it's doing a lot of work BTS
+#     @cached_property
+#     def chunks(self):
+#         return list(self.read())
 
 
 class Chunk:
 
-    @logdec.on_init(logger=log.logger_getter("init_logger"), level=log.DEBUG)
+    @logdec.on_init(logger=logger_getter("init_logger"), level=DEBUG)
     def __init__(self, tasks):
         self.log = get_module_logger()
         self._events = deque()
         self._type = None
+        # NOTE: this is ONLY used during Chunk.graph() - don't need to store it if that method is factored out!
         self.tasks = tasks
 
     def __len__(self):
@@ -146,7 +109,7 @@ class Chunk:
     @staticmethod
     def events_bridge_region(previous, current, types: List[defn.RegionType]) -> bool:
         # Used to check for certain enter-leave event sequences
-        assert events.is_event(previous) and events.is_event(current)
+        assert is_event(previous) and is_event(current)
         return previous.region_type in types and previous.is_enter_event \
                and current.region_type in types and current.is_leave_event
 
@@ -158,6 +121,13 @@ class Chunk:
     def events_bridge_parallel_region(cls, previous, current) -> bool:
         return cls.events_bridge_region(previous, current, [defn.RegionType.parallel])
 
+    # NOTE: this is an EXTREMELY long function - work on factoring it into multiple 
+    # NOTE: shorter functions.
+    # NOTE: one idea is to have the chunk just be a dumb container for the sequence of events in the
+    # NOTE: chunk and have some GraphFactory class know how to transform the events into a graph
+    # NOTE: idea - we have a set of state variables and the graph which are updated over the course
+    # NOTE: of iterating over the events in the chunk. The logic applied to each event depends on the event
+    # NOTE: which suggests that we can encapsulate the state (and graph) and pass this around to handler functions.
     @cached_property
     def graph(self):
 
@@ -209,7 +179,7 @@ class Chunk:
 
             try:
                 encountering_task = self.tasks[event.encountering_task_id]
-            except tasks.NullTaskError:
+            except NullTaskError:
                 encountering_task = None
 
             # Match taskgroup-enter/-leave events
@@ -252,7 +222,7 @@ class Chunk:
 
                     # Create a context for the tasks synchronised at this barrier
                     descendants = event.sync_descendant_tasks==defn.TaskSyncType.descendants
-                    barrier_context = tasks.TaskSynchronisationContext(tasks=None, descendants=descendants)
+                    barrier_context = TaskSynchronisationContext(tasks=None, descendants=descendants)
 
                     # In a single-exec region, created tasks are recorded in the
                     # first event's cache rather than in the parent task's cache.
@@ -329,6 +299,11 @@ class Chunk:
             # Label nested parallel regions for easier merging, except a parallel chunk's closing parallel-end event
             if event.region_type == defn.RegionType.parallel:
                 v["_parallel_sequence_id"] = (self.first.unique_id if event is self.last else event.unique_id, event.endpoint)
+                # Should be equivalent to this more explicit form:
+                # if event is self.last:
+                #     v["_parallel_sequence_id"] = (self.first.unique_id, event.endpoint)
+                # else:
+                #     v["_parallel_sequence_id"] = (event.unique_id, event.endpoint)
 
             # Add edge except for (single/master begin -> end) and (parallel N begin -> parallel N end)
             # This avoids creating spurious edges between vertices representing nested chunks
@@ -336,6 +311,8 @@ class Chunk:
             events_bridge_parallel = self.events_bridge_parallel_region(prior_event, event)
             events_have_same_id = event.unique_id == prior_event.unique_id if events_bridge_parallel else False
             if not (events_bridge_single_master or (events_bridge_parallel and events_have_same_id)):
+            # Should be equivalent and may be more explicit
+            # if not events_bridge_single_master and not (events_bridge_parallel and events_have_same_id):
                 self.log.debug(f"add edge from: {prior_event} to: {event}")
                 g.add_edge(prior_vertex, v)
             else:
@@ -410,3 +387,81 @@ class Chunk:
             edge = g.add_edge(first_vertex, final_vertex)
 
         return g
+
+
+def yield_chunks(events: Iterable[EventType], task_registry: TaskRegistry) -> Iterable[Chunk]:
+
+    log = get_module_logger()
+
+    # Used to track all chunks currently under construction
+    chunk_dict = defaultdict(lambda : Chunk(task_registry))
+
+    # Used to record a nested chunk's enclosing chunk
+    chunk_stack = defaultdict(deque)
+
+    log.debug(f"receiving events from {events}")
+
+    for k, event in enumerate(events):
+        log.debug(f"got event {k} with vertex label {event.get('vertex_label')}: {event}")
+
+        if event.is_chunk_switch_event:
+            log.debug(f"updating chunks")
+            # event.update_chunks will emit the completed chunk if this event represents
+            # the end of a chunk
+            # NOTE: the event.update_chunks logic should probably be factored out of the event class
+            # NOTE: and into a separate high-level module to reduce coupling. Should events "know"
+            # NOTE: about chunks?
+            # NOTE: maybe want separate update_chunk() and update_and_yield_chunk() methods?
+            yield from filter(None, event.update_chunks(chunk_dict, chunk_stack))
+        else:
+            # NOTE: This does EXACTLY the same thing as DefaultUpdateChunksMixin.update_chunks
+            chunk_dict[event.encountering_task_id].append_event(event)
+
+        # NOTE: might want to absorb all the task-updating logic below into the task registry, but guided by an
+        # NOTE: event model which would be responsible for knowing which events should trigger task updates
+        if event.is_task_register_event:
+            task_registry.register_task(event)
+
+        if event.is_update_task_start_ts_event:
+            task = task_registry[event.get_task_entered()]
+            log.debug(f"notifying task start time: {task.id} @ {event.time}")
+            if task.start_ts is None:
+                task.start_ts = event.time
+
+        if event.is_update_duration_event:
+            prior_task_id, next_task_id = event.get_tasks_switched()
+            log.debug(
+                f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint:>8} {event}")
+
+            try:
+                prior_task = task_registry[prior_task_id]
+            except NullTaskError:
+                pass
+            else:
+                log.debug(f"got prior task: {prior_task}")
+                prior_task.update_exclusive_duration(event.time)
+
+            try:
+                next_task = task_registry[next_task_id]
+            except task_registry.NullTaskError:
+                pass
+            else:
+                log.debug(f"got next task: {next_task}")
+                next_task.resumed_at(event.time)
+
+        if event.is_task_complete_event:
+            completed_task_id = event.get_task_completed()
+            log.debug(f"event <{event}> notifying task {completed_task_id} of end_ts")
+            try:
+                completed_task = task_registry[completed_task_id]
+            except task_registry.NullTaskError:
+                pass
+            else:
+                completed_task.end_ts = event.time
+
+    log.debug(f"exhausted {events}")
+    task_registry.calculate_all_inclusive_duration()
+    task_registry.calculate_all_num_descendants()
+
+    for task in task_registry:
+        log.debug(f"task start time: {task.id}={task.start_ts}")
