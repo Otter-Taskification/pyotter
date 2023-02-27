@@ -1,6 +1,6 @@
 import otf2
 import otter
-from otter import taskgraph as tg
+from otter.taskgraph import Event, EventGraph, styling
 from otter.taskgraph import defn
 from otter.reporting import report
 import igraph as ig
@@ -18,10 +18,12 @@ NOTE:
 """
 
 log.info(f"reading OTF2 anchorfile: {args.anchorfile}")
-with otf2.reader.open(args.anchorfile) as otf2_reader:
-    event_reader = tg.EventReader(otf2_reader)
-    event_graph = tg.EventGraph(style=tg.styling.VertexAsHTMLTableStyle())
-    event_graph.from_events(event_reader.events)
+with otter.get_otf2_reader(args.anchorfile) as otf2_reader:
+    print(otf2_reader.get_properties())
+    event_graph = EventGraph(style=styling.VertexAsHTMLTableStyle())
+    event_attributes = {attr.name: attr for attr in otf2_reader.definitions.attributes}
+    events = (Event(event, event_attributes) for _, event in otf2_reader.events)
+    event_graph.from_events(events)
     event_graph.finalise_graph()
     event_graph.apply_styling()
     event_graph.save_as_svg("graph.svg")
