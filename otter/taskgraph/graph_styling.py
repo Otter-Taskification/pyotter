@@ -10,7 +10,7 @@ FontStyle = namedtuple("FontStyle", "name size color")
 class GraphStylingStrategy(ABC):
 
     @abstractmethod
-    def font() -> FontStyle:
+    def font(self) -> FontStyle:
         pass
 
     @abstractmethod
@@ -76,17 +76,18 @@ class VertexAsHTMLTableStyle(DefaultGraphStyle):
 
     def get_vertex_style(self, vertex) -> VertexStyle:
         """Make a HTML-like table from the event attributes"""
-        if vertex["event"].endpoint == defn.Endpoint.enter:
+        event = vertex["event"]
+        if event.endpoint == defn.Endpoint.enter:
             color = "lightblue"
-        elif vertex["event"].endpoint == defn.Endpoint.leave:
+        elif event.endpoint == defn.Endpoint.leave:
             color = "red"
-        elif vertex["event"].endpoint == defn.Endpoint.discrete:
+        elif event.endpoint == defn.Endpoint.discrete:
             color = "green"
         else:
             color = "fuchsia"
         label_body = str(
             make.graphviz_record_table(
-                vertex["event"].attributes,
+                event.attributes,
                 attr={
                     'td': {'align': 'left'}
                 }
