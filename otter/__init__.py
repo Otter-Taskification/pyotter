@@ -1,6 +1,7 @@
-from .core import EventFactory, events, TaskRegistry, ChunkFactory
+from .core import EventFactory, events, TaskRegistry, yield_chunks
 from . import styling, reporting
-from .definitions import Attr
+from .definitions import Attr, TraceAttr
+from .reader import get_otf2_reader
 
 # Check that the "dot" commandline utility is available
 from shutil import which
