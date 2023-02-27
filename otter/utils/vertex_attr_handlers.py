@@ -68,7 +68,7 @@ class combine_attribute_strategy:
             return None
 
         # Filter out all values which are None (allow False to pass through)
-        args = list(filter(lambda x: x is not None, args))
+        args = [arg for arg in args if arg is not None]
 
         if len(args) == 1:
             item = args[0]
