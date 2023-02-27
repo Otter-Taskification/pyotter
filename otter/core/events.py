@@ -17,6 +17,8 @@ is_event_list = lambda args: isinstance(args, list) and all_events(args)
 
 class Location:
 
+    # NOTE: Responsible for recording its traversal into & out of parallel regions
+
     @logdec.on_init(logger=log.logger_getter("init_logger"), level=log.DEBUG)
     def __init__(self, location):
         self.log = log.get_logger(self.__class__.__name__)
@@ -45,6 +47,9 @@ class Location:
 
 class EventFactory:
 
+    # A wrapper which iterates over the OTF2 reader's events and looks up the 
+    # correct class with which to instantiate each event
+
     @logdec.on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, reader, default_cls: type=None):
         if default_cls is not None and not issubclass(default_cls, _Event):
@@ -71,8 +76,15 @@ class EventFactory:
                 event.attributes.get(self.attr[defn.Attr.region_type],None)
             )
             self.log.debug(f"making event {k} {cls=}")
+
+            # Each event has a reference to the location which recorded it
+            # and a dict for looking up attributes
             yield cls(event, self.location_registry[location], self.attr)
 
+    # NOTE: Could reduce coupling by injecting get_class and both static class lookup methods
+    # NOTE: EventFactory would then just be applying an event construction strategy to the sequence 
+    # NOTE: of events in the trace
+    # NOTE: (but how to ensure that a common function signature satisfies all needs?)
     def get_class(self, event_type: defn.EventType, region_type: defn.RegionType) -> type:
         try:
             return self.get_region_event_class(region_type, event_type)
@@ -186,6 +198,10 @@ class _Event(ABC):
     def get_task_data(self):
         raise NotImplementedError(f"method not implemented for {type(self)}")
 
+    # NOTE: doesn't make sense for this to be an abstract method for all events to implement
+    # NOTE: as only those events which mark the transition between nested chunks or have special chunk-updating
+    # NOTE: logic need to implement this.
+    # NOTE: probably want to factor responsibility for implementing this UP AND OUT of this module.
     @abstractmethod
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         raise NotImplementedError(f"method not implemented for {type(self)}")
@@ -614,3 +630,6 @@ def unpack(event: List[_Event]) -> dict:
         return utils.transpose_list_to_dict([dict(e.yield_attributes()) for e in event])
     else:
         raise TypeError(f"{type(event)}")
+
+# Type-hinting alias for internal _Event class
+EventType = NewType('EventType', _Event)
