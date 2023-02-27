@@ -9,8 +9,8 @@ from .. import definitions as defn
 get_module_logger = log.logger_getter("tasks")
 
 
-class NullTaskError(Exception):
-    pass
+# class NullTaskError(Exception):
+#     pass
 
 
 class TaskSynchronisationContext:
@@ -275,6 +275,23 @@ class Task:
         return {key: getattr(self, key) for key in self.keys()}
 
 
+class _NullTask(Task):
+
+    _instance: Task = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls, *args, **kwargs)
+        return cls._instance
+
+    def __init__(self, *args, **kwargs):
+        # Deliberately don't init as this represents the absence of a task e.g. parent of the root task
+        pass
+
+
+NullTask = _NullTask()
+
+
 class TaskRegistry:
     """
     Maintains references to all tasks encountered in a trace
@@ -292,7 +309,8 @@ class TaskRegistry:
         assert isinstance(uid, int)
         if uid not in self._dict:
             if uid == defn.NullTask:
-                raise NullTaskError()
+                # raise NullTaskError()
+                return NullTask
             else:
                 raise KeyError(f"task {uid} was not found in {self}")
         return self._dict[uid]

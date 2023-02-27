@@ -4,60 +4,21 @@ from typing import List, Generator, Iterable
 from itertools import islice, count
 import otf2
 import igraph as ig
-import loggingdecorators as logdec
+from loggingdecorators import on_init
 
 import otter
 # from .. import log
 from ..log import logger_getter, DEBUG
 from .. import definitions as defn
-from .tasks import TaskRegistry, TaskSynchronisationContext, NullTaskError
-from .events import EventFactory, is_event, EventType
+from .tasks import TaskRegistry, TaskSynchronisationContext, NullTask
+from .events import is_event, EventType
 
 get_module_logger = logger_getter("chunks")
-
-# NOTE: in otter.__main__.py I don't actually keep the ChunkFactory object
-# NOTE: so why do we bother with a class? Why not just a function that yields
-# NOTE: chunks? All of the state in the ChunkFactory instance is used solely
-# NOTE: when iterating and then discarded...
-# class ChunkFactory:
-#     """Aggregates a sequence of events into a sequence of Chunks."""
-#
-#     # Stores references to an EventFactory and a TaskRegistry
-#     # Stores a dict of chunks under construction
-#     # Stores a dict of deques to record the chunks enclosing a nested chunk
-#     # Iterates over the events in the EventFactory, yielding chunks from
-#     # each event's update_chunks() method.
-#
-#     @logdec.on_init(logger=log.logger_getter("init_logger"))
-#     def __init__(self, event_factory, task_registry):
-#         self.log = get_module_logger()
-#         self.events = event_factory
-#         self.tasks = task_registry
-#         # Track all chunks currently under construction according to key
-#         self.chunk_dict = defaultdict(lambda : Chunk(self.tasks))
-#         # Record the enclosing chunk when an event indicates a nested chunk
-#         self.chunk_stack = defaultdict(deque)
-#
-#     def __repr__(self):
-#         return f"{self.__class__.__name__}({len(self.chunk_dict)} chunks)"
-#
-#     def __iter__(self):
-#         pass
-#
-#     def read(self):
-#         # NOTE: "None" is here because not all events with a specialised update_chunks
-#         # NOTE: method can yield a completed chunk - some yield None (this is a design flaw!)
-#         yield from filter(None, self)
-#
-#     # NOTE: don't make this a property - it isn't obvious that it's doing a lot of work BTS
-#     @cached_property
-#     def chunks(self):
-#         return list(self.read())
 
 
 class Chunk:
 
-    @logdec.on_init(logger=logger_getter("init_logger"), level=DEBUG)
+    @on_init(logger=logger_getter("init_logger"), level=DEBUG)
     def __init__(self, tasks):
         self.log = get_module_logger()
         self._events = deque()
@@ -177,9 +138,8 @@ class Chunk:
             # vertex['event'] is always a list of 1 or more events
             v = g.add_vertex(event=[event])
 
-            try:
-                encountering_task = self.tasks[event.encountering_task_id]
-            except NullTaskError:
+            encountering_task = self.tasks[event.encountering_task_id]
+            if encountering_task is NullTask:
                 encountering_task = None
 
             # Match taskgroup-enter/-leave events
@@ -433,30 +393,43 @@ def yield_chunks(events: Iterable[EventType], task_registry: TaskRegistry) -> It
             log.debug(
                 f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint:>8} {event}")
 
-            try:
-                prior_task = task_registry[prior_task_id]
-            except NullTaskError:
-                pass
-            else:
+            # try:
+            #     prior_task = task_registry[prior_task_id]
+            # except NullTaskError:
+            #     pass
+            # else:
+            #     log.debug(f"got prior task: {prior_task}")
+            #     prior_task.update_exclusive_duration(event.time)
+            #
+            # try:
+            #     next_task = task_registry[next_task_id]
+            # except task_registry.NullTaskError:
+            #     pass
+            # else:
+            #     log.debug(f"got next task: {next_task}")
+            #     next_task.resumed_at(event.time)
+
+            prior_task = task_registry[prior_task_id]
+            if prior_task is not NullTask:
                 log.debug(f"got prior task: {prior_task}")
                 prior_task.update_exclusive_duration(event.time)
 
-            try:
-                next_task = task_registry[next_task_id]
-            except task_registry.NullTaskError:
-                pass
-            else:
+            next_task = task_registry[next_task_id]
+            if next_task is not NullTask:
                 log.debug(f"got next task: {next_task}")
                 next_task.resumed_at(event.time)
 
         if event.is_task_complete_event:
             completed_task_id = event.get_task_completed()
             log.debug(f"event <{event}> notifying task {completed_task_id} of end_ts")
-            try:
-                completed_task = task_registry[completed_task_id]
-            except task_registry.NullTaskError:
-                pass
-            else:
+            # try:
+            #     completed_task = task_registry[completed_task_id]
+            # except task_registry.NullTaskError:
+            #     pass
+            # else:
+            #     completed_task.end_ts = event.time
+            completed_task = task_registry[completed_task_id]
+            if completed_task is not NullTask:
                 completed_task.end_ts = event.time
 
     log.debug(f"exhausted {events}")

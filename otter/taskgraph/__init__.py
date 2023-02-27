@@ -105,9 +105,12 @@ class EventGraph:
         task_id = event.unique_id
         parent_id = event.parent_task_id
         encountering_task_id = event.encountering_task_id
-        try:
-            encountering_task = self.task_registry[encountering_task_id]
-        except otter.core.tasks.NullTaskError:
+        # try:
+        #     encountering_task = self.task_registry[encountering_task_id]
+        # except otter.core.tasks.NullTaskError:
+        #     encountering_task = None
+        encountering_task = self.task_registry[encountering_task_id]
+        if encountering_task is otter.core.tasks.NullTask:
             encountering_task = None
         if event.endpoint == defn.Endpoint.enter:
             created_task = self.task_registry.register_task(event)
@@ -127,9 +130,12 @@ class EventGraph:
 
     def add_event_synchronise(self, event) -> None:
         encountering_task_id = event.encountering_task_id
-        try:
-            encountering_task = self.task_registry[encountering_task_id]
-        except otter.core.tasks.NullTaskError:
+        # try:
+        #     encountering_task = self.task_registry[encountering_task_id]
+        # except otter.core.tasks.NullTaskError:
+        #     encountering_task = None
+        encountering_task = self.task_registry[encountering_task_id]
+        if encountering_task is otter.core.tasks.NullTask:
             encountering_task = None
         should_sync_descendants = event.sync_descendant_tasks==defn.TaskSyncType.descendants
         # Create a context for the tasks synchronised at this barrier
