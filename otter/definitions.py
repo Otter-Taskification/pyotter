@@ -98,4 +98,12 @@ class TaskEvent(str, Enum):
     CREATE = EventType.task_create.value
     SWITCH = EventType.task_switch.value
 
+class TraceAttr(str, Enum):
+    event_model = "OTTER::EVENT_MODEL"
+
+class EventModel(str, Enum):
+    OMP = "OMP"
+    TASKGRAPH = "TASKGRAPH"
+    UNKNOWN = "UNKNOWN"
+
 NullTask = 18446744073709551615
