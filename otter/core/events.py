@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from typing import Union, List, NewType
 import itertools as it
-import loggingdecorators as logdec
+from loggingdecorators import on_init
 from .. import log
 from .. import utils
 from .. import definitions as defn
@@ -19,7 +19,7 @@ class Location:
 
     # NOTE: Responsible for recording its traversal into & out of parallel regions
 
-    @logdec.on_init(logger=log.logger_getter("init_logger"), level=log.DEBUG)
+    @on_init(logger=log.logger_getter("init_logger"), level=log.DEBUG)
     def __init__(self, location):
         self.log = log.get_logger(self.__class__.__name__)
         self._loc = location
@@ -50,7 +50,7 @@ class EventFactory:
     # A wrapper which iterates over the OTF2 reader's events and looks up the 
     # correct class with which to instantiate each event
 
-    @logdec.on_init(logger=log.logger_getter("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, reader, default_cls: type=None):
         if default_cls is not None and not issubclass(default_cls, _Event):
             raise TypeError(f"arg {default_cls=} is not subclass of _Event")
@@ -163,7 +163,7 @@ class _Event(ABC):
         "vertex_shape_key"
     ]
 
-    @logdec.on_init(logger=log.logger_getter("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, event, location, attr):
         self.log = get_module_logger()
         self._event = event
@@ -262,7 +262,7 @@ class _Event(ABC):
 # mixin
 class ClassNotImplementedMixin(ABC):
 
-    @logdec.on_init(logger=log.logger_getter("init_logger"), level=log.ERROR)
+    @on_init(logger=log.logger_getter("init_logger"), level=log.ERROR)
     def __init__(self, *args, **kwargs):
         raise NotImplementedError(f"{self.__class__.__name__}")
 
@@ -401,7 +401,7 @@ class WorkshareEnd(LeaveMixin, DefaultUpdateChunksMixin, _Event):
 
 class SingleBegin(ChunkSwitchEventMixin, WorkshareBegin):
 
-    @logdec.on_init(logger=log.logger_getter("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, event, location, attr):
         self._task_sync_cache = list()
         super().__init__(event, location, attr)
