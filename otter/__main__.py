@@ -19,7 +19,8 @@ with otter.get_otf2_reader(args.anchorfile) as reader:
     log.debug(f"{event_model=}")
     events = otter.EventFactory(reader)
     log.info(f"generating chunks")
-    chunks = list(otter.yield_chunks(events, task_registry))
+    # chunks = list(otter.yield_chunks(events, task_registry))
+    chunks = list(event_model.yield_chunks(events))
     graphs = list(chunk.graph for chunk in chunks)
 
 # Dump chunks and graphs to log file
