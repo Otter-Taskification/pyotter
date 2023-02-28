@@ -5,6 +5,7 @@ from loggingdecorators import on_init
 from igraph import Graph
 from otter.definitions import EventModel
 from otter.core.chunks import Chunk
+from otter.core.chunks import yield_chunks as otter_core_yield_chunks
 from otter.core.events import EventType
 from otter.core.tasks import TaskRegistry
 from otter.log import logger_getter
@@ -52,20 +53,20 @@ class EventModelFactory:
 
 
 # Using ABC for a common __init__ between concrete models
-class AbstractEventModel(ABC):
+class BaseEventModel(ABC):
 
     def __init__(self, task_registry: TaskRegistry):
-        self.task_registry = task_registry
+        self.log = logger_getter(self.__class__.__name__)
+        self.task_registry: TaskRegistry = task_registry
         self.chunk_dict: Dict[Any, Chunk] = defaultdict(lambda: Chunk(task_registry))
         self.chunk_stack: Dict[Any, Deque[Chunk]] = defaultdict(deque)
 
 
 @EventModelFactory.register(EventModel.OMP)
-class OMPEventModel(AbstractEventModel):
+class OMPEventModel(BaseEventModel):
 
     def yield_chunks(self, events: Iterable[EventType]) -> Iterable[Chunk]:
-        # Will replace otter.chunks.yield_chunks
-        raise NotImplementedError()
+        yield from otter_core_yield_chunks(events, self.task_registry)
 
     def chunk_to_graph(self, chunk):
         raise NotImplementedError()
@@ -75,7 +76,7 @@ class OMPEventModel(AbstractEventModel):
 
 
 @EventModelFactory.register(EventModel.TASKGRAPH)
-class TaskGraphEventModel(AbstractEventModel):
+class TaskGraphEventModel(BaseEventModel):
 
     def yield_chunks(self, events: Iterable[EventType]) -> Iterable[Chunk]:
         # Will replace otter.chunks.yield_chunks
