@@ -19,7 +19,6 @@ NOTE:
 
 log.info(f"reading OTF2 anchorfile: {args.anchorfile}")
 with otter.get_otf2_reader(args.anchorfile) as otf2_reader:
-    print(otf2_reader.get_properties())
     event_graph = EventGraph(style=styling.VertexAsHTMLTableStyle())
     event_attributes = {attr.name: attr for attr in otf2_reader.definitions.attributes}
     events = (Event(event, event_attributes) for _, event in otf2_reader.events)
