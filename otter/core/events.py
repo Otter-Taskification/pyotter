@@ -350,6 +350,7 @@ class ParallelBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
         yield None
 
 
+# YIELDS COMPLETED CHUNK
 class ParallelEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
@@ -426,6 +427,7 @@ class SingleBegin(ChunkSwitchEventMixin, WorkshareBegin):
         yield None
 
 
+# YIELDS COMPLETED CHUNK
 class SingleEnd(ChunkSwitchEventMixin, WorkshareEnd):
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
@@ -512,6 +514,7 @@ class TaskLeave(Task):
         return self.encountering_task_id, self.unique_id
 
 
+# YIELDS COMPLETED CHUNK
 class InitialTaskLeave(ChunkSwitchEventMixin, TaskLeave):
 
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
@@ -548,6 +551,7 @@ class TaskSchedule(Task):
     pass
 
 
+# YIELDS COMPLETED CHUNK
 class TaskSwitch(ChunkSwitchEventMixin, Task):
     is_task_switch_event = True
 
