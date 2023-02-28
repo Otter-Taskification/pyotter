@@ -88,5 +88,5 @@ class TaskGraphEventModel(AbstractEventModel):
         raise NotImplementedError()
 
 
-def get_event_model(model_name: EventModel) -> EventModelProtocol:
-    return EventModelFactory.get_model(model_name)(None)
+def get_event_model(model_name: EventModel, task_registry: TaskRegistry) -> EventModelProtocol:
+    return EventModelFactory.get_model(model_name)(task_registry)
