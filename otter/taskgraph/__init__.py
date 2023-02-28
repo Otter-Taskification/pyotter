@@ -6,16 +6,6 @@ from . import graph_styling as styling
 
 TaskVertexTuple = namedtuple("TaskVertexTuple", "enter leave")
 
-class EventReader:
-    """Reads events from an OTF2 task-graph trace"""
-
-    def __init__(self, otf2_reader) -> None:
-        self._otf2_reader = otf2_reader
-        self._attribute_lookup = {attribute.name: attribute for attribute in otf2_reader.definitions.attributes}
-
-    def read(self):
-        yield from (Event(e, self._attribute_lookup) for _, e in self._otf2_reader.events)
-
 
 class Event:
     """A basic wrapper for OTF2 events"""
@@ -105,10 +95,6 @@ class EventGraph:
         task_id = event.unique_id
         parent_id = event.parent_task_id
         encountering_task_id = event.encountering_task_id
-        # try:
-        #     encountering_task = self.task_registry[encountering_task_id]
-        # except otter.core.tasks.NullTaskError:
-        #     encountering_task = None
         encountering_task = self.task_registry[encountering_task_id]
         if encountering_task is otter.core.tasks.NullTask:
             encountering_task = None
@@ -130,10 +116,6 @@ class EventGraph:
 
     def add_event_synchronise(self, event) -> None:
         encountering_task_id = event.encountering_task_id
-        # try:
-        #     encountering_task = self.task_registry[encountering_task_id]
-        # except otter.core.tasks.NullTaskError:
-        #     encountering_task = None
         encountering_task = self.task_registry[encountering_task_id]
         if encountering_task is otter.core.tasks.NullTask:
             encountering_task = None
