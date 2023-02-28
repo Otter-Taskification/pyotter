@@ -12,15 +12,11 @@ log = otter.log.get_logger("main")
 
 log.info(f"reading OTF2 anchorfile: {args.anchorfile}")
 with otter.get_otf2_reader(args.anchorfile) as reader:
-    event_model_name: EventModel = reader.get_event_model_name()
-    log.debug(f"{event_model_name=}")
     task_registry = otter.TaskRegistry()
-    event_model = get_event_model(event_model_name, task_registry)
+    event_model = get_event_model(reader.get_event_model_name(), task_registry)
     log.debug(f"{event_model=}")
-    events = otter.EventFactory(reader)
     log.info(f"generating chunks")
-    # chunks = list(otter.yield_chunks(events, task_registry))
-    chunks = list(event_model.yield_chunks(events))
+    chunks = list(event_model.yield_chunks(otter.EventFactory(reader)))
     graphs = list(chunk.graph for chunk in chunks)
 
 # Dump chunks and graphs to log file
