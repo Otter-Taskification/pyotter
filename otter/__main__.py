@@ -2,8 +2,9 @@ from itertools import count
 from collections import defaultdict, Counter
 import igraph as ig
 import otter
+from otter.core.event_model import get_event_model
 from otter.utils import label_groups_if, combine_attribute_strategy, strategy_lookup
-from otter.definitions import RegionType, Endpoint, EdgeType, TaskType
+from otter.definitions import RegionType, Endpoint, EdgeType, TaskType, EventModel
 
 args = otter.get_args()
 otter.log.initialise(args)
@@ -11,18 +12,19 @@ log = otter.log.get_logger("main")
 
 log.info(f"reading OTF2 anchorfile: {args.anchorfile}")
 with otter.get_otf2_reader(args.anchorfile) as reader:
-    properties = reader.get_properties()
-    event_model = properties.get(otter.TraceAttr.event_model)
+    event_model_name: EventModel = reader.get_event_model_name()
+    log.debug(f"{event_model_name=}")
+    task_registry = otter.TaskRegistry()
+    event_model = get_event_model(event_model_name, task_registry)
     log.debug(f"{event_model=}")
     events = otter.EventFactory(reader)
-    tasks = otter.TaskRegistry()
     log.info(f"generating chunks")
-    chunks = list(otter.yield_chunks(events, tasks))
+    chunks = list(otter.yield_chunks(events, task_registry))
     graphs = list(chunk.graph for chunk in chunks)
 
 # Dump chunks and graphs to log file
 if args.loglevel == "DEBUG":
-    otter.utils.dump_to_log_file(chunks, tasks)
+    otter.utils.dump_to_log_file(chunks, task_registry)
 
 # Collect all chunks
 log.info("combining chunks")
@@ -77,7 +79,7 @@ for dummy_vertex in filter(lambda v: v['_is_dummy_task_vertex'], g.vs):
     event = dummy_vertex['event'][0]
     assert event.is_task_create_event
     task_id = event.get_task_created()
-    task_created = tasks[task_id]
+    task_created = task_registry[task_id]
     setattr(task_created, '_dummy_vertex', dummy_vertex)
     log.debug(f" - notify task {task_id} of vertex {task_created._dummy_vertex}")
 
@@ -96,8 +98,8 @@ for task_sync_vertex in filter(lambda v: v['_task_sync_context'] is not None, g.
         edge[otter.Attr.edge_type] = edge_type
         if context.synchronise_descendants:
             # Add edges for descendants of synchronised_task
-            for descendant_task_id in tasks.descendants_while(synchronised_task.id, stop_at_implicit_task):
-                descendant_task = tasks[descendant_task_id]
+            for descendant_task_id in task_registry.descendants_while(synchronised_task.id, stop_at_implicit_task):
+                descendant_task = task_registry[descendant_task_id]
                 # This task is synchronised by the context
                 edge = g.add_edge(descendant_task._dummy_vertex, task_sync_vertex)
                 edge[otter.Attr.edge_type] = edge_type
@@ -295,8 +297,8 @@ del g.vs['event']
 
 if args.report:
     otter.styling.style_graph(g)
-    otter.styling.style_tasks(tasks.task_tree())
-    otter.reporting.write_report(args, g, tasks)
+    otter.styling.style_tasks(task_registry.task_tree())
+    otter.reporting.write_report(args, g, task_registry)
 
 if args.interact:
     otter.interact(locals(), g)
