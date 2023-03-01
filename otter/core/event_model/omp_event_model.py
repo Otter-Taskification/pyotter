@@ -1,10 +1,11 @@
 from .event_model import EventModelFactory, BaseEventModel
-from typing import Iterable, Dict, Any, Deque
-from otter.definitions import EventModel, TaskStatus
+from typing import Iterable, Dict, Any, Deque, Callable, Union
+from collections import namedtuple
+from otter.definitions import EventModel, TaskStatus, EventType, RegionType
 from otter.core.chunks import Chunk
 from otter.core.chunks import yield_chunks as otter_core_yield_chunks
 from otter.core.events import (
-    EventType,
+    Event,
     ParallelBegin,
     ParallelEnd,
     SingleBegin,
@@ -19,12 +20,34 @@ from otter.core.events import (
     ChunkSwitchEventMixin
 )
 from otter.core.tasks import NullTask
+from otter.log import logger_getter
+
+
+get_module_logger = logger_getter("omp_event_model")
 
 
 @EventModelFactory.register(EventModel.OMP)
 class OMPEventModel(BaseEventModel):
+    chunk_update_handlers: Dict[Any, Callable[[Event, Dict[Any, Chunk], Dict[Any, Deque[Chunk]]], None]] = dict()
 
-    def yield_chunks(self, events: Iterable[EventType], use_core: bool=True, use_event_api=True, update_chunks_via_event: bool=True) -> Iterable[Chunk]:
+    @classmethod
+    def update_chunks_on(cls, event_type: EventType, region_type: RegionType = None):
+        def inner(func):
+            key = (region_type, event_type)
+            print(f"Registering handler: {func} with {key=}")
+            assert(key not in cls.chunk_update_handlers)
+            cls.chunk_update_handlers[key] = func
+            return func
+        return inner
+
+    @classmethod
+    def get_update_chunk_handler(cls, event: Event):
+        key = (event.region_type, event.event_type)
+        if key not in cls.chunk_update_handlers:
+            key = (None, event.event_type)
+        return cls.chunk_update_handlers[key]
+
+    def yield_chunks(self, events: Iterable[Event], use_core: bool=True, use_event_api=True, update_chunks_via_event: bool=True) -> Iterable[Chunk]:
 
         # Use otter.core.chunks.yield_chunk by default until logic lifted out of that module and into event_model
         if use_core:
@@ -53,6 +76,7 @@ class OMPEventModel(BaseEventModel):
                         if self.event_yields_chunk(event):
                             # update and yield
                             # require that update_chunks yields non-None value in this case
+                            log.info(f"yielding completed chunk due to event: {event}")
                             yield from event.update_chunks(self.chunk_dict, self.chunk_stack)
                         else:
                             # event must update chunks without yielding
@@ -60,10 +84,23 @@ class OMPEventModel(BaseEventModel):
                                 self.event_updates_chunks_but_cant_yield_chunk(event)
                             or (self.event_updates_and_may_yield_chunk(event) and not self.event_yields_chunk(event)
                             ))
-                            # these events currently implement update_chunks as a generator function but this isn't
-                            # necessary - can just turn into plan function
-                            # TODO: reimplement this case inside this module to remove unnecessary generator
-                            yield from filter(None, event.update_chunks(self.chunk_dict, self.chunk_stack))
+                            # Look up the handler by region & event type, falling back to just event type.
+                            # If no handler found, we haven't re-implemented the update_chunks logic for this event
+                            # so fall back to event.update chunks and warn that we don't have a handler
+                            key = (event.region_type, event.event_type)
+                            handler = self.chunk_update_handlers.get(key)
+                            if not handler:
+                                key = (None, event.event_type)
+                                handler = self.chunk_update_handlers.get(key)
+                            if handler:
+                                self.log.info(f"applying handler {handler=} for {key=}")
+                                result = handler(event, self.chunk_dict, self.chunk_stack)
+                                assert(result is None)
+                            else:
+                                log.warn(f"no chunk-update handler for {event=}, calling event.update_chunks")
+                                # will eventually remove this branch and assert that all events return None
+                                # from their corresponding handler
+                                yield from filter(None, event.update_chunks(self.chunk_dict, self.chunk_stack))
                     elif self.event_applies_default_chunk_update(event):
                         # apply the default logic for updating the chunk which owns this event
                         self.append_to_encountering_task_chunk(event)
@@ -122,11 +159,11 @@ class OMPEventModel(BaseEventModel):
     def combine_graphs(self, graphs):
         raise NotImplementedError()
 
-    def append_to_encountering_task_chunk(self, event: EventType):
+    def append_to_encountering_task_chunk(self, event: Event):
         self.chunk_dict[event.encountering_task_id].append_event(event)
 
     @classmethod
-    def is_chunk_switch_event(cls, event: EventType, use_event_api: bool=True) -> bool:
+    def is_chunk_switch_event(cls, event: Event, use_event_api: bool=True) -> bool:
         if use_event_api:
             # events which inherit the ChunkSwitchEvent mixin return True here
             return event.is_chunk_switch_event
@@ -151,28 +188,28 @@ class OMPEventModel(BaseEventModel):
             raise TypeError(type(event))
 
     @staticmethod
-    def event_updates_and_yields_chunk(event: EventType) -> bool:
+    def event_updates_and_yields_chunk(event: Event) -> bool:
         # these events inherit the ChunkSwitchEvent mixin
         return isinstance(event, (ParallelEnd, SingleEnd, InitialTaskLeave))
 
     @staticmethod
-    def event_updates_and_may_yield_chunk(event: EventType) -> bool:
+    def event_updates_and_may_yield_chunk(event: Event) -> bool:
         # these events inherit the ChunkSwitchEvent mixin
         return isinstance(event, TaskSwitch)
 
     @staticmethod
-    def event_updates_chunks_but_cant_yield_chunk(event: EventType) -> bool:
+    def event_updates_chunks_but_cant_yield_chunk(event: Event) -> bool:
         # these events inherit the ChunkSwitchEvent mixin
         # all these classes yield None at the end of update_chunks, so they don't need to be generators
         return isinstance(event, (ParallelBegin, SingleBegin, InitialTaskEnter, ImplicitTaskEnter, ImplicitTaskLeave))
 
     @staticmethod
-    def event_doesnt_update_and_doesnt_yield_chunk(event: EventType) -> bool:
+    def event_doesnt_update_and_doesnt_yield_chunk(event: Event) -> bool:
         # these events inherit the ChunkSwitchEvent mixin
         return isinstance(event, (ThreadBegin, ThreadEnd))
 
     @classmethod
-    def event_updates_chunks(cls, event: EventType) -> bool:
+    def event_updates_chunks(cls, event: Event) -> bool:
         # These events require some specific logic to update chunks
         # Some of these *also* yield a completed chunk
         # EVERYTHING WHICH CAN POSSIBLY YIELD A COMPLETED CHUNK ALSO UPDATES THE CHUNKS
@@ -183,13 +220,111 @@ class OMPEventModel(BaseEventModel):
         )
 
     @classmethod
-    def event_applies_default_chunk_update(cls, event: EventType) -> bool:
+    def event_applies_default_chunk_update(cls, event: Event) -> bool:
         return not (cls.event_updates_chunks(event) or cls.event_doesnt_update_and_doesnt_yield_chunk(event))
 
     @classmethod
-    def event_yields_chunk(cls, event: EventType) -> bool:
+    def event_yields_chunk(cls, event: Event) -> bool:
         if cls.event_updates_and_yields_chunk(event):
             return True
         if cls.event_updates_and_may_yield_chunk(event):
             assert isinstance(event, TaskSwitch)
             return event.prior_task_status == TaskStatus.complete
+
+
+@OMPEventModel.update_chunks_on(event_type=EventType.parallel_begin)
+def update_chunks_parallel_begin(event: Event, chunk_dict: Dict[Any, Chunk], chunk_stack: Dict[Any, Deque[Chunk]]) -> None:
+    log = get_module_logger()
+    task_chunk_key = (event._location.name, event.encountering_task_id, RegionType.task)
+    parallel_chunk_key = (event._location.name, event.unique_id, RegionType.parallel)
+    log.debug(f"{update_chunks_parallel_begin.__name__}: {task_chunk_key=}, {parallel_chunk_key=}")
+    event._location.enter_parallel_region(event.unique_id)
+    if task_chunk_key in chunk_dict:
+        # The master thread will already have recorded an event in the task which encountered this parallel
+        # region, so update the chunk which was previously created before creating a nested chunk
+        task_chunk = chunk_dict[task_chunk_key]
+        task_chunk.append_event(event)
+        # record enclosing chunk before creating the nested chunk
+        chunk_stack[parallel_chunk_key].append(task_chunk)
+    chunk_dict[parallel_chunk_key].append_event(event)
+
+
+@OMPEventModel.update_chunks_on(event_type=EventType.task_enter, region_type=RegionType.initial_task)
+def update_chunks_initial_task_enter(event: Event, chunk_dict: Dict[Any, Chunk], chunk_stack: Dict[Any, Deque[Chunk]]) -> None:
+    log = get_module_logger()
+    chunk_key = event._location.name, event.unique_id, RegionType.task
+    log.debug(f"{update_chunks_initial_task_enter.__name__}: {chunk_key=}")
+    chunk = chunk_dict[chunk_key]
+    chunk.append_event(event)
+
+    # Ensure the initial task's ID gives the correct chunk so that events
+    # nested between it and an enclosed parallel region can get the correct
+    # chunk for the initial task
+    task_chunk_key = event.unique_id
+    chunk_dict[task_chunk_key] = chunk
+
+
+@OMPEventModel.update_chunks_on(event_type=EventType.task_enter, region_type=RegionType.implicit_task)
+def update_chunks_implicit_task_enter(event: Event, chunk_dict: Dict[Any, Chunk], chunk_stack: Dict[Any, Deque[Chunk]]) -> None:
+    log = get_module_logger()
+    # (location name, current parallel ID, defn.RegionType.parallel)
+    chunk_key = event._location.name, event._location.current_parallel_region, RegionType.parallel
+    log.debug(f"{update_chunks_implicit_task_enter.__name__}: {chunk_key=}")
+    chunk = chunk_dict[chunk_key]
+    chunk.append_event(event)
+    # Ensure implicit-task-id points to the same chunk for later events in this task
+    chunk_dict[event.unique_id] = chunk
+
+    # Allow nested parallel regions to find the chunk for this implicit task
+    implicit_task_chunk_key = event._location.name, event.unique_id, RegionType.task
+    chunk_dict[implicit_task_chunk_key] = chunk
+
+
+@OMPEventModel.update_chunks_on(event_type=EventType.task_leave, region_type=RegionType.implicit_task)
+def update_chunks_implicit_task_leave(event: Event, chunk_dict: Dict[Any, Chunk], chunk_stack: Dict[Any, Deque[Chunk]]) -> None:
+    log = get_module_logger()
+    # don't yield until parallel-end
+    chunk_key = event.unique_id
+    log.debug(f"{update_chunks_implicit_task_leave.__name__}: {chunk_key=}")
+    chunk = chunk_dict[chunk_key]
+    chunk.append_event(event)
+
+
+@OMPEventModel.update_chunks_on(event_type=EventType.master_begin, region_type=RegionType.master)
+@OMPEventModel.update_chunks_on(event_type=EventType.workshare_begin, region_type=RegionType.single_executor)
+def update_chunks_single_begin(event: Event, chunk_dict: Dict[Any, Chunk], chunk_stack: Dict[Any, Deque[Chunk]]) -> None:
+    log = get_module_logger()
+    # Nested region - append to task chunk, push onto stack, create nested chunk
+    task_chunk_key = event.encountering_task_id
+    log.debug(f"{update_chunks_single_begin.__name__}: {task_chunk_key=}")
+    task_chunk = chunk_dict.pop(task_chunk_key)
+    task_chunk.append_event(event)
+    # store the enclosing chunk
+    chunk_stack[task_chunk_key].append(task_chunk)
+    # Create a new nested Chunk for the single region
+    chunk_dict[task_chunk_key].append_event(event)
+
+
+@OMPEventModel.update_chunks_on(event_type=EventType.task_switch)
+def update_chunks_task_switch(event: Event, chunk_dict: Dict[Any, Chunk], chunk_stack: Dict[Any, Deque[Chunk]]) -> Union[None, Chunk]:
+    log = get_module_logger()
+    this_chunk_key = event.encountering_task_id
+    next_chunk_key = event.next_task_id
+    log.debug(f"{update_chunks_task_switch.__name__}: {this_chunk_key=}, {next_chunk_key=}")
+    this_chunk = chunk_dict[this_chunk_key]
+    completed_chunk = None
+    if event.prior_task_status != TaskStatus.switch: # only update the prior task's chunk if it wasn't a regular switch event
+        log.debug(f"{update_chunks_task_switch.__name__}: {event} updating chunk key={this_chunk_key} for {event.region_type} with status {event.prior_task_status}")
+        this_chunk.append_event(event)
+        if event.prior_task_status == TaskStatus.complete:
+            completed_chunk = this_chunk
+    else:
+        log.debug(f"{update_chunks_task_switch.__name__}: {event} skipped updating chunk key={this_chunk_key} for {event.region_type} with status {event.prior_task_status}")
+    log.debug(f"{update_chunks_task_switch.__name__}: {event} updating chunk key={next_chunk_key}")
+    next_chunk = chunk_dict[next_chunk_key]
+    next_chunk.append_event(event)
+    # Allow nested parallel regions to append to next_chunk where a task
+    # creates a nested parallel region?
+    nested_parallel_region_chunk_key = (event._location.name, event.unique_id, RegionType.task)
+    chunk_dict[nested_parallel_region_chunk_key] = next_chunk
+    return completed_chunk  # may be None
