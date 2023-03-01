@@ -1,5 +1,5 @@
 from .core import EventFactory, events, TaskRegistry, yield_chunks
-from . import styling, reporting
+from . import styling, reporting, log
 from .definitions import Attr, TraceAttr
 from .reader import get_otf2_reader
 
