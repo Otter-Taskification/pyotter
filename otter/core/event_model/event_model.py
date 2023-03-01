@@ -6,7 +6,7 @@ from igraph import Graph
 from otter.definitions import EventModel
 from otter.core.chunks import Chunk
 from otter.core.chunks import yield_chunks as otter_core_yield_chunks
-from otter.core.events import EventType
+from otter.core.events import Event
 from otter.core.tasks import TaskRegistry, NullTask
 from otter.log import logger_getter
 
@@ -26,7 +26,7 @@ class EventModelProtocol(Protocol):
     def __init__(self, task_registry: TaskRegistry):
         pass
 
-    def yield_chunks(self, events: Iterable[EventType], use_core: bool=True) -> Iterable[Chunk]:
+    def yield_chunks(self, events: Iterable[Event], use_core: bool=True, use_event_api=True, update_chunks_via_event: bool=True) -> Iterable[Chunk]:
         # Will replace otter.chunks.yield_chunks
         pass
 
