@@ -636,4 +636,4 @@ def unpack(event: List[_Event]) -> dict:
         raise TypeError(f"{type(event)}")
 
 # Type-hinting alias for internal _Event class
-EventType = NewType('EventType', _Event)
+Event = NewType('EventType', _Event)
