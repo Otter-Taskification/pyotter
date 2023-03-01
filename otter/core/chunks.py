@@ -11,7 +11,7 @@ import otter
 from ..log import logger_getter, DEBUG
 from .. import definitions as defn
 from .tasks import TaskRegistry, TaskSynchronisationContext, NullTask
-from .events import is_event, EventType
+from .events import is_event, Event
 
 get_module_logger = logger_getter("chunks")
 
@@ -349,7 +349,7 @@ class Chunk:
         return g
 
 
-def yield_chunks(events: Iterable[EventType], task_registry: TaskRegistry) -> Iterable[Chunk]:
+def yield_chunks(events: Iterable[Event], task_registry: TaskRegistry) -> Iterable[Chunk]:
 
     log = get_module_logger()
 
