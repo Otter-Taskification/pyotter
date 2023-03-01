@@ -2,13 +2,13 @@ from .event_model import EventModelFactory, BaseEventModel
 from typing import Iterable
 from otter.definitions import EventModel
 from otter.core.chunks import Chunk
-from otter.core.events import EventType
+from otter.core.events import Event
 
 
 @EventModelFactory.register(EventModel.TASKGRAPH)
 class TaskGraphEventModel(BaseEventModel):
 
-    def yield_chunks(self, events: Iterable[EventType], use_core: bool=True) -> Iterable[Chunk]:
+    def yield_chunks(self, events: Iterable[Event], use_core: bool=True) -> Iterable[Chunk]:
         # Will replace otter.chunks.yield_chunks
         raise NotImplementedError()
 
@@ -19,5 +19,5 @@ class TaskGraphEventModel(BaseEventModel):
         raise NotImplementedError()
 
 
-def is_chunk_switch_event(event: EventType) -> bool:
+def is_chunk_switch_event(event: Event) -> bool:
     return event.is_chunk_switch_event
