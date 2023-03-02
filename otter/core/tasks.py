@@ -1,16 +1,16 @@
 from functools import lru_cache
 from itertools import chain
 from collections import deque
+from typing import Dict, Any
 import igraph as ig
 from loggingdecorators import on_init
 from .. import log
-from .. import definitions as defn
+from ..definitions import Attr, AttrValue, NullTaskID
 
 get_module_logger = log.logger_getter("tasks")
 
 
-# class NullTaskError(Exception):
-#     pass
+TaskData = Dict[Attr, AttrValue]
 
 
 class TaskSynchronisationContext:
@@ -71,22 +71,19 @@ class Task:
     """Represents an instance of a task"""
 
     @on_init(logger=log.logger_getter("init_logger"))
-    # TODO: de-couple from _Event api by only sending in a dict[defn.Attr, Any] instead of an _Event instance
-    def __init__(self, event):
+    def __init__(self, task_data: TaskData):
         self.logger = get_module_logger()
-        # TODO: remove _Event api call
-        data = event.get_task_data()
-        self.id = data[defn.Attr.unique_id]
-        self.parent_id = data[defn.Attr.parent_task_id]
-        if self.parent_id == defn.NullTask:
+        self.id = task_data[Attr.unique_id]
+        self.parent_id = task_data[Attr.parent_task_id]
+        if self.parent_id == NullTaskID:
             self.parent_id = None
-        self.task_type = data[defn.Attr.task_type]
-        self.crt_ts = data[defn.Attr.time]
+        self.task_type = task_data[Attr.task_type]
+        self.crt_ts = task_data[Attr.time]
 
         # Source location attributes not defined in OMP traces
-        self.source_file_name = data.get(defn.Attr.source_file_name)
-        self.source_func_name = data.get(defn.Attr.source_func_name)
-        self.source_line_number = data.get(defn.Attr.source_line_number)
+        self.source_file_name = task_data.get(Attr.source_file_name)
+        self.source_func_name = task_data.get(Attr.source_func_name)
+        self.source_line_number = task_data.get(Attr.source_line_number)
         
         self._children = deque()
         self._end_ts = None
@@ -310,7 +307,7 @@ class TaskRegistry:
     def __getitem__(self, uid: int) -> Task:
         assert isinstance(uid, int)
         if uid not in self._dict:
-            if uid == defn.NullTask:
+            if uid == NullTaskID:
                 # raise NullTaskError()
                 return NullTask
             else:
@@ -327,9 +324,8 @@ class TaskRegistry:
     def __repr__(self):
         return f"{self.__class__.__name__}({len(self._dict.keys())} tasks: {list(self._dict.keys())})"
 
-    # TODO: de-couple from _Event api by only sending in a dict[defn.Attr, Any] instead of an _Event instance
-    def register_task(self, event) -> Task:
-        t = Task(event)
+    def register_task(self, task_data: TaskData) -> Task:
+        t = Task(task_data)
         self.log.debug(f"registering task {t.id} (parent={t.parent_id if t.id>0 else None})")
         if t.id in self._dict:
             raise ValueError(f"task {t.id} was already registered in {self}")
