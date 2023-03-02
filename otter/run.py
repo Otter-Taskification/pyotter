@@ -1,9 +1,11 @@
 import warnings
 warnings.simplefilter('always', DeprecationWarning)
 from collections import Counter
+from typing import Iterable
 import igraph as ig
 import otter
 from otter.core.event_model import get_event_model
+from otter.core.events import NewEvent
 from otter.utils import label_groups_if, combine_attribute_strategy, strategy_lookup
 
 
@@ -21,8 +23,14 @@ def run() -> None:
         log.info(f"Found event model name: {str(event_model_name)}")
         log.info(f"Using event model: {event_model}")
         log.info(f"generating chunks")
+        use_new_event = False
+        if use_new_event:
+            attributes = {attr.name: attr for attr in reader.definitions.attributes}
+            event_iter: Iterable[NewEvent] = (NewEvent(event, location, attributes) for location, event in reader.events)
+        else:
+            event_iter = otter.core.events.EventFactory(reader)
         chunks = list(event_model.yield_chunks(
-            otter.core.events.EventFactory(reader),
+            event_iter,
             use_event_api=False,
             use_core=False,
             update_chunks_via_event=False
