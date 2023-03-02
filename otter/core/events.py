@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import List, NewType
+from typing import List, NewType, Union
 from itertools import chain
 from loggingdecorators import on_init
 from ..utils import transpose_list_to_dict, warn_deprecated
 from .. import log
 from .. import definitions as defn
+from ..reader import OTF2Reader
 
 get_module_logger = log.logger_getter("events")
 
@@ -51,7 +52,7 @@ class EventFactory:
     # correct class with which to instantiate each event
 
     @on_init(logger=log.logger_getter("init_logger"))
-    def __init__(self, reader, default_cls: type=None):
+    def __init__(self, reader: OTF2Reader, default_cls: type=None):
         if default_cls is not None and not issubclass(default_cls, _Event):
             raise TypeError(f"arg {default_cls=} is not subclass of _Event")
         self.log = get_module_logger()
@@ -163,6 +164,7 @@ class _Event(ABC):
         "vertex_shape_key"
     ]
 
+    @warn_deprecated
     @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, event, location, attr):
         self.log = get_module_logger()
@@ -648,5 +650,31 @@ def unpack(event: List[_Event]) -> dict:
     else:
         raise TypeError(f"{type(event)}")
 
+
+class NewEvent:
+    """A basic wrapper for OTF2 events"""
+
+    def __init__(self, otf2_event, otf2_location, attribute_lookup) -> None:
+        self._event = otf2_event
+        self._location = otf2_location
+        self._attribute_lookup = attribute_lookup
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(time={self.time}, endpoint={self._event.attributes[self._attribute_lookup['endpoint']]}, type={type(self._event).__name__})"
+
+    def __getattr__(self, name):
+        if name == defn.Attr.time:
+            return self._event.time
+        try:
+            return self._event.attributes[self._attribute_lookup[name]]
+        except KeyError:
+            raise AttributeError(f"attribute '{name}' not found in {self}") from None
+
+    def get(self, item, default=None):
+        try:
+            return getattr(self, item)
+        except AttributeError:
+            return default
+
 # Type-hinting alias for internal _Event class
-Event = NewType('EventType', _Event)
+Event = Union[_Event, NewEvent]
