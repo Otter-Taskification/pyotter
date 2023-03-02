@@ -662,6 +662,10 @@ class NewEvent:
     def __repr__(self) -> str:
         return f"{type(self).__name__}(time={self.time}, endpoint={self._event.attributes[self._attribute_lookup['endpoint']]}, type={type(self._event).__name__})"
 
+    @property
+    def _base_repr(self):
+        return f"{type(self).__name__}(time={self.time}, loc={self._location.name})"
+
     def __getattr__(self, name):
         if name == defn.Attr.time:
             return self._event.time

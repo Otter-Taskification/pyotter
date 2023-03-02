@@ -66,7 +66,7 @@ class OMPEventModel(BaseEventModel):
         return region_type, event_type
 
     @classmethod
-    def get_update_chunk_handler(cls, event: Event) -> ChunkUpdateHandlerFn:
+    def get_update_chunk_handler(cls, event: Event) -> Optional[ChunkUpdateHandlerFn]:
         # Look up the handler by region & event type, falling back to just event type.
         key = cls.chunk_update_handlers_key(event.event_type, event.region_type)
         handler = cls.chunk_update_handlers.get(key)
@@ -87,6 +87,7 @@ class OMPEventModel(BaseEventModel):
         log.debug(f"receiving events from {events}")
 
         for k, event in enumerate(events):
+            # [DONE]: remove event api call
             log.debug(f"got event {k} with vertex label {event.get('vertex_label')}: {event}")
 
             if self.is_chunk_switch_event(event, use_event_api=use_event_api):
@@ -98,38 +99,38 @@ class OMPEventModel(BaseEventModel):
                 # NOTE: about chunks?
                 # NOTE: maybe want separate update_chunk() and update_and_yield_chunk() methods?
                 if update_chunks_via_event:
+                    # TODO: leave this event api call, it represents the case of using the _Event class hierarchy
                     yield from filter(None, event.update_chunks(self.chunk_dict, self.chunk_stack))
                 else:
                     if self.event_updates_chunks(event):
                         handler = self.get_update_chunk_handler(event)
                         if self.event_yields_chunk(event):
-                            # update and yield
+                            # update and yield a completed chunk
                             # require that update_chunks yields non-None value in this case
-                            if handler:
-                                self.log.info(f"applying handler {handler=}")
-                                completed_chunk = handler(event, self.chunk_dict, self.chunk_stack)
-                                assert(completed_chunk is not None)
-                                yield completed_chunk
-                            else:
-                                log.warning(f"no chunk-completing handler for {event=}, yielding from event.update_chunks")
-                                yield from event.update_chunks(self.chunk_dict, self.chunk_stack)
+                            if not handler:
+                                # expect this branch should be unreachable as we have implemented callbacks for all
+                                # events which can yield chunks
+                                # yield from event.update_chunks(self.chunk_dict, self.chunk_stack)
+                                raise NotImplementedError(f"no chunk-yielding handler for {event}")
+                            self.log.info(f"applying handler {handler=}")
+                            completed_chunk = handler(event, self.chunk_dict, self.chunk_stack)
+                            assert completed_chunk is not None
+                            yield completed_chunk
                         else:
-                            # event must update chunks without yielding
+                            # event must update chunks without producing a completed chunk
                             assert (
                                 self.event_updates_chunks_but_cant_yield_chunk(event)
                             or (self.event_updates_and_may_yield_chunk(event) and not self.event_yields_chunk(event)
                             ))
                             # If no handler found, we haven't re-implemented the update_chunks logic for this event
                             # so fall back to event.update chunks and warn that we don't have a handler
-                            if handler:
-                                self.log.info(f"applying handler {handler=}")
-                                result = handler(event, self.chunk_dict, self.chunk_stack)
-                                assert(result is None)
-                            else:
-                                log.warning(f"no chunk-update handler for {event=}, calling event.update_chunks")
+                            if not handler:
                                 # will eventually remove this branch and assert that all events return None
                                 # from their corresponding handler
-                                yield from filter(None, event.update_chunks(self.chunk_dict, self.chunk_stack))
+                                raise NotImplementedError(f"no chunk-updating handler for {event}")
+                            self.log.info(f"applying handler {handler=}")
+                            result = handler(event, self.chunk_dict, self.chunk_stack)
+                            assert result is None
                     elif self.event_applies_default_chunk_update(event):
                         # apply the default logic for updating the chunk which owns this event
                         self.append_to_encountering_task_chunk(event)
@@ -143,17 +144,17 @@ class OMPEventModel(BaseEventModel):
 
             # NOTE: might want to absorb all the task-updating logic below into the task registry, but guided by an
             # NOTE: event model which would be responsible for knowing which events should trigger task updates
-            if event.is_task_register_event:
+            if self.is_task_register_event(event):
                 task_registry.register_task(event)
 
-            if event.is_update_task_start_ts_event:
-                task = task_registry[event.get_task_entered()]
+            if self.is_update_task_start_ts_event(event):
+                task = task_registry[self.get_task_entered(event)]
                 log.debug(f"notifying task start time: {task.id} @ {event.time}")
                 if task.start_ts is None:
                     task.start_ts = event.time
 
-            if event.is_update_duration_event:
-                prior_task_id, next_task_id = event.get_tasks_switched()
+            if self.is_update_duration_event(event):
+                prior_task_id, next_task_id = self.get_tasks_switched(event)
                 log.debug(
                     f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint:>8} {event}")
 
@@ -167,8 +168,8 @@ class OMPEventModel(BaseEventModel):
                     log.debug(f"got next task: {next_task}")
                     next_task.resumed_at(event.time)
 
-            if event.is_task_complete_event:
-                completed_task_id = event.get_task_completed()
+            if self.is_task_complete_event(event):
+                completed_task_id = self.get_task_completed(event)
                 log.debug(f"event <{event}> notifying task {completed_task_id} of end_ts")
                 completed_task = task_registry[completed_task_id]
                 if completed_task is not NullTask:
@@ -213,29 +214,42 @@ class OMPEventModel(BaseEventModel):
         if cls.event_doesnt_update_and_doesnt_yield_chunk(event):
             return True
 
+        # represents an unhandled _Event which includes this mixin and should have returned True in this function
         if isinstance(event, ChunkSwitchEventMixin):
             raise TypeError(type(event))
 
     @staticmethod
     def event_updates_and_yields_chunk(event: Event) -> bool:
-        # these events inherit the ChunkSwitchEvent mixin
-        return isinstance(event, (ParallelEnd, SingleEnd, InitialTaskLeave))
+        # parallel-end, single-executor-end, master-end and initial-task-leave always complete a chunk
+        return (event.get("region_type"), event.event_type) in [
+            (RegionType.parallel, EventType.parallel_end),
+            (RegionType.single_executor, EventType.workshare_end),
+            (RegionType.master, EventType.master_end),
+            (RegionType.initial_task, EventType.task_leave)
+        ]
 
     @staticmethod
     def event_updates_and_may_yield_chunk(event: Event) -> bool:
-        # these events inherit the ChunkSwitchEvent mixin
-        return isinstance(event, TaskSwitch)
+        # task-switch completes a chunk only if the prior task was completed
+        return event.event_type == EventType.task_switch
 
     @staticmethod
     def event_updates_chunks_but_cant_yield_chunk(event: Event) -> bool:
-        # these events inherit the ChunkSwitchEvent mixin
-        # all these classes yield None at the end of update_chunks, so they don't need to be generators
-        return isinstance(event, (ParallelBegin, SingleBegin, InitialTaskEnter, ImplicitTaskEnter, ImplicitTaskLeave))
+        # parallel-begin, single-executor-begin, master-begin, initial-task-enter, implicit-task-enter/leave
+        # these events have special chunk-updating logic but never complete a chunk
+        return (event.get("region_type"), event.event_type) in [
+            (RegionType.parallel, EventType.parallel_begin),
+            (RegionType.single_executor, EventType.workshare_begin),
+            (RegionType.master, EventType.master_begin),
+            (RegionType.initial_task, EventType.task_enter),
+            (RegionType.implicit_task, EventType.task_enter),
+            (RegionType.implicit_task, EventType.task_leave)
+        ]
 
     @staticmethod
     def event_doesnt_update_and_doesnt_yield_chunk(event: Event) -> bool:
-        # these events inherit the ChunkSwitchEvent mixin
-        return isinstance(event, (ThreadBegin, ThreadEnd))
+        # thread-begin/end events aren't represented in chunks, so won't update them
+        return event.event_type in [EventType.thread_begin, EventType.thread_end]
 
     @classmethod
     def event_updates_chunks(cls, event: Event) -> bool:
@@ -257,8 +271,58 @@ class OMPEventModel(BaseEventModel):
         if cls.event_updates_and_yields_chunk(event):
             return True
         if cls.event_updates_and_may_yield_chunk(event):
-            assert isinstance(event, TaskSwitch)
+            assert event.event_type == EventType.task_switch
             return event.prior_task_status == TaskStatus.complete
+
+    @classmethod
+    def is_task_register_event(cls, event: Event) -> bool:
+        # True for: TaskEnter, TaskCreate
+        return event.event_type in (EventType.task_enter, EventType.task_create)
+
+    @classmethod
+    def is_update_task_start_ts_event(cls, event: Event) -> bool:
+        return (
+            event.event_type == EventType.task_enter or
+            (event.event_type == EventType.task_switch and not cls.is_task_complete_event(event))
+        )
+
+    @classmethod
+    def get_task_entered(cls, event: Event) -> int:
+        if event.event_type == EventType.task_enter:
+            return event.unique_id
+        elif event.event_type == EventType.task_switch:
+            return event.next_task_id
+        else:
+            raise NotImplementedError(f"{event}")
+
+    @classmethod
+    def is_update_duration_event(cls, event: Event) -> bool:
+        return event.event_type in (EventType.task_switch, EventType.task_enter, EventType.task_leave)
+
+    @classmethod
+    def get_tasks_switched(cls, event: Event) -> Tuple[int, int]:
+        if event.event_type in (EventType.task_enter, EventType.task_leave):
+            return event.encountering_task_id, event.unique_id
+        elif event.event_type == EventType.task_switch:
+            return event.encountering_task_id, event.next_task_id
+        else:
+            raise NotImplementedError(f"{event}")
+
+    @classmethod
+    def is_task_complete_event(cls, event: Event) -> bool:
+        return (
+            event.event_type == EventType.task_leave or (
+                event.event_type == EventType.task_switch and
+                event.prior_task_status in (TaskStatus.complete, TaskStatus.cancel))
+        )
+
+    @classmethod
+    def get_task_completed(cls, event: Event) -> None:
+        if event.event_type == EventType.task_leave:
+            return event.unique_id
+        elif event.event_type == EventType.task_switch:
+            assert cls.is_task_complete_event(event)
+            return event.encountering_task_id
 
 
 @OMPEventModel.update_chunks_on(event_type=EventType.parallel_begin)

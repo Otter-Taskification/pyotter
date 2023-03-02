@@ -71,8 +71,10 @@ class Task:
     """Represents an instance of a task"""
 
     @on_init(logger=log.logger_getter("init_logger"))
+    # TODO: de-couple from _Event api by only sending in a dict[defn.Attr, Any] instead of an _Event instance
     def __init__(self, event):
         self.logger = get_module_logger()
+        # TODO: remove _Event api call
         data = event.get_task_data()
         self.id = data[defn.Attr.unique_id]
         self.parent_id = data[defn.Attr.parent_task_id]
@@ -325,6 +327,7 @@ class TaskRegistry:
     def __repr__(self):
         return f"{self.__class__.__name__}({len(self._dict.keys())} tasks: {list(self._dict.keys())})"
 
+    # TODO: de-couple from _Event api by only sending in a dict[defn.Attr, Any] instead of an _Event instance
     def register_task(self, event) -> Task:
         t = Task(event)
         self.log.debug(f"registering task {t.id} (parent={t.parent_id if t.id>0 else None})")
