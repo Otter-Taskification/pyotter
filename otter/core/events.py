@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
-from collections import defaultdict, deque
-from typing import Union, List, NewType
-import itertools as it
+from collections import deque
+from typing import List, NewType
+from itertools import chain
 from loggingdecorators import on_init
+from ..utils import transpose_list_to_dict, warn_deprecated
 from .. import log
-from .. import utils
 from .. import definitions as defn
 
 get_module_logger = log.logger_getter("events")
@@ -202,6 +202,7 @@ class _Event(ABC):
     # NOTE: as only those events which mark the transition between nested chunks or have special chunk-updating
     # NOTE: logic need to implement this.
     # NOTE: probably want to factor responsibility for implementing this UP AND OUT of this module.
+    @warn_deprecated
     @abstractmethod
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         raise NotImplementedError(f"method not implemented for {type(self)}")
@@ -214,7 +215,7 @@ class _Event(ABC):
 
     def yield_attributes(self):
         yield "time", str(self.time)
-        for name in it.chain(self.attr, self._additional_attributes):
+        for name in chain(self.attr, self._additional_attributes):
             try:
                 yield name, getattr(self, name)
             except AttributeError:
@@ -270,6 +271,7 @@ class ClassNotImplementedMixin(ABC):
 # mixin
 class DefaultUpdateChunksMixin(ABC):
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         encountering_task_id = self.encountering_task_id
         chunk = chunk_dict[encountering_task_id]
@@ -320,6 +322,7 @@ class GenericEvent(_Event):
 
 class ThreadBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack):
         self.log.debug(f"{self.__class__.__name__}.update_chunks: pass")
         yield None
@@ -327,6 +330,7 @@ class ThreadBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
 
 class ThreadEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack):
         self.log.debug(f"{self.__class__.__name__}.update_chunks: pass")
         yield None
@@ -334,6 +338,7 @@ class ThreadEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
 
 class ParallelBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         task_chunk_key = (self._location.name, self.encountering_task_id, defn.RegionType.task)
         parallel_chunk_key = (self._location.name, self.unique_id, defn.RegionType.parallel)
@@ -353,6 +358,7 @@ class ParallelBegin(ChunkSwitchEventMixin, EnterMixin, _Event):
 # YIELDS COMPLETED CHUNK
 class ParallelEnd(ChunkSwitchEventMixin, LeaveMixin, _Event):
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         task_chunk_key = (self._location.name, self.encountering_task_id, defn.RegionType.task)
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {task_chunk_key=}")
@@ -414,6 +420,7 @@ class SingleBegin(ChunkSwitchEventMixin, WorkshareBegin):
     def clear_task_synchronisation_cache(self):
         self._task_sync_cache.clear()
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         # Nested region - append to task chunk, push onto stack, create nested chunk
         task_chunk_key = self.encountering_task_id
@@ -430,6 +437,7 @@ class SingleBegin(ChunkSwitchEventMixin, WorkshareBegin):
 # YIELDS COMPLETED CHUNK
 class SingleEnd(ChunkSwitchEventMixin, WorkshareEnd):
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         # Nested region - append to inner chunk, yield, then pop enclosing chunk & append to that chunk
         task_chunk_key = self.encountering_task_id
@@ -469,6 +477,7 @@ class TaskEnter(RegisterTaskDataMixin, Task):
 
 class InitialTaskEnter(ChunkSwitchEventMixin, TaskEnter):
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack):
         # For initial-task-begin, chunk key is (thread ID, initial task unique_id)
         chunk_key = self._location.name, self.unique_id, defn.RegionType.task
@@ -487,6 +496,7 @@ class InitialTaskEnter(ChunkSwitchEventMixin, TaskEnter):
 
 class ImplicitTaskEnter(ChunkSwitchEventMixin, TaskEnter):
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack):
         # (location name, current parallel ID, defn.RegionType.parallel)
         chunk_key = self._location.name, self._location.current_parallel_region, defn.RegionType.parallel
@@ -517,6 +527,7 @@ class TaskLeave(Task):
 # YIELDS COMPLETED CHUNK
 class InitialTaskLeave(ChunkSwitchEventMixin, TaskLeave):
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         chunk_key = self._location.name, self.unique_id, defn.RegionType.task
         self.log.debug(f"{self.__class__.__name__}.update_chunks: {chunk_key=}")
@@ -527,6 +538,7 @@ class InitialTaskLeave(ChunkSwitchEventMixin, TaskLeave):
 
 class ImplicitTaskLeave(ChunkSwitchEventMixin, TaskLeave):
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         # don't yield until parallel-end
         chunk_key = self.unique_id
@@ -563,6 +575,7 @@ class TaskSwitch(ChunkSwitchEventMixin, Task):
     def is_task_switch_complete_event(self):
         return self.prior_task_status in [defn.TaskStatus.complete, defn.TaskStatus.cancel]
 
+    @warn_deprecated
     def update_chunks(self, chunk_dict, chunk_stack) -> None:
         this_chunk_key = self.encountering_task_id
         next_chunk_key = self.next_task_id
@@ -631,7 +644,7 @@ def unpack(event: List[_Event]) -> dict:
     if is_event(event):
         return dict(event.yield_attributes())
     elif is_event_list(event):
-        return utils.transpose_list_to_dict([dict(e.yield_attributes()) for e in event])
+        return transpose_list_to_dict([dict(e.yield_attributes()) for e in event])
     else:
         raise TypeError(f"{type(event)}")
 
