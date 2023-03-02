@@ -111,7 +111,7 @@ class OMPEventModel(BaseEventModel):
                                 assert(completed_chunk is not None)
                                 yield completed_chunk
                             else:
-                                log.warn(f"no chunk-completing handler for {event=}, yielding from event.update_chunks")
+                                log.warning(f"no chunk-completing handler for {event=}, yielding from event.update_chunks")
                                 yield from event.update_chunks(self.chunk_dict, self.chunk_stack)
                         else:
                             # event must update chunks without yielding
@@ -126,7 +126,7 @@ class OMPEventModel(BaseEventModel):
                                 result = handler(event, self.chunk_dict, self.chunk_stack)
                                 assert(result is None)
                             else:
-                                log.warn(f"no chunk-update handler for {event=}, calling event.update_chunks")
+                                log.warning(f"no chunk-update handler for {event=}, calling event.update_chunks")
                                 # will eventually remove this branch and assert that all events return None
                                 # from their corresponding handler
                                 yield from filter(None, event.update_chunks(self.chunk_dict, self.chunk_stack))
