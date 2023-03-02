@@ -1,9 +1,10 @@
 from .event_model import EventModelFactory, BaseEventModel
 from typing import Iterable, Dict, Any, Deque, Callable, Tuple, Optional
-from otter.definitions import EventModel, TaskStatus, EventType, RegionType
+from otter.definitions import Attr, EventModel, TaskStatus, EventType, RegionType
 from otter.core.chunks import Chunk
 from otter.core.chunks import yield_chunks as otter_core_yield_chunks
 from otter.core.events import (
+    Location,
     Event,
     ParallelBegin,
     ParallelEnd,
@@ -18,7 +19,7 @@ from otter.core.events import (
     ImplicitTaskLeave,
     ChunkSwitchEventMixin
 )
-from otter.core.tasks import NullTask
+from otter.core.tasks import NullTask, TaskData
 from otter.log import logger_getter
 
 get_module_logger = logger_getter("omp_event_model")
@@ -145,7 +146,7 @@ class OMPEventModel(BaseEventModel):
             # NOTE: might want to absorb all the task-updating logic below into the task registry, but guided by an
             # NOTE: event model which would be responsible for knowing which events should trigger task updates
             if self.is_task_register_event(event):
-                task_registry.register_task(event)
+                task_registry.register_task(self.get_task_data(event))
 
             if self.is_update_task_start_ts_event(event):
                 task = task_registry[self.get_task_entered(event)]
@@ -184,6 +185,7 @@ class OMPEventModel(BaseEventModel):
 
 
     def chunk_to_graph(self, chunk):
+        # TODO: re-implement Chunk.graph here, make all calls to _Event api the responsibility of the event model
         raise NotImplementedError()
 
     def combine_graphs(self, graphs):
@@ -323,6 +325,23 @@ class OMPEventModel(BaseEventModel):
         elif event.event_type == EventType.task_switch:
             assert cls.is_task_complete_event(event)
             return event.encountering_task_id
+
+    @classmethod
+    def get_task_data(cls, event: Event) -> TaskData:
+        # Only defined for RegisterTaskDataMixin classes
+        # i.e. task-enter, task-create
+        assert cls.is_task_register_event(event)
+        data = {
+            Attr.unique_id:       event.unique_id,
+            Attr.task_type:       event.task_type,
+            Attr.parent_task_id:  event.parent_task_id,
+            Attr.time:            event.time
+        }
+        if Attr.source_file_name in event and Attr.source_func_name in event and Attr.source_line_number in event:
+            data[Attr.source_file_name] = event.source_file_name
+            data[Attr.source_func_name] = event.source_func_name
+            data[Attr.source_line_number] = event.source_line_number
+        return data
 
 
 @OMPEventModel.update_chunks_on(event_type=EventType.parallel_begin)
