@@ -1,12 +1,16 @@
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import List, NewType, Union
+from typing import List, Union, Dict
 from itertools import chain
 from loggingdecorators import on_init
 from ..utils import transpose_list_to_dict, warn_deprecated
 from .. import log
 from .. import definitions as defn
 from ..reader import OTF2Reader
+from ..definitions import Attr
+from otf2.definitions import Attribute as OTF2Attribute
+from otf2 import LocationType as OTF2Location
+from otf2.events import _Event as OTF2Event
 
 get_module_logger = log.logger_getter("events")
 
@@ -21,7 +25,7 @@ class Location:
     # NOTE: Responsible for recording its traversal into & out of parallel regions
 
     @on_init(logger=log.logger_getter("init_logger"), level=log.DEBUG)
-    def __init__(self, location):
+    def __init__(self, location: OTF2Location):
         self.log = log.get_logger(self.__class__.__name__)
         self._loc = location
         self.parallel_region_deque = deque()
@@ -178,6 +182,11 @@ class _Event(ABC):
             return self._event.attributes[self.attr[item]]
         except KeyError:
             raise AttributeError(f"attribute '{item}' not found in {self._base_repr} object") from None
+
+    def __contains__(self, attr: Attr):
+        if attr == defn.Attr.time:
+            return True
+        return self.attr[attr] in self._event.attributes
 
     def get(self, item, default=None):
         try:
@@ -654,9 +663,9 @@ def unpack(event: List[_Event]) -> dict:
 class NewEvent:
     """A basic wrapper for OTF2 events"""
 
-    def __init__(self, otf2_event, otf2_location, attribute_lookup) -> None:
+    def __init__(self, otf2_event: OTF2Event, location: Location, attribute_lookup: Dict[str, OTF2Attribute]) -> None:
         self._event = otf2_event
-        self._location = otf2_location
+        self._location = location
         self._attribute_lookup = attribute_lookup
 
     def __repr__(self) -> str:
@@ -666,13 +675,18 @@ class NewEvent:
     def _base_repr(self):
         return f"{type(self).__name__}(time={self.time}, loc={self._location.name})"
 
-    def __getattr__(self, name):
-        if name == defn.Attr.time:
+    def __getattr__(self, attr: Attr):
+        if attr == defn.Attr.time:
             return self._event.time
         try:
-            return self._event.attributes[self._attribute_lookup[name]]
+            return self._event.attributes[self._attribute_lookup[attr]]
         except KeyError:
-            raise AttributeError(f"attribute '{name}' not found in {self}") from None
+            raise AttributeError(f"attribute '{attr}' not found in {self}") from None
+
+    def __contains__(self, attr: Attr):
+        if attr == defn.Attr.time:
+            return True
+        return self._attribute_lookup[attr] in self._event.attributes
 
     def get(self, item, default=None):
         try:
