@@ -14,7 +14,7 @@ except ImportError as err:
         raise AttributeError(f"property '{property_name}' not defined")
 
 
-class _OTF2Reader(Reader):
+class OTF2Reader(Reader):
     """Extends the otf2 reader with access to trace properties"""
 
     def __init__(self, *args, **kwargs):
@@ -32,6 +32,9 @@ class _OTF2Reader(Reader):
         return EventModel(self.get_property(TraceAttr.event_model))
 
 
-def get_otf2_reader(*args, **kwargs) -> closing[_OTF2Reader]:
+ClosingOTF2Reader = closing[OTF2Reader]
+
+
+def get_otf2_reader(*args, **kwargs) -> ClosingOTF2Reader:
     # allows _OTF2Reader to be used in a with-block
-    return closing(_OTF2Reader(*args, **kwargs))
+    return closing(OTF2Reader(*args, **kwargs))
