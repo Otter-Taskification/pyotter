@@ -1,8 +1,7 @@
 from collections import defaultdict, deque
 from functools import cached_property
-from typing import List, Generator, Iterable
-from itertools import islice, count
-import otf2
+from typing import List, Iterable
+from itertools import islice
 import igraph as ig
 from loggingdecorators import on_init
 

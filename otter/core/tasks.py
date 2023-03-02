@@ -2,7 +2,7 @@ from functools import lru_cache
 from itertools import chain
 from collections import deque
 import igraph as ig
-import loggingdecorators as logdec
+from loggingdecorators import on_init
 from .. import log
 from .. import definitions as defn
 
@@ -27,7 +27,7 @@ class TaskSynchronisationContext:
     it does not record any information about any descendant tasks.    
     """
 
-    @logdec.on_init(logger=log.logger_getter("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, tasks=None, descendants=False):
         self.logger = get_module_logger()
         self._tasks = list()
@@ -70,7 +70,7 @@ class TaskSynchronisationContext:
 class Task:
     """Represents an instance of a task"""
 
-    @logdec.on_init(logger=log.logger_getter("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, event):
         self.logger = get_module_logger()
         data = event.get_task_data()
@@ -298,7 +298,7 @@ class TaskRegistry:
     Maps task ID to task instance, raising KeyError if an unregistered task is requested
     """
 
-    @logdec.on_init(logger=log.logger_getter("init_logger"))
+    @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self):
         self.log = get_module_logger()
         self._dict = dict()
