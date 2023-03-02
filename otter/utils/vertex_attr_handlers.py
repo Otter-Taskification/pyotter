@@ -1,9 +1,7 @@
 from collections.abc import Iterable
-from functools import wraps
-from itertools import chain
 from typing import Type, List, Union
 from .. import log
-from ..log import DEBUG, INFO
+from ..log import DEBUG
 from ..definitions import RegionType
 from ..core import events
 from ..utils import flatten
@@ -79,7 +77,7 @@ class combine_attribute_strategy:
         A = isinstance(self.accept, Iterable) and all(isinstance(arg, tuple(self.accept)) for arg in args)
         B = isinstance(self.accept, type) and are(all, args, self.accept)
         if not (A or B):
-            raise TypeError(f"expected {accept}, got {set(map(type, args))}")
+            raise TypeError(f"expected {self.accept}, got {set(map(type, args))}")
 
         # args is list with > 1 element, none of which is None
         return self.handler(args)

@@ -1,6 +1,5 @@
 import logging
-import loggingdecorators as logdec
-from logging import DEBUG, INFO, WARN, ERROR
+from logging import DEBUG, ERROR
 
 
 class _state_:

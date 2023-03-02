@@ -1,9 +1,9 @@
 from . import report
 from .classes import Doc
 from .make import wrap, table
-from .. import log
+from ..log import logger_getter
 
-get_module_logger = log.logger_getter("edges")
+get_module_logger = logger_getter("edges")
 
 def write_report(args, g, tasks):
     import os
