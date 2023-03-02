@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Union
 
 class Attr(str, Enum):
     time = "time"
@@ -106,4 +107,6 @@ class EventModel(str, Enum):
     TASKGRAPH = "TASKGRAPH"
     UNKNOWN = "UNKNOWN"
 
-NullTask = 18446744073709551615
+NullTaskID = 18446744073709551615
+
+AttrValue = Union[EventType, RegionType, TaskStatus, TaskType, Endpoint, EdgeType, TaskSyncType, TaskEvent, EventModel]

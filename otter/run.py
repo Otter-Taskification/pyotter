@@ -1,11 +1,13 @@
 import warnings
 warnings.simplefilter('always', DeprecationWarning)
+from otf2.definitions import Attribute as OTF2Attribute
+from otf2 import LocationType as OTF2Location
 from collections import Counter
-from typing import Iterable
+from typing import Iterable, Dict
 import igraph as ig
 import otter
 from otter.core.event_model import get_event_model
-from otter.core.events import NewEvent
+from otter.core.events import NewEvent, Location
 from otter.utils import label_groups_if, combine_attribute_strategy, strategy_lookup
 
 
@@ -25,8 +27,9 @@ def run() -> None:
         log.info(f"generating chunks")
         use_new_event = False
         if use_new_event:
-            attributes = {attr.name: attr for attr in reader.definitions.attributes}
-            event_iter: Iterable[NewEvent] = (NewEvent(event, location, attributes) for location, event in reader.events)
+            attributes: Dict[str: OTF2Attribute] = {attr.name: attr for attr in reader.definitions.attributes}
+            locations: Dict[OTF2Location: Location] = {location: Location(location) for location in reader.definitions.locations}
+            event_iter: Iterable[NewEvent] = (NewEvent(event, locations[location], attributes) for location, event in reader.events)
         else:
             event_iter = otter.core.events.EventFactory(reader)
         chunks = list(event_model.yield_chunks(
