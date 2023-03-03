@@ -9,6 +9,7 @@ from otter.core.chunks import yield_chunks as otter_core_yield_chunks
 from otter.core.events import Event
 from otter.core.tasks import TaskRegistry, NullTask
 from otter.log import logger_getter
+from otter.utils import call_with_warning
 
 get_module_logger = logger_getter("event_model")
 
@@ -55,10 +56,15 @@ class EventModelFactory:
 # Using ABC for a common __init__ between concrete models
 class BaseEventModel(ABC):
 
-    def __init__(self, task_registry: TaskRegistry):
+    def __init__(self, task_registry: TaskRegistry, warn_implicit_chunk_creaton: bool = True):
         self.log = logger_getter(self.__class__.__name__)()
         self.task_registry: TaskRegistry = task_registry
-        self.chunk_dict: Dict[Any, Chunk] = defaultdict(lambda: Chunk(task_registry))
+        # TODO: self.chunk_dict is responsible for creating new chunks, but this could be more explicit
+        # TODO: make it a normal dict to force explicit creation of new chunks
+        if warn_implicit_chunk_creaton:
+            self.chunk_dict: Dict[Any, Chunk] = defaultdict(call_with_warning(lambda: Chunk(task_registry), "Chunk was created implicitly"))
+        else:
+            self.chunk_dict: Dict[Any, Chunk] = defaultdict(lambda: Chunk(task_registry))
         self.chunk_stack: Dict[Any, Deque[Chunk]] = defaultdict(deque)
 
 

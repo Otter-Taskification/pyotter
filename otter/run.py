@@ -1,5 +1,4 @@
 import warnings
-warnings.simplefilter('always', DeprecationWarning)
 from otf2.definitions import Attribute as OTF2Attribute
 from otf2 import LocationType as OTF2Location
 from collections import Counter
@@ -16,6 +15,9 @@ def run() -> None:
     args = otter.utils.get_args()
     otter.log.initialise(args)
     log = otter.log.get_logger("main")
+
+    for warning in args.warnings:
+        warnings.simplefilter('always', warning)
 
     log.info(f"reading OTF2 anchorfile: {args.anchorfile}")
     with otter.reader.get_otf2_reader(args.anchorfile) as reader:
@@ -38,7 +40,8 @@ def run() -> None:
             use_core=False,
             update_chunks_via_event=False
         ))
-        graphs = list(chunk.graph for chunk in chunks)
+        event_model.warn_for_incomplete_chunks(chunks)
+        graphs = list(event_model.chunk_to_graph(chunk) for chunk in chunks)
 
     # Dump chunks and graphs to log file
     if args.loglevel == "DEBUG":

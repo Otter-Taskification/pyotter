@@ -18,10 +18,10 @@ get_module_logger = logger_getter("chunks")
 class Chunk:
 
     @on_init(logger=logger_getter("init_logger"), level=DEBUG)
-    def __init__(self, tasks):
+    def __init__(self, tasks, chunk_type: defn.RegionType):
         self.log = get_module_logger()
         self._events = deque()
-        self._type = None
+        self._type = chunk_type
         # NOTE: this is ONLY used during Chunk.graph() - don't need to store it if that method is factored out!
         self.tasks = tasks
 
@@ -53,6 +53,7 @@ class Chunk:
         return None if len(self._events) == 0 else self._events[-1]
 
     @property
+    # TODO: have this be injected on init instead of derived by the Chunk, so we can decouple from event API
     def type(self):
         if len(self) == 0:
             self.log.debug(f"chunk contains no events!")
@@ -90,11 +91,11 @@ class Chunk:
     # NOTE: of iterating over the events in the chunk. The logic applied to each event depends on the event
     # NOTE: which suggests that we can encapsulate the state (and graph) and pass this around to handler functions.
     @cached_property
-    def graph(self):
+    def graph(self) -> ig.Graph:
 
         self.log.debug(f"transforming chunk to graph (type={self.type}) {self.first=}")
 
-        g = ig.Graph(directed=True)
+        g: ig.Graph = ig.Graph(directed=True)
         prior_vertex = g.add_vertex(event=[self.first])
         prior_event = self.first
 
