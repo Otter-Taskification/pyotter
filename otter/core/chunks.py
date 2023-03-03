@@ -11,6 +11,7 @@ from ..log import logger_getter, DEBUG
 from .. import definitions as defn
 from .tasks import TaskRegistry, TaskSynchronisationContext, NullTask
 from .events import is_event, Event
+from ..utils import warn_deprecated
 
 get_module_logger = logger_getter("chunks")
 
@@ -22,7 +23,7 @@ class Chunk:
         self.log = get_module_logger()
         self._events = deque()
         self._type = chunk_type
-        # NOTE: this is ONLY used during Chunk.graph() - don't need to store it if that method is factored out!
+        # TODO: this is ONLY used during Chunk.graph() - don't need to store it if that method is factored out!
         self.tasks = tasks
 
     def __len__(self):
@@ -53,16 +54,8 @@ class Chunk:
         return None if len(self._events) == 0 else self._events[-1]
 
     @property
-    # TODO: have this be injected on init instead of derived by the Chunk, so we can decouple from event API
-    def type(self):
-        if len(self) == 0:
-            self.log.debug(f"chunk contains no events!")
-            return None
-        # TODO: lift call to _Event api into Chunk
-        if self.first.is_task_switch_event:
-            return self.first.next_task_region_type
-        else:
-            return self.first.region_type
+    def type(self) -> defn.RegionType:
+        return self._type
 
     def append_event(self, event):
         self.log.debug(f"{self.__class__.__name__}.append_event {event._base_repr} to chunk: {self._base_repr}")
@@ -91,6 +84,7 @@ class Chunk:
     # NOTE: of iterating over the events in the chunk. The logic applied to each event depends on the event
     # NOTE: which suggests that we can encapsulate the state (and graph) and pass this around to handler functions.
     @cached_property
+    @warn_deprecated(stacklevel=3)
     def graph(self) -> ig.Graph:
 
         self.log.debug(f"transforming chunk to graph (type={self.type}) {self.first=}")

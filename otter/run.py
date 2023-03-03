@@ -27,6 +27,7 @@ def run() -> None:
         log.info(f"Found event model name: {str(event_model_name)}")
         log.info(f"Using event model: {event_model}")
         log.info(f"generating chunks")
+        # TODO: switch to new event class once _Event api calls all lifted up into EventModel scope
         use_new_event = False
         if use_new_event:
             attributes: Dict[str: OTF2Attribute] = {attr.name: attr for attr in reader.definitions.attributes}
@@ -40,13 +41,14 @@ def run() -> None:
             use_core=False,
             update_chunks_via_event=False
         ))
+        # TODO: temporary check, factor out once switched to new event class
         event_model.warn_for_incomplete_chunks(chunks)
         graphs = list(event_model.chunk_to_graph(chunk) for chunk in chunks)
 
     # Dump chunks and graphs to log file
     if args.loglevel == "DEBUG":
         log.info(f"dumping chunks, tasks and graphs to log files")
-        otter.utils.dump_to_log_file(chunks, task_registry)
+        otter.utils.dump_to_log_file(chunks, graphs, task_registry)
 
     # Collect all chunks
     log.info("combining chunks")

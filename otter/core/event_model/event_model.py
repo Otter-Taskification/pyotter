@@ -56,16 +56,10 @@ class EventModelFactory:
 # Using ABC for a common __init__ between concrete models
 class BaseEventModel(ABC):
 
-    def __init__(self, task_registry: TaskRegistry, warn_implicit_chunk_creaton: bool = True):
+    def __init__(self, task_registry: TaskRegistry):
         self.log = logger_getter(self.__class__.__name__)()
         self.task_registry: TaskRegistry = task_registry
-        # TODO: self.chunk_dict is responsible for creating new chunks, but this could be more explicit
-        # TODO: make it a normal dict to force explicit creation of new chunks
-        if warn_implicit_chunk_creaton:
-            # TODO: Chunk constructor missing positional argument
-            self.chunk_dict: Dict[Any, Chunk] = defaultdict(call_with_warning(lambda: Chunk(task_registry), "Chunk was created implicitly"))
-        else:
-            self.chunk_dict: Dict[Any, Chunk] = defaultdict(lambda: Chunk(task_registry))
+        self.chunk_dict: Dict[Any, Chunk] = dict()
         self.chunk_stack: Dict[Any, Deque[Chunk]] = defaultdict(deque)
 
 

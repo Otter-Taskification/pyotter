@@ -1,6 +1,7 @@
 from warnings import warn
 from typing import Callable
-from inspect import isgeneratorfunction
+from inspect import isgeneratorfunction, isfunction
+from functools import partial
 from .counters import label_groups_if
 from .iterate import pairwise, flatten, transpose_list_to_dict
 from .vertex_predicates import key_is_not_none, \
@@ -18,7 +19,7 @@ from ..log import get_logger
 from .args import get_args
 
 
-def dump_to_log_file(chunks, tasks):
+def dump_to_log_file(chunks, graphs, tasks):
     chunk_log = get_logger("chunks_debug")
     graph_log = get_logger("graphs_debug")
     task_log = get_logger("tasks_debug")
@@ -26,20 +27,19 @@ def dump_to_log_file(chunks, tasks):
     graph_log.debug(">>> BEGIN GRAPHS <<<")
     chunk_log.debug(f">>> BEGIN CHUNKS <<<")
 
-    for chunk in chunks:
+    for chunk, graph in zip(chunks, graphs):
 
         # write chunk
         for line in chunk.to_text():
             chunk_log.debug(f"{line}")
 
-        # write graph
+        # write graphs
         graph_log.debug(f"Chunk type: {chunk.type}")
-        g = chunk.graph
-        lines = [" ".join(f"{g}".split("\n"))]
+        lines = [" ".join(f"{graph}".split("\n"))]
         for line in lines:
             graph_log.debug(f"{line}")
-        for v in g.vs:
-            graph_log.debug(f"{v}")
+        for vertex in graph.vs:
+            graph_log.debug(f"{vertex}")
         graph_log.debug("")
 
     chunk_log.debug(f">>> END CHUNKS <<<")
@@ -53,18 +53,36 @@ def dump_to_log_file(chunks, tasks):
     task_log.debug(">>> END TASKS <<<")
 
 
-def warn_deprecated(func: Callable):
+def wrap_func_with_deprecation_warning(func: Callable, stacklevel: int = 2) -> Callable:
     if isgeneratorfunction(func):
-        def deprecated_wrapper(*args, **kwargs):
-            warn(f"{func}", category=DeprecationWarning, stacklevel=2)
+        def warning_wrapper(*args, **kwargs):
+            warn(f"{func}", category=DeprecationWarning, stacklevel=stacklevel)
             yield from func(*args, **kwargs)
     else:
-        def deprecated_wrapper(*args, **kwargs):
-            warn(f"{func}", category=DeprecationWarning, stacklevel=2)
+        def warning_wrapper(*args, **kwargs):
+            warn(f"{func}", category=DeprecationWarning, stacklevel=stacklevel)
             return func(*args, **kwargs)
-    return deprecated_wrapper
+    return warning_wrapper
 
 
+def warn_deprecated(*arglist, stacklevel: int = 2):
+    """Wrap a function to emit a DeprecationWarning each time it is called.
+
+    The stacklevel key-word arg is passed to the DeprecationWarning.
+    """
+    if len(arglist) > 1:
+        raise TypeError(f"{warn_deprecated.__name__} expects at most 1 positional argument")
+    elif len(arglist) == 1:
+        func = arglist[0]
+        assert isfunction(func)
+        # func was supplied, so decorate and return it
+        return wrap_func_with_deprecation_warning(func, stacklevel=stacklevel)
+    else:
+        # return a decorator to apply to a func
+        return partial(wrap_func_with_deprecation_warning, stacklevel=stacklevel)
+
+
+# NOTE: useful for diagnosing when a defaultdict's default constructor is called
 def call_with_warning(func: Callable, warning: str):
     assert(not isgeneratorfunction(func))
     def inner(*args, **kwargs):
