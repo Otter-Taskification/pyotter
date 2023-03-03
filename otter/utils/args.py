@@ -14,6 +14,8 @@ def get_args():
     parser.add_argument('--loglevel', dest='loglevel', default="WARN", choices=["DEBUG", "INFO", "WARN", "ERROR"], help='logging level')
     parser.add_argument('--logdir', dest='logdir', default="otter-logs", help='logging directory')
     parser.add_argument('--profile', dest='profile', help='profiling output')
+    parser.add_argument('--warn-deprecated', dest='warnings', help='Allow warnings about deprecated code', action="append_const", const=DeprecationWarning)
+    parser.add_argument('--warn-user', dest='warnings', help='Allow user warnings', action="append_const", const=UserWarning)
     args = parser.parse_args()
 
     if args.report is None:
@@ -33,6 +35,9 @@ def get_args():
 
 def check_args(args):
     import os
+
+    if args.warnings is None:
+        args.warnings = list()
 
     # Anchorfile must exist
     if not os.path.isfile(args.anchorfile):

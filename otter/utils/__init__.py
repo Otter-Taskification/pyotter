@@ -1,4 +1,5 @@
 from warnings import warn
+from typing import Callable
 from inspect import isgeneratorfunction
 from .counters import label_groups_if
 from .iterate import pairwise, flatten, transpose_list_to_dict
@@ -52,7 +53,7 @@ def dump_to_log_file(chunks, tasks):
     task_log.debug(">>> END TASKS <<<")
 
 
-def warn_deprecated(func):
+def warn_deprecated(func: Callable):
     if isgeneratorfunction(func):
         def deprecated_wrapper(*args, **kwargs):
             warn(f"{func}", category=DeprecationWarning, stacklevel=2)
@@ -62,6 +63,14 @@ def warn_deprecated(func):
             warn(f"{func}", category=DeprecationWarning, stacklevel=2)
             return func(*args, **kwargs)
     return deprecated_wrapper
+
+
+def call_with_warning(func: Callable, warning: str):
+    assert(not isgeneratorfunction(func))
+    def inner(*args, **kwargs):
+        warn(f"{warning}", category=UserWarning, stacklevel=2)
+        return func(*args, **kwargs)
+    return inner
 
 
 def find_dot_or_die():
