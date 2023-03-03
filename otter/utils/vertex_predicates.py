@@ -17,6 +17,7 @@ def key_is_not_none(key) -> Callable:
 
 def _is_event_region_type(event, region_type) -> bool:
     assert events.is_event(event)
+    # TODO: remove coupling to event API
     return (event.is_enter_event or event.is_leave_event) and event.region_type == region_type
 
 def is_region_type(region_type: RegionType) -> Callable:

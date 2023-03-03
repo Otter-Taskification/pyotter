@@ -1,3 +1,5 @@
+# TODO: re-implement any handlers with event model logic inside an event model
+
 from collections.abc import Iterable
 from typing import Type, List, Union
 from .. import log
@@ -40,7 +42,7 @@ class combine_attribute_strategy:
         accept: a type, or list of types, which each arg must conform to for the given handler to be applied
         """
         self.handler = handler if handler else (lambda arg: arg)
-        self.accept = accept or [list, events._Event]
+        self.accept = accept or [list, events._Event, events.NewEvent]
         self.log = log.get_logger(self.__class__.__name__)
         call_decorator = on_call(self.log, msg=msg)
         self.handler = call_decorator(self.handler)
