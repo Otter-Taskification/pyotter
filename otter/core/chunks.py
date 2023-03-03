@@ -1,6 +1,6 @@
 from collections import defaultdict, deque
 from functools import cached_property
-from typing import List, Iterable
+from typing import List, Iterable, Deque, Optional
 from itertools import islice
 import igraph as ig
 from loggingdecorators import on_init
@@ -21,7 +21,7 @@ class Chunk:
     @on_init(logger=logger_getter("init_logger"), level=DEBUG)
     def __init__(self, tasks, chunk_type: defn.RegionType):
         self.log = get_module_logger()
-        self._events = deque()
+        self._events: Deque[Event] = deque()
         self._type = chunk_type
         # TODO: this is ONLY used during Chunk.graph() - don't need to store it if that method is factored out!
         self.tasks = tasks
@@ -46,11 +46,11 @@ class Chunk:
         return content
 
     @property
-    def first(self):
+    def first(self) -> Optional[Event]:
         return None if len(self._events) == 0 else self._events[0]
 
     @property
-    def last(self):
+    def last(self) -> Optional[Event]:
         return None if len(self._events) == 0 else self._events[-1]
 
     @property
@@ -62,6 +62,7 @@ class Chunk:
         self._events.append(event)
 
     @staticmethod
+    @warn_deprecated
     def events_bridge_region(previous, current, types: List[defn.RegionType]) -> bool:
         # Used to check for certain enter-leave event sequences
         assert is_event(previous) and is_event(current)
@@ -69,10 +70,12 @@ class Chunk:
                and current.region_type in types and current.is_leave_event
 
     @classmethod
+    @warn_deprecated
     def events_bridge_single_master_region(cls, previous, current) -> bool:
         return cls.events_bridge_region(previous, current, [defn.RegionType.single_executor, defn.RegionType.single_other, defn.RegionType.master])
 
     @classmethod
+    @warn_deprecated
     def events_bridge_parallel_region(cls, previous, current) -> bool:
         return cls.events_bridge_region(previous, current, [defn.RegionType.parallel])
 

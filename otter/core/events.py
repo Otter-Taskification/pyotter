@@ -14,7 +14,7 @@ from otf2.events import _Event as OTF2Event
 
 get_module_logger = log.logger_getter("events")
 
-is_event = lambda item: isinstance(item, _Event)
+is_event = lambda item: isinstance(item, (_Event, NewEvent))
 all_events = lambda args: all(map(is_event, args))
 any_events = lambda args: any(map(is_event, args))
 is_event_list = lambda args: isinstance(args, list) and all_events(args)

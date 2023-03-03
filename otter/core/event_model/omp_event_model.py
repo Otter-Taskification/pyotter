@@ -1,5 +1,6 @@
 from .event_model import EventModelFactory, BaseEventModel
-from typing import Iterable, Dict, Any, Deque, Callable, Tuple, Optional
+from collections import defaultdict
+from typing import Iterable, Dict, Any, Deque, Callable, Tuple, Optional, List
 from warnings import warn
 from itertools import islice
 from igraph import Graph
@@ -10,7 +11,7 @@ from otter.core.events import (
     Event,
     ChunkSwitchEventMixin
 )
-from otter.core.tasks import NullTask, TaskData, TaskRegistry, TaskSynchronisationContext
+from otter.core.tasks import NullTask, Task, TaskData, TaskRegistry, TaskSynchronisationContext
 from otter.log import logger_getter
 from otter.utils.typing import Decorator
 
@@ -28,6 +29,19 @@ class OMPEventModel(BaseEventModel):
 
     # Handlers which update chunks, some of which will return a completed chunk
     chunk_update_handlers: Dict[ChunkUpdateHandlerKey, ChunkUpdateHandlerFn] = dict()
+
+    def __init__(self, *args, **kwargs):
+        # A dictionary mapping a single-exec or master-begin event to a list of tasks to be synchronised
+        self._task_sync_cache: Dict[Event, List[Task]] = defaultdict(list)
+        super().__init__(*args, **kwargs)
+
+    def get_task_synchronisation_cache(self, event: Event) -> List[Task]:
+        assert (event.region_type, event.event_type) in ((RegionType.single_executor, EventType.workshare_begin), (RegionType.master, EventType.master_begin))
+        return self._task_sync_cache[event]
+
+    def clear_task_synchronisation_cache(self, event: Event):
+        assert (event.region_type, event.event_type) in ((RegionType.single_executor, EventType.workshare_begin), (RegionType.master, EventType.master_begin))
+        self._task_sync_cache[event].clear()
 
     @classmethod
     def update_chunks_on(cls, event_type: EventType, region_type: RegionType = None) -> Decorator[ChunkUpdateHandlerFn]:
@@ -175,10 +189,9 @@ class OMPEventModel(BaseEventModel):
         for task in task_registry:
             log.debug(f"task start time: {task.id}={task.start_ts}")
 
-    @staticmethod
-    def chunk_to_graph(chunk: Chunk) -> Graph:
+    def chunk_to_graph(self, chunk: Chunk) -> Graph:
         # TODO: re-implement Chunk.graph here, make all calls to _Event api the responsibility of the event model
-        return omp_chunk_to_graph(chunk)
+        return omp_chunk_to_graph(self, chunk)
 
     def combine_graphs(self, graphs):
         raise NotImplementedError()
@@ -274,6 +287,15 @@ class OMPEventModel(BaseEventModel):
         return event.event_type in (EventType.task_enter, EventType.task_create)
 
     @classmethod
+    def is_task_create_event(cls, event: Event) -> bool:
+        return event.event_type == EventType.task_create
+
+    @classmethod
+    def get_task_created(cls, event: Event) -> int:
+        assert cls.is_task_create_event(event)
+        return event.unique_id
+
+    @classmethod
     def is_update_task_start_ts_event(cls, event: Event) -> bool:
         return (
             event.event_type == EventType.task_enter or
@@ -335,11 +357,42 @@ class OMPEventModel(BaseEventModel):
             data[Attr.source_line_number] = event.source_line_number
         return data
 
+    @staticmethod
+    def events_bridge_region(previous: Event, current: Event, region_types: List[RegionType]) -> bool:
+        # Used to check for certain enter-leave event sequences
+        # assert is_event(previous) and is_event(current)
+        return (previous.region_type in region_types and is_enter_event(previous) and
+                current.region_type in region_types and is_leave_event(current))
+
+    @classmethod
+    def events_bridge_single_master_region(cls, previous: Event, current: Event) -> bool:
+        return cls.events_bridge_region(previous, current, [RegionType.single_executor, RegionType.single_other, RegionType.master])
+
+    @classmethod
+    def events_bridge_parallel_region(cls, previous: Event, current: Event) -> bool:
+        return cls.events_bridge_region(previous, current, [RegionType.parallel])
+
     def warn_for_incomplete_chunks(self, chunks: Iterable[Chunk]) -> None:
         chunks_stored = set(self.chunk_dict.values())
         chunks_returned = set(chunks)
         for incomplete in chunks_stored - chunks_returned:
             warn(f"Chunk was never returned:\n{incomplete}", category=UserWarning)
+
+    @staticmethod
+    def check_events(events: Iterable[Event], reduce: Callable[[Iterable[bool]], bool], predicate: Callable[[Event], bool]) -> bool:
+        return reduce((predicate(event) for event in events))
+
+    @classmethod
+    def all_single_exec_events(cls, events: Iterable[Event]):
+        return cls.check_events(events, all, lambda event: event.region_type == RegionType.single_executor)
+
+    @classmethod
+    def all_master_events(cls, events: Iterable[Event]):
+        return cls.check_events(events, all, lambda event: event.region_type == RegionType.master)
+
+    @classmethod
+    def all_taskwait_events(cls, events: Iterable[Event]):
+        return cls.check_events(events, all, lambda event: event.region_type == RegionType.taskwait)
 
 
 @OMPEventModel.update_chunks_on(event_type=EventType.parallel_begin)
@@ -501,7 +554,7 @@ def update_chunks_task_switch(event: Event, chunk_dict: ChunkDict, chunk_stack: 
     return completed_chunk  # may be None
 
 
-def omp_chunk_to_graph(chunk: Chunk) -> Graph:
+def omp_chunk_to_graph(event_model: OMPEventModel, chunk: Chunk) -> Graph:
 
     chunk.log.debug(f"transforming chunk to graph (type={chunk.type}) {chunk.first=}")
 
@@ -542,8 +595,7 @@ def omp_chunk_to_graph(chunk: Chunk) -> Graph:
         if event.region_type in [RegionType.implicit_task]:
             continue
 
-        # TODO: lift call to _Event api into Chunk
-        if event.is_task_switch_event and event is not chunk.last:
+        if event.event_type == EventType.task_switch and event is not chunk.last:
             continue
 
         # The vertex representing this event
@@ -556,15 +608,11 @@ def omp_chunk_to_graph(chunk: Chunk) -> Graph:
 
         # Match taskgroup-enter/-leave events
         if event.region_type == RegionType.taskgroup:
-            # TODO: lift call to _Event api into Chunk
-            if event.is_enter_event:
+            if is_enter_event(event):
                 taskgroup_enter_event = event
-
                 # Create a context for this taskgroup
                 encountering_task.enter_task_sync_group()
-
-            # TODO: lift call to _Event api into Chunk
-            elif event.is_leave_event:
+            elif is_leave_event(event):
                 if taskgroup_enter_event is None:
                     raise RuntimeError("taskgroup-enter event was None")
                 v['_taskgroup_enter_event'] = taskgroup_enter_event
@@ -577,12 +625,10 @@ def omp_chunk_to_graph(chunk: Chunk) -> Graph:
 
         # Label corresponding barrier-enter/leave events so they can be contracted
         if event.region_type in [RegionType.barrier_implicit, RegionType.barrier_explicit]:
-            # TODO: lift call to _Event api into Chunk
-            if event.is_enter_event:
+            if is_enter_event(event):
                 barrier_cluster_id = (event.encountering_task_id, event.region_type, barrier_cluster_label)
                 v['_sync_cluster_id'] = barrier_cluster_id
-            # TODO: lift call to _Event api into Chunk
-            elif event.is_leave_event:
+            elif is_leave_event(event):
                 if barrier_cluster_id is None:
                     raise RuntimeError("barrier-enter event was None")
                 v['_sync_cluster_id'] = barrier_cluster_id
@@ -592,8 +638,7 @@ def omp_chunk_to_graph(chunk: Chunk) -> Graph:
         # Label corresponding taskwait-enter/-leave events so they can be contracted later
         if event.region_type == RegionType.taskwait:
             chunk.log.debug(f"encountered taskwait barrier: endpoint={event.endpoint}, descendants={event.sync_descendant_tasks==TaskSyncType.descendants}")
-            # TODO: lift call to _Event api into Chunk
-            if event.is_enter_event:
+            if is_enter_event(event):
                 taskwait_cluster_id = (event.encountering_task_id, event.region_type, taskwait_cluster_label)
                 v['_sync_cluster_id'] = taskwait_cluster_id
 
@@ -605,12 +650,8 @@ def omp_chunk_to_graph(chunk: Chunk) -> Graph:
                 # first event's cache rather than in the parent task's cache.
                 if chunk.type == RegionType.single_executor:
                     chunk.log.debug(f"registering tasks at taskwait barrier inside a single-executor chunk")
-                    # TODO: lift call to _Event api into Chunk
-                    barrier_context.synchronise_from(chunk.first.task_synchronisation_cache)
-
-                    # Forget about events which have been synchronised
-                    # TODO: lift call to _Event api into Chunk
-                    chunk.first.clear_task_synchronisation_cache()
+                    barrier_context.synchronise_from(event_model.get_task_synchronisation_cache(chunk.first))
+                    event_model.clear_task_synchronisation_cache(chunk.first)
 
                 # Register tasks synchronised at a barrier
                 else:
@@ -632,8 +673,7 @@ def omp_chunk_to_graph(chunk: Chunk) -> Graph:
                 v['_barrier_context'] = barrier_context
                 v['_task_sync_context'] = (EdgeType.taskwait, barrier_context)
 
-            # TODO: lift call to _Event api into Chunk
-            elif event.is_leave_event:
+            elif is_leave_event(event):
                 if taskwait_cluster_id is None:
                     raise RuntimeError("taskwait-enter event was None")
                 v['_sync_cluster_id'] = taskwait_cluster_id
@@ -644,43 +684,35 @@ def omp_chunk_to_graph(chunk: Chunk) -> Graph:
         # that the parent task can synchronise any remaining tasks not
         # synchronised inside the single-exec region
         if event.region_type == RegionType.single_executor:
-            # TODO: lift call to _Event api into Chunk
-            if event.is_enter_event:
+            if is_enter_event(event):
                 if encountering_task.has_active_task_group:
                     # Lazily add the single-exec event's cache to the active context
                     group_context = encountering_task.get_current_task_sync_group()
-                    # TODO: lift call to _Event api into Chunk
-                    group_context.synchronise_lazy(event.task_synchronisation_cache)
+                    group_context.synchronise_lazy(event_model.get_task_synchronisation_cache(event))
                 else:
                     # Record a reference to the cache to later add lazily to the next
                     # task-sync barrier this task encounters.
-                    # TODO: lift call to _Event api into Chunk
-                    encountering_task.append_to_barrier_iterables_cache(event.task_synchronisation_cache)
-            # TODO: lift call to _Event api into Chunk
-            elif event.is_leave_event and chunk.type == RegionType.single_executor:
+                    encountering_task.append_to_barrier_iterables_cache(event_model.get_task_synchronisation_cache(event))
+            elif is_leave_event(event) and chunk.type == RegionType.single_executor:
                 if graph.vcount() == vcount+1:
                     # No new vertices were added since the single-executor-begin event, so label the vertices with _sync_cluster_id to contract later
                     assert(prior_event.region_type == RegionType.single_executor)
-                    # TODO: lift call to _Event api into Chunk
-                    assert(prior_event.is_enter_event)
+                    assert(is_enter_event(prior_event))
                     v['_sync_cluster_id'] = (event.encountering_task_id, event.region_type, sequence_count)
                     prior_vertex['_sync_cluster_id'] = v['_sync_cluster_id']
 
         # Match master-enter/-leave events
         elif event.region_type == RegionType.master:
-            # TODO: lift call to _Event api into Chunk
-            if event.is_enter_event:
+            if is_enter_event(event):
                 master_enter_event = event
-            # TODO: lift call to _Event api into Chunk
-            elif event.is_leave_event:
+            elif is_leave_event(event):
                 if master_enter_event is None:
                     raise RuntimeError("master-enter event was None")
                 v['_master_enter_event'] = master_enter_event
                 master_enter_event = None
 
         # Label nodes in a parallel chunk by their position for easier merging
-        # TODO: lift call to _Event api into Chunk
-        if chunk.type == RegionType.parallel and (event.is_enter_event or event.is_leave_event) and event.region_type != RegionType.master:
+        if chunk.type == RegionType.parallel and (is_enter_event(event) or is_leave_event(event)) and event.region_type != RegionType.master:
             v["_parallel_sequence_id"] = (chunk.first.unique_id, sequence_count)
             sequence_count += 1
 
@@ -695,8 +727,8 @@ def omp_chunk_to_graph(chunk: Chunk) -> Graph:
 
         # Add edge except for (single/master begin -> end) and (parallel N begin -> parallel N end)
         # This avoids creating spurious edges between vertices representing nested chunks
-        events_bridge_single_master = chunk.events_bridge_single_master_region(prior_event, event)
-        events_bridge_parallel = chunk.events_bridge_parallel_region(prior_event, event)
+        events_bridge_single_master = event_model.events_bridge_single_master_region(prior_event, event)
+        events_bridge_parallel = event_model.events_bridge_parallel_region(prior_event, event)
         events_have_same_id = event.unique_id == prior_event.unique_id if events_bridge_parallel else False
         if not (events_bridge_single_master or (events_bridge_parallel and events_have_same_id)):
         # Should be equivalent and may be more explicit
@@ -709,8 +741,7 @@ def omp_chunk_to_graph(chunk: Chunk) -> Graph:
                 chunk.log.debug(line)
 
         # For task-create add dummy nodes for easier merging
-        # TODO: lift call to _Event api into Chunk
-        if event.is_task_create_event:
+        if event.event_type == EventType.task_create:
             v['_task_cluster_id'] = (event.unique_id, Endpoint.enter)
             dummy_vertex = graph.add_vertex(event=[event])
             dummy_vertex['_task_cluster_id'] = (event.unique_id, Endpoint.leave)
@@ -731,8 +762,7 @@ def omp_chunk_to_graph(chunk: Chunk) -> Graph:
                 # chunk to synchronise after the single region.
                 if chunk.type == RegionType.single_executor:
                     chunk.log.debug(f"registering new task in single-executor cache: parent={encountering_task.id}, child={created_task.id}")
-                    # TODO: lift call to _Event api into Chunk
-                    chunk.first.task_synchronisation_cache.append(created_task)
+                    event_model.get_task_synchronisation_cache(chunk.first).append(created_task)
 
                 # For all other chunk types, record the task created in the
                 # parent task's task-sync cache, to be added to the next task
@@ -777,3 +807,15 @@ def omp_chunk_to_graph(chunk: Chunk) -> Graph:
         edge = graph.add_edge(first_vertex, final_vertex)
 
     return graph
+
+
+def is_enter_event(event: Event) -> bool:
+    return event.event_type in (
+        EventType.thread_begin, EventType.parallel_begin, EventType.sync_begin, EventType.workshare_begin, EventType.phase_begin
+    )
+
+
+def is_leave_event(event: Event) -> bool:
+    return event.event_type in (
+        EventType.thread_end, EventType.parallel_end, EventType.sync_end, EventType.workshare_end, EventType.phase_end
+    )
