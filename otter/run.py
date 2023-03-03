@@ -102,8 +102,8 @@ def run() -> None:
         assert otter.core.events.is_event_list(dummy_vertex['event'])
         assert len(dummy_vertex['event']) == 1
         event = dummy_vertex['event'][0]
-        assert event.is_task_create_event
-        task_id = event.get_task_created()
+        assert event_model.is_task_create_event(event)
+        task_id = event_model.get_task_created(event)
         task_created = task_registry[task_id]
         setattr(task_created, '_dummy_vertex', dummy_vertex)
         log.debug(f" - notify task {task_id} of vertex {task_created._dummy_vertex}")
@@ -155,7 +155,7 @@ def run() -> None:
     log.info(f"combining vertices by single-begin/end event")
 
     # Label single-executor vertices which refer to the same event.
-    labeller = label_groups_if(otter.utils.is_single_executor, group_by=lambda vertex: vertex['event'][0])
+    labeller = label_groups_if(lambda vtx: event_model.all_single_exec_events(vtx['event']), group_by=lambda vtx: vtx['event'][0])
 
     g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=strategies)
     vcount_prev, vcount = vcount, g.vcount()
@@ -169,7 +169,7 @@ def run() -> None:
     # Label vertices which refer to the same master-begin/end event
     # SUSPECT THIS SHOULD BE "vertex['event'][0]"
     # NOT TESTED!
-    labeller = label_groups_if(otter.utils.is_master, group_by=lambda vertex: vertex['event'][0])
+    labeller = label_groups_if(lambda vtx: event_model.all_master_events(vtx['event']), group_by=lambda vtx: vtx['event'][0])
 
     # When combining events, there should be exactly 1 unique master-begin/end event
     strategies['event'] = combine_attribute_strategy(otter.utils.handlers.return_unique_master_event)
