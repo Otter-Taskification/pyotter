@@ -9,7 +9,7 @@ class PrettyCounter(Counter):
     def __repr__(self):
         return "\n".join([f"{self[k]:>6} {k}" for k in self]) + f"\nTotal count: {sum(self.values())}"
 
-
+# TODO: Prefer CamelCase style for classes
 class label_groups_if:
     # Label elements in a sequence. For elements where a condition is True,
     # determine the label from a grouping rule. Otherwise assign a unique label.

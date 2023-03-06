@@ -5,7 +5,7 @@ from typing import Dict, Any
 import igraph as ig
 from loggingdecorators import on_init
 from .. import log
-from ..definitions import Attr, AttrValue, NullTaskID
+from ..definitions import Attr, AttrValue, NullTaskID, TaskType
 
 get_module_logger = log.logger_getter("tasks")
 
@@ -272,6 +272,12 @@ class Task:
 
     def as_dict(self):
         return {key: getattr(self, key) for key in self.keys()}
+
+    def is_implicit(self) -> bool:
+        return self.task_type == TaskType.implicit
+
+    def is_explicit(self) -> bool:
+        return self.task_type == TaskType.explicit
 
 
 class _NullTask(Task):

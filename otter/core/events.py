@@ -3,7 +3,8 @@ from collections import deque
 from typing import List, Union, Dict
 from itertools import chain
 from loggingdecorators import on_init
-from ..utils import transpose_list_to_dict, warn_deprecated
+from ..utils import transpose_list_to_dict
+from ..utils.decorators import warn_deprecated
 from .. import log
 from .. import definitions as defn
 from ..reader import OTF2Reader

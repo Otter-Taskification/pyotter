@@ -11,7 +11,7 @@ from ..log import logger_getter, DEBUG
 from .. import definitions as defn
 from .tasks import TaskRegistry, TaskSynchronisationContext, NullTask
 from .events import is_event, Event
-from ..utils import warn_deprecated
+from ..utils.decorators import warn_deprecated
 
 get_module_logger = logger_getter("chunks")
 
@@ -129,7 +129,6 @@ class Chunk:
             if event.region_type in [defn.RegionType.implicit_task]:
                 continue
 
-            # TODO: lift call to _Event api into Chunk
             if event.is_task_switch_event and event is not self.last:
                 continue
 
@@ -143,14 +142,13 @@ class Chunk:
 
             # Match taskgroup-enter/-leave events
             if event.region_type == defn.RegionType.taskgroup:
-                # TODO: lift call to _Event api into Chunk
+
                 if event.is_enter_event:
                     taskgroup_enter_event = event
 
                     # Create a context for this taskgroup
                     encountering_task.enter_task_sync_group()
 
-                # TODO: lift call to _Event api into Chunk
                 elif event.is_leave_event:
                     if taskgroup_enter_event is None:
                         raise RuntimeError("taskgroup-enter event was None")
@@ -164,11 +162,11 @@ class Chunk:
 
             # Label corresponding barrier-enter/leave events so they can be contracted
             if event.region_type in [defn.RegionType.barrier_implicit, defn.RegionType.barrier_explicit]:
-                # TODO: lift call to _Event api into Chunk
+
                 if event.is_enter_event:
                     barrier_cluster_id = (event.encountering_task_id, event.region_type, barrier_cluster_label)
                     v['_sync_cluster_id'] = barrier_cluster_id
-                # TODO: lift call to _Event api into Chunk
+
                 elif event.is_leave_event:
                     if barrier_cluster_id is None:
                         raise RuntimeError("barrier-enter event was None")
@@ -179,7 +177,7 @@ class Chunk:
             # Label corresponding taskwait-enter/-leave events so they can be contracted later
             if event.region_type == defn.RegionType.taskwait:
                 self.log.debug(f"encountered taskwait barrier: endpoint={event.endpoint}, descendants={event.sync_descendant_tasks==defn.TaskSyncType.descendants}")
-                # TODO: lift call to _Event api into Chunk
+
                 if event.is_enter_event:
                     taskwait_cluster_id = (event.encountering_task_id, event.region_type, taskwait_cluster_label)
                     v['_sync_cluster_id'] = taskwait_cluster_id
@@ -192,11 +190,11 @@ class Chunk:
                     # first event's cache rather than in the parent task's cache.
                     if self.type == defn.RegionType.single_executor:
                         self.log.debug(f"registering tasks at taskwait barrier inside a single-executor chunk")
-                        # TODO: lift call to _Event api into Chunk
+
                         barrier_context.synchronise_from(self.first.task_synchronisation_cache)
 
                         # Forget about events which have been synchronised
-                        # TODO: lift call to _Event api into Chunk
+
                         self.first.clear_task_synchronisation_cache()
 
                     # Register tasks synchronised at a barrier
@@ -219,7 +217,6 @@ class Chunk:
                     v['_barrier_context'] = barrier_context
                     v['_task_sync_context'] = (defn.EdgeType.taskwait, barrier_context)
 
-                # TODO: lift call to _Event api into Chunk
                 elif event.is_leave_event:
                     if taskwait_cluster_id is None:
                         raise RuntimeError("taskwait-enter event was None")
@@ -231,34 +228,34 @@ class Chunk:
             # that the parent task can synchronise any remaining tasks not
             # synchronised inside the single-exec region
             if event.region_type == defn.RegionType.single_executor:
-                # TODO: lift call to _Event api into Chunk
+
                 if event.is_enter_event:
                     if encountering_task.has_active_task_group:
                         # Lazily add the single-exec event's cache to the active context
                         group_context = encountering_task.get_current_task_sync_group()
-                        # TODO: lift call to _Event api into Chunk
+
                         group_context.synchronise_lazy(event.task_synchronisation_cache)
                     else:
                         # Record a reference to the cache to later add lazily to the next
                         # task-sync barrier this task encounters.
-                        # TODO: lift call to _Event api into Chunk
+
                         encountering_task.append_to_barrier_iterables_cache(event.task_synchronisation_cache)
-                # TODO: lift call to _Event api into Chunk
+
                 elif event.is_leave_event and self.type == defn.RegionType.single_executor:
                     if g.vcount() == vcount+1:
                         # No new vertices were added since the single-executor-begin event, so label the vertices with _sync_cluster_id to contract later
                         assert(prior_event.region_type == defn.RegionType.single_executor)
-                        # TODO: lift call to _Event api into Chunk
+
                         assert(prior_event.is_enter_event)
                         v['_sync_cluster_id'] = (event.encountering_task_id, event.region_type, sequence_count)
                         prior_vertex['_sync_cluster_id'] = v['_sync_cluster_id']
 
             # Match master-enter/-leave events
             elif event.region_type == defn.RegionType.master:
-                # TODO: lift call to _Event api into Chunk
+
                 if event.is_enter_event:
                     master_enter_event = event
-                # TODO: lift call to _Event api into Chunk
+
                 elif event.is_leave_event:
                     if master_enter_event is None:
                         raise RuntimeError("master-enter event was None")
@@ -266,7 +263,7 @@ class Chunk:
                     master_enter_event = None
 
             # Label nodes in a parallel chunk by their position for easier merging
-            # TODO: lift call to _Event api into Chunk
+
             if self.type == defn.RegionType.parallel and (event.is_enter_event or event.is_leave_event) and event.region_type != defn.RegionType.master:
                 v["_parallel_sequence_id"] = (self.first.unique_id, sequence_count)
                 sequence_count += 1
@@ -296,7 +293,7 @@ class Chunk:
                     self.log.debug(line)
 
             # For task-create add dummy nodes for easier merging
-            # TODO: lift call to _Event api into Chunk
+
             if event.is_task_create_event:
                 v['_task_cluster_id'] = (event.unique_id, defn.Endpoint.enter)
                 dummy_vertex = g.add_vertex(event=[event])
@@ -318,7 +315,6 @@ class Chunk:
                     # chunk to synchronise after the single region.
                     if self.type == defn.RegionType.single_executor:
                         self.log.debug(f"registering new task in single-executor cache: parent={encountering_task.id}, child={created_task.id}")
-                        # TODO: lift call to _Event api into Chunk
                         self.first.task_synchronisation_cache.append(created_task)
 
                     # For all other chunk types, record the task created in the
