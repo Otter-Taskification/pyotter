@@ -3,7 +3,7 @@ from collections import defaultdict
 from typing import Iterable, Dict, Any, Deque, Callable, Tuple, Optional, List
 from warnings import warn
 from itertools import islice
-from igraph import Graph, disjoint_union
+from igraph import Graph, disjoint_union, Vertex
 from otter.definitions import Attr, EventModel, TaskStatus, EventType, RegionType, EdgeType, Endpoint, TaskType, TaskSyncType
 from otter.core.chunks import Chunk
 from otter.core.chunks import yield_chunks as otter_core_yield_chunks
@@ -411,6 +411,19 @@ class OMPEventModel(BaseEventModel):
     @classmethod
     def all_taskwait_events(cls, events: Iterable[Event]):
         return cls.check_events(events, all, lambda event: event.region_type == RegionType.taskwait)
+
+    @classmethod
+    def is_empty_task_region(cls, vertex: Vertex) -> bool:
+        # Return True if vertex is a task-enter (-leave) node with no outgoing (incoming) edges
+        if vertex['_task_cluster_id'] is None:
+            return False
+        if vertex['_is_task_enter_node'] or vertex['_is_task_leave_node']:
+            return ((vertex['_is_task_leave_node'] == True and vertex.indegree() == 0) or
+                    (vertex['_is_task_enter_node'] == True and vertex.outdegree() == 0))
+        # TODO: could this be refactored? Don't we already ensure that vertex['event'] is always a list?
+        if type(vertex['event']) is list and set(map(type, vertex['event'])) in [{EventType.task_switch}]:
+            return ((all(vertex['_is_task_leave_node']) and vertex.indegree() == 0) or
+                    (all(vertex['_is_task_enter_node']) and vertex.outdegree() == 0))
 
 
 @OMPEventModel.update_chunks_on(event_type=EventType.parallel_begin)

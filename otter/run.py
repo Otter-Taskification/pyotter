@@ -228,7 +228,7 @@ def run() -> None:
     log.info("combining vertices by task ID where there are no nested nodes")
 
     # Label vertices which represent empty tasks and have the same task ID
-    labeller = SequenceLabeller(otter.utils.vpred.is_empty_task_region, group_by=lambda v: v['_task_cluster_id'][0])
+    labeller = SequenceLabeller(event_model.is_empty_task_region, group_by=lambda v: v['_task_cluster_id'][0])
 
     # Combine _task_cluster_id tuples in a set (to remove duplicates)
     strategies['_task_cluster_id'] = combine_attribute_strategy(otter.utils.handlers.pass_the_set_of_values,
