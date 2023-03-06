@@ -2,7 +2,7 @@ from warnings import warn
 from typing import Callable
 from inspect import isgeneratorfunction, isfunction
 from functools import partial
-from .counters import label_groups_if
+from .counters import SequenceLabeller
 from .iterate import pairwise, flatten, transpose_list_to_dict
 # from .vertex_predicates import key_is_not_none, \
 #     is_region_type, \

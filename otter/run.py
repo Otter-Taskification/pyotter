@@ -7,7 +7,7 @@ import igraph as ig
 import otter
 from otter.core.event_model import get_event_model
 from otter.core.events import NewEvent, Location
-from otter.utils import label_groups_if, combine_attribute_strategy, strategy_lookup
+from otter.utils import SequenceLabeller, combine_attribute_strategy, strategy_lookup
 
 
 def run() -> None:
@@ -142,12 +142,12 @@ def run() -> None:
     log.info(f"combining vertices by parallel sequence ID")
 
     # Label vertices with the same _parallel_sequence_id
-    labeller = label_groups_if(otter.utils.vpred.key_is_not_none('_parallel_sequence_id'), group_by='_parallel_sequence_id')
+    labeller = SequenceLabeller(otter.utils.vpred.key_is_not_none('_parallel_sequence_id'), group_by='_parallel_sequence_id')
 
     # When combining the event vertex attribute, prioritise single-executor over single-other
     strategies['event'] = combine_attribute_strategy(otter.utils.handlers.return_unique_single_executor_event)
 
-    g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=strategies)
+    g.contract_vertices(labeller.label(g.vs), combine_attrs=strategies)
     vcount_prev, vcount = vcount, g.vcount()
     log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
@@ -158,9 +158,9 @@ def run() -> None:
     log.info(f"combining vertices by single-begin/end event")
 
     # Label single-executor vertices which refer to the same event.
-    labeller = label_groups_if(lambda vtx: event_model.all_single_exec_events(vtx['event']), group_by=lambda vtx: vtx['event'][0])
+    labeller = SequenceLabeller(lambda vtx: event_model.all_single_exec_events(vtx['event']), group_by=lambda vtx: vtx['event'][0])
 
-    g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=strategies)
+    g.contract_vertices(labeller.label(g.vs), combine_attrs=strategies)
     vcount_prev, vcount = vcount, g.vcount()
     log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
@@ -172,12 +172,12 @@ def run() -> None:
     # Label vertices which refer to the same master-begin/end event
     # SUSPECT THIS SHOULD BE "vertex['event'][0]"
     # NOT TESTED!
-    labeller = label_groups_if(lambda vtx: event_model.all_master_events(vtx['event']), group_by=lambda vtx: vtx['event'][0])
+    labeller = SequenceLabeller(lambda vtx: event_model.all_master_events(vtx['event']), group_by=lambda vtx: vtx['event'][0])
 
     # When combining events, there should be exactly 1 unique master-begin/end event
     strategies['event'] = combine_attribute_strategy(otter.utils.handlers.return_unique_master_event)
 
-    g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=strategies)
+    g.contract_vertices(labeller.label(g.vs), combine_attrs=strategies)
     vcount_prev, vcount = vcount, g.vcount()
     log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
@@ -212,12 +212,12 @@ def run() -> None:
     log.info("combining vertices by task ID & endpoint")
 
     # Label vertices which have the same _task_cluster_id
-    labeller = label_groups_if(otter.utils.vpred.key_is_not_none('_task_cluster_id'), group_by='_task_cluster_id')
+    labeller = SequenceLabeller(otter.utils.vpred.key_is_not_none('_task_cluster_id'), group_by='_task_cluster_id')
 
     # When combining events by _task_cluster_id, reject task-create events (in favour of task-switch events)
     strategies['event'] = combine_attribute_strategy(otter.utils.handlers.reject_task_create)
 
-    g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=strategies)
+    g.contract_vertices(labeller.label(g.vs), combine_attrs=strategies)
     vcount_prev, vcount = vcount, g.vcount()
     log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
@@ -228,14 +228,14 @@ def run() -> None:
     log.info("combining vertices by task ID where there are no nested nodes")
 
     # Label vertices which represent empty tasks and have the same task ID
-    labeller = label_groups_if(otter.utils.vpred.is_empty_task_region, group_by=lambda v: v['_task_cluster_id'][0])
+    labeller = SequenceLabeller(otter.utils.vpred.is_empty_task_region, group_by=lambda v: v['_task_cluster_id'][0])
 
     # Combine _task_cluster_id tuples in a set (to remove duplicates)
     strategies['_task_cluster_id'] = combine_attribute_strategy(otter.utils.handlers.pass_the_set_of_values,
                                                                 accept=tuple,
                                                                 msg="combining attribute: _task_cluster_id")
 
-    g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=strategies)
+    g.contract_vertices(labeller.label(g.vs), combine_attrs=strategies)
     vcount_prev, vcount = vcount, g.vcount()
     log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 
@@ -245,12 +245,12 @@ def run() -> None:
     log.info("combining redundant sync and loop enter/leave node pairs")
 
     # Label vertices with the same _sync_cluster_id
-    labeller = label_groups_if(otter.utils.vpred.key_is_not_none('_sync_cluster_id'), group_by='_sync_cluster_id')
+    labeller = SequenceLabeller(otter.utils.vpred.key_is_not_none('_sync_cluster_id'), group_by='_sync_cluster_id')
 
     # Silently return the list of combined arguments
     strategies['event'] = combine_attribute_strategy(otter.utils.handlers.pass_args)
 
-    g.contract_vertices(labeller.apply_to(g.vs), combine_attrs=strategies)
+    g.contract_vertices(labeller.label(g.vs), combine_attrs=strategies)
     vcount_prev, vcount = vcount, g.vcount()
     log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
 

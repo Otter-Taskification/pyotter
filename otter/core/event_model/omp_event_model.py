@@ -16,7 +16,7 @@ from otter.core.events import (
 from otter.core.tasks import NullTask, Task, TaskData, TaskRegistry, TaskSynchronisationContext
 from otter.log import logger_getter, DEBUG
 from otter.utils.typing import Decorator
-from otter.utils import label_groups_if, combine_attribute_strategy, strategy_lookup, handlers
+from otter.utils import SequenceLabeller, combine_attribute_strategy, strategy_lookup, handlers
 
 get_module_logger = logger_getter("omp_event_model")
 
