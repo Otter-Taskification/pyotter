@@ -9,7 +9,6 @@ from otter.core.chunks import yield_chunks as otter_core_yield_chunks
 from otter.core.events import Event
 from otter.core.tasks import TaskRegistry, NullTask
 from otter.log import logger_getter
-from otter.utils import call_with_warning
 
 get_module_logger = logger_getter("event_model")
 

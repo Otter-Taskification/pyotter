@@ -3,17 +3,20 @@ from collections import defaultdict
 from typing import Iterable, Dict, Any, Deque, Callable, Tuple, Optional, List
 from warnings import warn
 from itertools import islice
-from igraph import Graph
-from otter.definitions import Attr, EventModel, TaskStatus, EventType, RegionType, EdgeType, Endpoint, TaskSyncType
+from igraph import Graph, disjoint_union
+from otter.definitions import Attr, EventModel, TaskStatus, EventType, RegionType, EdgeType, Endpoint, TaskType, TaskSyncType
 from otter.core.chunks import Chunk
 from otter.core.chunks import yield_chunks as otter_core_yield_chunks
 from otter.core.events import (
+    is_event_list,
+    _Event,
     Event,
     ChunkSwitchEventMixin
 )
 from otter.core.tasks import NullTask, Task, TaskData, TaskRegistry, TaskSynchronisationContext
-from otter.log import logger_getter
+from otter.log import logger_getter, DEBUG
 from otter.utils.typing import Decorator
+from otter.utils import label_groups_if, combine_attribute_strategy, strategy_lookup, handlers
 
 get_module_logger = logger_getter("omp_event_model")
 
@@ -193,8 +196,8 @@ class OMPEventModel(BaseEventModel):
         # TODO: re-implement Chunk.graph here, make all calls to _Event api the responsibility of the event model
         return omp_chunk_to_graph(self, chunk)
 
-    def combine_graphs(self, graphs):
-        raise NotImplementedError()
+    def combine_graphs(self, graphs: Iterable[Graph]) -> Graph:
+        return combine_graphs(self, self.task_registry, graphs)
 
     def append_to_encountering_task_chunk(self, event: Event):
         self.chunk_dict[event.encountering_task_id].append_event(event)
@@ -235,10 +238,10 @@ class OMPEventModel(BaseEventModel):
             (RegionType.initial_task, EventType.task_leave)
         ]
 
-    @staticmethod
-    def event_updates_and_may_yield_chunk(event: Event) -> bool:
+    @classmethod
+    def event_updates_and_may_yield_chunk(cls, event: Event) -> bool:
         # task-switch completes a chunk only if the prior task was completed
-        return event.event_type == EventType.task_switch
+        return cls.is_task_switch_event(event)
 
     @staticmethod
     def event_updates_chunks_but_cant_yield_chunk(event: Event) -> bool:
@@ -278,8 +281,12 @@ class OMPEventModel(BaseEventModel):
         if cls.event_updates_and_yields_chunk(event):
             return True
         if cls.event_updates_and_may_yield_chunk(event):
-            assert event.event_type == EventType.task_switch
+            assert cls.is_task_switch_event(event)
             return event.prior_task_status == TaskStatus.complete
+
+    @classmethod
+    def is_event_type(cls, event: Event, event_type: EventType) -> bool:
+        return event.event_type == event_type
 
     @classmethod
     def is_task_register_event(cls, event: Event) -> bool:
@@ -288,7 +295,19 @@ class OMPEventModel(BaseEventModel):
 
     @classmethod
     def is_task_create_event(cls, event: Event) -> bool:
-        return event.event_type == EventType.task_create
+        return cls.is_event_type(event, EventType.task_create)
+
+    @classmethod
+    def is_task_enter_event(cls, event: Event) -> bool:
+        return cls.is_event_type(event, EventType.task_enter)
+
+    @classmethod
+    def is_task_leave_event(cls, event: Event) -> bool:
+        return cls.is_event_type(event, EventType.task_leave)
+
+    @classmethod
+    def is_task_switch_event(cls, event: Event) -> bool:
+        return cls.is_event_type(event, EventType.task_switch)
 
     @classmethod
     def get_task_created(cls, event: Event) -> int:
@@ -298,15 +317,15 @@ class OMPEventModel(BaseEventModel):
     @classmethod
     def is_update_task_start_ts_event(cls, event: Event) -> bool:
         return (
-            event.event_type == EventType.task_enter or
-            (event.event_type == EventType.task_switch and not cls.is_task_complete_event(event))
+            cls.is_task_enter_event(event) or
+            (cls.is_task_switch_event(event) and not cls.is_task_complete_event(event))
         )
 
     @classmethod
     def get_task_entered(cls, event: Event) -> int:
-        if event.event_type == EventType.task_enter:
+        if cls.is_task_enter_event(event):
             return event.unique_id
-        elif event.event_type == EventType.task_switch:
+        elif cls.is_task_switch_event(event):
             return event.next_task_id
         else:
             raise NotImplementedError(f"{event}")
@@ -319,7 +338,7 @@ class OMPEventModel(BaseEventModel):
     def get_tasks_switched(cls, event: Event) -> Tuple[int, int]:
         if event.event_type in (EventType.task_enter, EventType.task_leave):
             return event.encountering_task_id, event.unique_id
-        elif event.event_type == EventType.task_switch:
+        elif cls.is_task_switch_event(event):
             return event.encountering_task_id, event.next_task_id
         else:
             raise NotImplementedError(f"{event}")
@@ -327,16 +346,15 @@ class OMPEventModel(BaseEventModel):
     @classmethod
     def is_task_complete_event(cls, event: Event) -> bool:
         return (
-            event.event_type == EventType.task_leave or (
-                event.event_type == EventType.task_switch and
-                event.prior_task_status in (TaskStatus.complete, TaskStatus.cancel))
+            cls.is_task_leave_event(event) or
+            (cls.is_task_switch_event(event) and event.prior_task_status in (TaskStatus.complete, TaskStatus.cancel))
         )
 
     @classmethod
     def get_task_completed(cls, event: Event) -> None:
-        if event.event_type == EventType.task_leave:
+        if cls.is_task_leave_event(event):
             return event.unique_id
-        elif event.event_type == EventType.task_switch:
+        elif cls.is_task_switch_event(event):
             assert cls.is_task_complete_event(event)
             return event.encountering_task_id
 
@@ -380,7 +398,7 @@ class OMPEventModel(BaseEventModel):
 
     @staticmethod
     def check_events(events: Iterable[Event], reduce: Callable[[Iterable[bool]], bool], predicate: Callable[[Event], bool]) -> bool:
-        return reduce((predicate(event) for event in events))
+        return reduce(map(predicate, events))
 
     @classmethod
     def all_single_exec_events(cls, events: Iterable[Event]):
@@ -595,7 +613,7 @@ def omp_chunk_to_graph(event_model: OMPEventModel, chunk: Chunk) -> Graph:
         if event.region_type in [RegionType.implicit_task]:
             continue
 
-        if event.event_type == EventType.task_switch and event is not chunk.last:
+        if event_model.is_task_switch_event(event) and event is not chunk.last:
             continue
 
         # The vertex representing this event
@@ -741,7 +759,7 @@ def omp_chunk_to_graph(event_model: OMPEventModel, chunk: Chunk) -> Graph:
                 chunk.log.debug(line)
 
         # For task-create add dummy nodes for easier merging
-        if event.event_type == EventType.task_create:
+        if event_model.is_task_create_event(event):
             v['_task_cluster_id'] = (event.unique_id, Endpoint.enter)
             dummy_vertex = graph.add_vertex(event=[event])
             dummy_vertex['_task_cluster_id'] = (event.unique_id, Endpoint.leave)
@@ -819,3 +837,105 @@ def is_leave_event(event: Event) -> bool:
     return event.event_type in (
         EventType.thread_end, EventType.parallel_end, EventType.sync_end, EventType.workshare_end, EventType.phase_end
     )
+
+def combine_graphs(event_model: OMPEventModel, task_registry: TaskRegistry, graphs: Iterable[Graph]) -> Graph:
+    log = get_module_logger()
+    log.info("combining graphs")
+    graph = disjoint_union(graphs)
+    vcount = graph.vcount()
+    log.info(f"graph disjoint union has {vcount} vertices")
+
+    vertex_attribute_names = ['_parallel_sequence_id',
+                              '_task_cluster_id',
+                              '_is_task_enter_node',
+                              '_is_task_leave_node',
+                              '_is_dummy_task_vertex',
+                              '_region_type',
+                              '_master_enter_event',
+                              '_taskgroup_enter_event',
+                              '_sync_cluster_id',
+                              '_barrier_context',
+                              '_group_context',
+                              '_task_sync_context'
+                              ]
+
+    # Ensure some vertex attributes are defined
+    for name in vertex_attribute_names:
+        if name not in graph.vs.attribute_names():
+            graph.vs[name] = None
+
+    # Define some edge attributes
+    for name in [Attr.edge_type]:
+        if name not in graph.es.attribute_names():
+            graph.es[name] = None
+
+    # Make a table for mapping vertex attributes to handlers - used by ig.Graph.contract_vertices
+    strategies = strategy_lookup(graph.vs.attribute_names(), level=DEBUG)
+
+    # Supply the logic to use when combining each of these vertex attributes
+    attribute_handlers = [
+        ("_master_enter_event", handlers.return_unique_master_event, (type(None), _Event)),
+        ("_task_cluster_id", handlers.pass_the_unique_value, (type(None), tuple)),
+        ("_is_task_enter_node", handlers.pass_bool_value, (type(None), bool)),
+        ("_is_task_leave_node", handlers.pass_bool_value, (type(None), bool))
+    ]
+    for attribute, handler, accept in attribute_handlers:
+        strategies[attribute] = combine_attribute_strategy(handler, accept=accept,
+                                                           msg=f"combining attribute: {attribute}")
+
+    # Give each task a reference to the dummy task-create vertex that was inserted
+    # into the chunk where the task-create event happened
+    log.debug(f"notify each task of its dummy task-create vertex")
+    for dummy_vertex in filter(lambda v: v['_is_dummy_task_vertex'], graph.vs):
+        assert is_event_list(dummy_vertex['event'])
+        assert len(dummy_vertex['event']) == 1
+        event = dummy_vertex['event'][0]
+        assert event_model.is_task_create_event(event)
+        task_id = event_model.get_task_created(event)
+        task_created = task_registry[task_id]
+        setattr(task_created, '_dummy_vertex', dummy_vertex)
+        log.debug(f" - notify task {task_id} of vertex {task_created._dummy_vertex}")
+
+    # Get all the task sync contexts from the taskwait & taskgroup vertices and create edges for them
+    log.debug(f"getting task synchronisation contexts")
+    for task_sync_vertex in filter(lambda v: v['_task_sync_context'] is not None, graph.vs):
+        log.debug(f"task sync vertex: {task_sync_vertex}")
+        edge_type, context = task_sync_vertex['_task_sync_context']
+        assert context is not None
+        log.debug(f" ++ got context: {context}")
+        for synchronised_task in context:
+            log.debug(f"    got synchronised task {synchronised_task.id}")
+            edge = graph.add_edge(synchronised_task._dummy_vertex, task_sync_vertex)
+            edge[Attr.edge_type] = edge_type
+            if context.synchronise_descendants:
+                # Add edges for descendants of synchronised_task
+                for descendant_task_id in task_registry.descendants_while(synchronised_task.id, lambda task: not task.is_implicit()):
+                    descendant_task = task_registry[descendant_task_id]
+                    # This task is synchronised by the context
+                    edge = graph.add_edge(descendant_task._dummy_vertex, task_sync_vertex)
+                    edge[Attr.edge_type] = edge_type
+                    log.debug(f"    ++ got synchronised descendant task {descendant_task_id}")
+
+    log.info(f"combining vertices...")
+
+    # TODO: move remaining graph reduction logic here
+    # TODO: then make sure event-model-specific logic contained inside event_model module
+    """
+    Steps to implement here:
+    log.info(f"combining vertices by parallel sequence ID")
+    log.info(f"combining vertices by single-begin/end event")
+    log.info(f"combining vertices by master-begin/end event")
+    log.info(f"deleting redundant edges due to master regions: {len(redundant_edges)}")
+    log.info("combining vertices by task ID & endpoint")
+    log.info("combining vertices by task ID where there are no nested nodes")
+    log.info("combining redundant sync and loop enter/leave node pairs")
+    graph.simplify(combine_edges='first')
+    
+    # The graph is then combined. Remaining steps:
+    # Unpack vertex event attributes
+    # Dump graph details to file
+    # Clean up temporary vertex attributes
+    # Write report
+    """
+
+    return graph

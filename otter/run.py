@@ -50,40 +50,43 @@ def run() -> None:
         log.info(f"dumping chunks, tasks and graphs to log files")
         otter.utils.dump_to_log_file(chunks, graphs, task_registry)
 
-    # Collect all chunks
-    log.info("combining chunks")
-    g = ig.disjoint_union(graphs)
+    g = event_model.combine_graphs(graphs)
     vcount = g.vcount()
-    log.info(f"graph disjoint union has {vcount} vertices")
 
-    vertex_attribute_names = ['_parallel_sequence_id',
-                              '_task_cluster_id',
-                              '_is_task_enter_node',
-                              '_is_task_leave_node',
-                              '_is_dummy_task_vertex',
-                              '_region_type',
-                              '_master_enter_event',
-                              '_taskgroup_enter_event',
-                              '_sync_cluster_id',
-                              '_barrier_context',
-                              '_group_context',
-                              '_task_sync_context'
-                              ]
-
-    # Ensure some vertex attributes are defined
-    for name in vertex_attribute_names:
-        if name not in g.vs.attribute_names():
-            g.vs[name] = None
-
-    # Define some edge attributes
-    for name in [otter.definitions.Attr.edge_type]:
-        if name not in g.es.attribute_names():
-            g.es[name] = None
-
-    # Make a table for mapping vertex attributes to handlers - used by ig.Graph.contract_vertices
+    # # Collect all chunks
+    # log.info("combining chunks")
+    # g = ig.disjoint_union(graphs)
+    # vcount = g.vcount()
+    # log.info(f"graph disjoint union has {vcount} vertices")
+    #
+    # vertex_attribute_names = ['_parallel_sequence_id',
+    #                           '_task_cluster_id',
+    #                           '_is_task_enter_node',
+    #                           '_is_task_leave_node',
+    #                           '_is_dummy_task_vertex',
+    #                           '_region_type',
+    #                           '_master_enter_event',
+    #                           '_taskgroup_enter_event',
+    #                           '_sync_cluster_id',
+    #                           '_barrier_context',
+    #                           '_group_context',
+    #                           '_task_sync_context'
+    #                           ]
+    #
+    # # Ensure some vertex attributes are defined
+    # for name in vertex_attribute_names:
+    #     if name not in g.vs.attribute_names():
+    #         g.vs[name] = None
+    #
+    # # Define some edge attributes
+    # for name in [otter.definitions.Attr.edge_type]:
+    #     if name not in g.es.attribute_names():
+    #         g.es[name] = None
+    #
+    # # Make a table for mapping vertex attributes to handlers - used by ig.Graph.contract_vertices
     strategies = strategy_lookup(g.vs.attribute_names(), level=otter.log.DEBUG)
-
-    # Supply the logic to use when combining each of these vertex attributes
+    #
+    # # Supply the logic to use when combining each of these vertex attributes
     attribute_handlers = [
         (
         "_master_enter_event", otter.utils.handlers.return_unique_master_event, (type(None), otter.core.events._Event)),
@@ -94,42 +97,42 @@ def run() -> None:
     for attribute, handler, accept in attribute_handlers:
         strategies[attribute] = combine_attribute_strategy(handler, accept=accept,
                                                            msg=f"combining attribute: {attribute}")
-
-    # Give each task a reference to the dummy task-create vertex that was inserted
-    # into the chunk where the task-create event happened
-    log.debug(f"notify each task of its dummy task-create vertex")
-    for dummy_vertex in filter(lambda v: v['_is_dummy_task_vertex'], g.vs):
-        assert otter.core.events.is_event_list(dummy_vertex['event'])
-        assert len(dummy_vertex['event']) == 1
-        event = dummy_vertex['event'][0]
-        assert event_model.is_task_create_event(event)
-        task_id = event_model.get_task_created(event)
-        task_created = task_registry[task_id]
-        setattr(task_created, '_dummy_vertex', dummy_vertex)
-        log.debug(f" - notify task {task_id} of vertex {task_created._dummy_vertex}")
-
-    # Get all the task sync contexts from the taskwait & taskgroup vertices and create edges for them
-    log.debug(f"getting task synchronisation contexts")
-    stop_at_implicit_task = lambda t: t.task_type != otter.definitions.TaskType.implicit
-    for task_sync_vertex in filter(lambda v: v['_task_sync_context'] is not None, g.vs):
-        log.debug(f"task sync vertex: {task_sync_vertex}")
-        edge_type, context = task_sync_vertex['_task_sync_context']
-        assert context is not None
-        log.debug(f" ++ got context: {context}")
-        for synchronised_task in context:
-            log.debug(f"    got synchronised task {synchronised_task.id}")
-            edge = g.add_edge(synchronised_task._dummy_vertex, task_sync_vertex)
-            edge[otter.definitions.Attr.edge_type] = edge_type
-            if context.synchronise_descendants:
-                # Add edges for descendants of synchronised_task
-                for descendant_task_id in task_registry.descendants_while(synchronised_task.id, stop_at_implicit_task):
-                    descendant_task = task_registry[descendant_task_id]
-                    # This task is synchronised by the context
-                    edge = g.add_edge(descendant_task._dummy_vertex, task_sync_vertex)
-                    edge[otter.definitions.Attr.edge_type] = edge_type
-                    log.debug(f"    ++ got synchronised descendant task {descendant_task_id}")
-
-    log.info(f"combining vertices...")
+    #
+    # # Give each task a reference to the dummy task-create vertex that was inserted
+    # # into the chunk where the task-create event happened
+    # log.debug(f"notify each task of its dummy task-create vertex")
+    # for dummy_vertex in filter(lambda v: v['_is_dummy_task_vertex'], g.vs):
+    #     assert otter.core.events.is_event_list(dummy_vertex['event'])
+    #     assert len(dummy_vertex['event']) == 1
+    #     event = dummy_vertex['event'][0]
+    #     assert event_model.is_task_create_event(event)
+    #     task_id = event_model.get_task_created(event)
+    #     task_created = task_registry[task_id]
+    #     setattr(task_created, '_dummy_vertex', dummy_vertex)
+    #     log.debug(f" - notify task {task_id} of vertex {task_created._dummy_vertex}")
+    #
+    # # Get all the task sync contexts from the taskwait & taskgroup vertices and create edges for them
+    # log.debug(f"getting task synchronisation contexts")
+    # stop_at_implicit_task = lambda t: t.task_type != otter.definitions.TaskType.implicit
+    # for task_sync_vertex in filter(lambda v: v['_task_sync_context'] is not None, g.vs):
+    #     log.debug(f"task sync vertex: {task_sync_vertex}")
+    #     edge_type, context = task_sync_vertex['_task_sync_context']
+    #     assert context is not None
+    #     log.debug(f" ++ got context: {context}")
+    #     for synchronised_task in context:
+    #         log.debug(f"    got synchronised task {synchronised_task.id}")
+    #         edge = g.add_edge(synchronised_task._dummy_vertex, task_sync_vertex)
+    #         edge[otter.definitions.Attr.edge_type] = edge_type
+    #         if context.synchronise_descendants:
+    #             # Add edges for descendants of synchronised_task
+    #             for descendant_task_id in task_registry.descendants_while(synchronised_task.id, stop_at_implicit_task):
+    #                 descendant_task = task_registry[descendant_task_id]
+    #                 # This task is synchronised by the context
+    #                 edge = g.add_edge(descendant_task._dummy_vertex, task_sync_vertex)
+    #                 edge[otter.definitions.Attr.edge_type] = edge_type
+    #                 log.debug(f"    ++ got synchronised descendant task {descendant_task_id}")
+    #
+    # log.info(f"combining vertices...")
 
     """
     Contract vertices according to _parallel_sequence_id to combine the chunks generated by the threads of a parallel block.
@@ -139,7 +142,7 @@ def run() -> None:
     log.info(f"combining vertices by parallel sequence ID")
 
     # Label vertices with the same _parallel_sequence_id
-    labeller = label_groups_if(otter.utils.key_is_not_none('_parallel_sequence_id'), group_by='_parallel_sequence_id')
+    labeller = label_groups_if(otter.utils.vpred.key_is_not_none('_parallel_sequence_id'), group_by='_parallel_sequence_id')
 
     # When combining the event vertex attribute, prioritise single-executor over single-other
     strategies['event'] = combine_attribute_strategy(otter.utils.handlers.return_unique_single_executor_event)
@@ -209,7 +212,7 @@ def run() -> None:
     log.info("combining vertices by task ID & endpoint")
 
     # Label vertices which have the same _task_cluster_id
-    labeller = label_groups_if(otter.utils.key_is_not_none('_task_cluster_id'), group_by='_task_cluster_id')
+    labeller = label_groups_if(otter.utils.vpred.key_is_not_none('_task_cluster_id'), group_by='_task_cluster_id')
 
     # When combining events by _task_cluster_id, reject task-create events (in favour of task-switch events)
     strategies['event'] = combine_attribute_strategy(otter.utils.handlers.reject_task_create)
@@ -225,7 +228,7 @@ def run() -> None:
     log.info("combining vertices by task ID where there are no nested nodes")
 
     # Label vertices which represent empty tasks and have the same task ID
-    labeller = label_groups_if(otter.utils.is_empty_task_region, group_by=lambda v: v['_task_cluster_id'][0])
+    labeller = label_groups_if(otter.utils.vpred.is_empty_task_region, group_by=lambda v: v['_task_cluster_id'][0])
 
     # Combine _task_cluster_id tuples in a set (to remove duplicates)
     strategies['_task_cluster_id'] = combine_attribute_strategy(otter.utils.handlers.pass_the_set_of_values,
@@ -242,7 +245,7 @@ def run() -> None:
     log.info("combining redundant sync and loop enter/leave node pairs")
 
     # Label vertices with the same _sync_cluster_id
-    labeller = label_groups_if(otter.utils.key_is_not_none('_sync_cluster_id'), group_by='_sync_cluster_id')
+    labeller = label_groups_if(otter.utils.vpred.key_is_not_none('_sync_cluster_id'), group_by='_sync_cluster_id')
 
     # Silently return the list of combined arguments
     strategies['event'] = combine_attribute_strategy(otter.utils.handlers.pass_args)
