@@ -12,6 +12,7 @@ from loggingdecorators import on_init, on_call
 get_module_logger = log.logger_getter("vertex.attr")
 
 
+# TODO: prefer CamelCase for classes, find better name
 class strategy_lookup(dict):
     """Map attribute names onto strategies for combining values of that attribute
     """
@@ -28,6 +29,7 @@ class strategy_lookup(dict):
         return super().__setitem__(event, handler)
 
 
+# TODO: prefer CamelCase for classes, find better name
 class combine_attribute_strategy:
     """Apply a strategy for combining a set of values of some attribute
     """
