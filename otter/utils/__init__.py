@@ -15,7 +15,7 @@ from .iterate import pairwise, flatten, transpose_list_to_dict
 from . import vertex_predicates as vpred
 # from .edge_predicates import edge_connects_same_type
 from . import edge_predicates as epred
-from .vertex_attr_handlers import combine_attribute_strategy, strategy_lookup
+from .vertex_attr_handlers import LoggingValidatingReduction, ReductionDict
 from . import vertex_attr_handlers as handlers
 from ..log import get_logger
 from .args import get_args

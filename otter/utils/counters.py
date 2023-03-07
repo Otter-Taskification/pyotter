@@ -15,6 +15,7 @@ class SequenceLabeller:
     argument to determine a common label to use. Where it is False assign a unique label.
     """
 
+    # TODO: maybe the name "group_label" is more informative than "group_by"
     def __init__(self, predicate: Callable, group_by: Union[Callable, str] = "event"):
         if isinstance(group_by, str):
             self._group_by = lambda item: item[group_by]

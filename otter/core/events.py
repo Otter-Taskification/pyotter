@@ -676,6 +676,7 @@ class NewEvent:
     def _base_repr(self):
         return f"{type(self).__name__}(time={self.time}, loc={self._location.name})"
 
+    # TODO: could it be more efficient to setattr for all the event attributes in __init__? Need to test
     def __getattr__(self, attr: Attr):
         if attr == defn.Attr.time:
             return self._event.time

@@ -1,7 +1,12 @@
 # TODO: re-implement any handlers with event model logic inside an event model
 
-from collections.abc import Iterable
-from typing import Type, List, Union
+# TODO: ideas which need to be factored out of this module:
+#  reduction operations for Iterable[V] -> V
+#  wrapping reductions with log messages
+#  validating reduction arguments
+#  ==> these 3 operations should be separately composable for flexibility
+
+from typing import Type, List, Iterable, Union, Protocol, TypeVar, Optional, Any
 from .. import log
 from ..log import DEBUG
 from ..definitions import RegionType
@@ -11,31 +16,43 @@ from loggingdecorators import on_init, on_call
 
 get_module_logger = log.logger_getter("vertex.attr")
 
+V = TypeVar("V")
+
+class Reduction(Protocol[V]):
+    """
+    A callable which reduces an Iterable of Optional[V] to an Optional[V]
+    """
+    def __call__(self, collection: Iterable[Optional[V]]) -> Optional[V]: ...
 
 # TODO: prefer CamelCase for classes, find better name
-class strategy_lookup(dict):
-    """Map attribute names onto strategies for combining values of that attribute
+class ReductionDict(dict):
+    """
+    Maps strings to reduction operations
     """
 
     @on_init(logger=log.logger_getter("init_logger"))
-    def __init__(self, names, default_handler=None, logger=None, level=DEBUG):
+    def __init__(self, keys: Iterable[str], default_reduction: Reduction=None, logger=None, level=DEBUG):
         self.log = logger or log.get_logger(self.__class__.__name__)
         self.level = level
-        handler = default_handler or pass_first_arg
-        super().__init__({name: handler for name in names})
+        reduction: Reduction = default_reduction or pass_first_arg
+        super().__init__({key: reduction for key in keys})
 
-    def __setitem__(self, event, handler):
-        self.log.log(self.level, f"set handler '{handler}' for vertex attribute '{event}'", stacklevel=2)
-        return super().__setitem__(event, handler)
+    def __setitem__(self, key: str, value: Reduction):
+        self.log.log(self.level, f"set reduction '{value}' for string '{key}'", stacklevel=2)
+        return super().__setitem__(key, value)
 
 
 # TODO: prefer CamelCase for classes, find better name
-class combine_attribute_strategy:
-    """Apply a strategy for combining a set of values of some attribute
+# TODO: this class does too many things - decorates the handler to call, validates reduction arguments, applies handler
+class LoggingValidatingReduction:
+    """
+    Apply a strategy for combining a set of values of some attribute
+    Apply a given reduction operation to an iterable of values. Decorates the given reduction to log each time it is called.
+    Validates the arguments to the reduction before applying the reduction.
     """
 
     @on_init(logger=log.logger_getter("init_logger"))
-    def __init__(self, handler=None, accept: Union[Type, List[Type]]=None, msg="combining events"):
+    def __init__(self, reduction: Reduction=None, accept: Union[Type, List[Type]]=None, msg="combining events"):
         """
         Wraps a handler function to allow checking and logging of the arguments passed to it.
         Log invocations of the handler with an on_call decorator.
@@ -43,13 +60,19 @@ class combine_attribute_strategy:
         handler: a function which accepts one arg (a list of the values to be combined)
         accept: a type, or list of types, which each arg must conform to for the given handler to be applied
         """
-        self.handler = handler if handler else (lambda arg: arg)
+
+        # TODO: if reduction is None, this doesn't actually perform a reduction - is that intentional?
+        self.reduction = reduction if reduction else (lambda arg: arg)
+
+        # TODO: remove reference to _Event once NewEvent fully adopted
         self.accept = accept or [list, events._Event, events.NewEvent]
         self.log = log.get_logger(self.__class__.__name__)
-        call_decorator = on_call(self.log, msg=msg)
-        self.handler = call_decorator(self.handler)
 
-    def __call__(self, args):
+        # TODO: don't bake decorated reduction in, lift out and allow to be injected
+        call_decorator = on_call(self.log, msg=msg)
+        self.reduction = call_decorator(self.reduction)
+
+    def __call__(self, args: List[Optional[V]]) -> Optional[V]:
 
         """
         Called by igraph.Graph.contract_vertices when combining a vertex attribute
@@ -63,6 +86,8 @@ class combine_attribute_strategy:
 
         # Prevent any nesting of lists when args is a List[List[events._Event]]
         args = list(flatten(args))
+
+        # TODO: this assertion should really be a unit test of flatten when called with nested lists
         assert isinstance(args, list) and all(not isinstance(item, list) for item in args) # flat list
 
         if all(arg is None for arg in args):
@@ -75,6 +100,7 @@ class combine_attribute_strategy:
         if len(args) == 1:
             item = args[0]
             self.log.debug(f"list contains 1 item: {item}", stacklevel=4)
+            # TODO: remove _Event api call and encapsulate requirement for events to always be inside a list
             return [item] if events.is_event(item) else item
 
         # Each arg must be of the given type (or one of the given list of types) for this handler
@@ -84,33 +110,44 @@ class combine_attribute_strategy:
             raise TypeError(f"expected {self.accept}, got {set(map(type, args))}")
 
         # args is list with > 1 element, none of which is None
-        return self.handler(args)
+        return self.reduction(args)
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({self.handler.__module__}.{self.handler.__name__})"
+        return f"{self.__class__.__name__}({self.reduction.__module__}.{self.reduction.__name__})"
 
 
 ### Strategies for reducing lists of attribute values to one value
 
-def are(reduce, args, T):
-    return reduce(isinstance(x, T) for x in args)
+# TODO: this function is poorly named. Maybe instances_of?
+# TODO: consider removing as only used once
+def are(reduce: Reduction[bool], args: List[Any], cls) -> bool:
+    return reduce(isinstance(x, cls) for x in args)
 
 
-def drop_args(args):
+def drop_args(args: Iterable[Any]) -> None:
     return None
 
 
-def pass_args(args):
+def pass_args(args: List[Optional[V]]) -> List[Optional[V]]:
     return args
 
 
-def pass_first_arg(args):
+def pass_first_arg(args: List[Optional[V]]) -> Optional[V]:
     return args[0]
 
 
-def pass_bool_value(values):
+# TODO: perhaps this handler is too specific to need defining here - consider defining in-line in application code.
+# TODO: as it's only used in 1 place
+def pass_bool_value(values: List[Optional[bool]]) -> None:
+    """
+    Given a list containing Optional[bool], where all boolean values are the same, return the single boolean value.
+    """
+    # TODO: An `assert` would be more explicit than this `if` since we raise if the check fails anyway.
+    # assert set(values) in [{True, None}, {False, None}]
+    # assert set(map(type, values)) == {bool, type(None)}
     if set(map(type, values)) == {bool, type(None)}:
         A, B = set(values)
+        # return the non-None boolean
         return A if B is None else B
     raise NotImplementedError(f"not implemented for {values=}")
 
@@ -177,6 +214,7 @@ def return_unique_master_event(args):
 
 def return_unique_taskswitch_complete_event(args):
     assert events.is_event_list(args)
+    # TODO: remove _Event api call
     assert all(event.is_task_switch_event for event in args)
     event_set = set(event for event in args if event.is_task_switch_complete_event)
     assert len(event_set) == 1
@@ -184,6 +222,7 @@ def return_unique_taskswitch_complete_event(args):
 
 def return_unique_taskgroup_complete_event(args):
     assert events.is_event_list(args)
+    # TODO: remove _Event api call
     assert all(event.is_task_group_end_event for event in args)
     event_set = set(args)
     assert len(event_set) == 1
@@ -191,6 +230,7 @@ def return_unique_taskgroup_complete_event(args):
 
 def reject_task_create(args):
     logger = get_module_logger()
+    # TODO: remove _Event api call
     events_filtered = [event for event in args if not event.is_task_create_event]
     if len(events_filtered) == 0:
         raise NotImplementedError("No events remain after filtering")

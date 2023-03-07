@@ -13,7 +13,7 @@ from otter.log import logger_getter
 get_module_logger = logger_getter("event_model")
 
 
-# Not too sure where to put this yet - inside EventModelProtocol? in a BaseEventModel as a helper class? In another
+# TODO: Not too sure where to put this yet - inside EventModelProtocol? in a BaseEventModel as a helper class? In another
 # module as an implementation detail?
 def get_completed_chunk() -> Chunk:
     # Will replace otter.events._Event.update_chunks and subclass logic
