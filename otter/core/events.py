@@ -650,7 +650,8 @@ class PhaseEnd(LeaveMixin, DefaultUpdateChunksMixin, _Event):
     def vertex_label(self):
         return self.phase_name
 
-
+@warn_deprecated
+# TODO: should be the responsibility of an event_model to know how to unpack an event's attributes
 def unpack(event: List[_Event]) -> dict:
     assert is_event_list(event)
     if is_event(event):
@@ -663,6 +664,12 @@ def unpack(event: List[_Event]) -> dict:
 
 class NewEvent:
     """A basic wrapper for OTF2 events"""
+
+    _additional_attributes = [
+        "vertex_label",
+        "vertex_color_key",
+        "vertex_shape_key"
+    ]
 
     def __init__(self, otf2_event: OTF2Event, location: Location, attribute_lookup: Dict[str, OTF2Attribute]) -> None:
         self._event = otf2_event
@@ -695,6 +702,29 @@ class NewEvent:
             return getattr(self, item)
         except AttributeError:
             return default
+
+    def yield_attributes(self):
+        yield "time", self.time
+        names = [attr_name for attr_name in self._attribute_lookup if attr_name in self]
+        for name in chain(names, self._additional_attributes):
+            try:
+                yield name, getattr(self, name)
+            except AttributeError:
+                get_module_logger().debug(f"{self.yield_attributes}: attribute was not found: {name=}, {self.event_type=}, {self.region_type=})")
+                yield name, f"{self.__class__.__name__}.{name}=UNDEFINED"
+
+    @property
+    def vertex_label(self):
+        return self.unique_id
+
+    @property
+    def vertex_color_key(self):
+        return self.region_type
+
+    @property
+    def vertex_shape_key(self):
+        return self.vertex_color_key
+
 
 # Type-hinting alias for internal _Event class
 Event = Union[_Event, NewEvent]
