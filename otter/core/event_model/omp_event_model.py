@@ -90,71 +90,48 @@ class OMPEventModel(BaseEventModel):
             handler = cls.chunk_update_handlers.get(key)
         return handler
 
-    def yield_chunks(self, events: Iterable[Event], use_core: bool = False, use_event_api: bool = False, update_chunks_via_event: bool = False) -> Iterable[Chunk]:
-
-        # Use otter.core.chunks.yield_chunk by default until logic lifted out of that module and into event_model
-        if use_core:
-            yield from otter_core_yield_chunks(events, self.task_registry)
-            return
+    def yield_chunks(self, events: Iterable[Event]) -> Iterable[Chunk]:
 
         log = self.log
         task_registry = self.task_registry
         log.debug(f"receiving events from {events}")
 
         for k, event in enumerate(events):
-            # [DONE]: remove event api call
             log.debug(f"got event {k} with vertex label {event.get('vertex_label')}: {event}")
 
-            if self.is_chunk_switch_event(event, use_event_api=use_event_api):
+            # TODO: should be able to simplify this nested if-else, since EventType.thread_begin, EventType.thread_end
+            # TODO: presumably shouldn't be classes as chunk-switch events (they don't update the chunks at all)
+            if self.is_chunk_switch_event(event):
                 log.debug(f"updating chunks")
-                # event.update_chunks will emit the completed chunk if this event represents
-                # the end of a chunk
-                # NOTE: the event.update_chunks logic should probably be factored out of the event class
-                # NOTE: and into a separate high-level module to reduce coupling. Should events "know"
-                # NOTE: about chunks?
-                # NOTE: maybe want separate update_chunk() and update_and_yield_chunk() methods?
-                if update_chunks_via_event:
-                    # NOTE: leave this event api call, it represents the case of using the _Event class hierarchy
-                    yield from filter(None, event.update_chunks(self.chunk_dict, self.chunk_stack))
-                else:
-                    if self.event_updates_chunks(event):
-                        handler = self.get_update_chunk_handler(event)
-                        if self.event_yields_chunk(event):
-                            # update and yield a completed chunk
-                            # require that update_chunks yields non-None value in this case
-                            if not handler:
-                                # expect this branch should be unreachable as we have implemented callbacks for all
-                                # events which can yield chunks
-                                # yield from event.update_chunks(self.chunk_dict, self.chunk_stack)
-                                raise NotImplementedError(f"no chunk-yielding handler for {event}")
-                            self.log.info(f"applying handler {handler=}")
-                            completed_chunk = handler(event, self.chunk_dict, self.chunk_stack, self.task_registry)
-                            assert completed_chunk is not None
-                            yield completed_chunk
-                        else:
-                            # event must update chunks without producing a completed chunk
-                            assert (
-                                self.event_updates_chunks_but_cant_yield_chunk(event)
-                            or (self.event_updates_and_may_yield_chunk(event) and not self.event_yields_chunk(event)
-                            ))
-                            # If no handler found, we haven't re-implemented the update_chunks logic for this event
-                            # so fall back to event.update chunks and warn that we don't have a handler
-                            if not handler:
-                                # will eventually remove this branch and assert that all events return None
-                                # from their corresponding handler
-                                raise NotImplementedError(f"no chunk-updating handler for {event}")
-                            self.log.info(f"applying handler {handler=}")
-                            result = handler(event, self.chunk_dict, self.chunk_stack, self.task_registry)
-                            assert result is None
-                    elif self.event_applies_default_chunk_update(event):
-                        # apply the default logic for updating the chunk which owns this event
-                        self.append_to_encountering_task_chunk(event)
+                if self.event_updates_chunks(event):
+                    handler = self.get_update_chunk_handler(event)
+                    if self.event_yields_chunk(event):
+                        # update and yield a completed chunk
+                        # require that update_chunks yields non-None value in this case
+                        if not handler:
+                            # expect this branch should be unreachable as we have implemented callbacks for all
+                            # events which can yield chunks
+                            # yield from event.update_chunks(self.chunk_dict, self.chunk_stack)
+                            raise NotImplementedError(f"no chunk-yielding handler for {event}")
+                        self.log.info(f"applying handler {handler=}")
+                        completed_chunk = handler(event, self.chunk_dict, self.chunk_stack, self.task_registry)
+                        assert completed_chunk is not None
+                        yield completed_chunk
                     else:
-                        # this event doesn't update the chunks at all e.g. ThreadBegin, ThreadEnd
-                        pass
+                        # event must update chunks without producing a completed chunk
+                        assert (
+                            self.event_updates_chunks_but_cant_yield_chunk(event)
+                        or (self.event_updates_and_may_yield_chunk(event) and not self.event_yields_chunk(event)
+                        ))
+                        self.log.info(f"applying handler {handler=}")
+                        result = handler(event, self.chunk_dict, self.chunk_stack, self.task_registry)
+                        assert result is None
+                elif self.event_applies_default_chunk_update(event):
+                    self.append_to_encountering_task_chunk(event)
+                else:
+                    # this event doesn't update the chunks at all e.g. ThreadBegin, ThreadEnd
+                    pass
             else:
-                # NOTE: This does EXACTLY the same thing as DefaultUpdateChunksMixin.update_chunks
-                # self.chunk_dict[event.encountering_task_id].append_event(event)
                 self.append_to_encountering_task_chunk(event)
 
             # NOTE: might want to absorb all the task-updating logic below into the task registry, but guided by an
@@ -208,10 +185,7 @@ class OMPEventModel(BaseEventModel):
         self.chunk_dict[event.encountering_task_id].append_event(event)
 
     @classmethod
-    def is_chunk_switch_event(cls, event: Event, use_event_api: bool=True) -> bool:
-        if use_event_api:
-            # events which inherit the ChunkSwitchEvent mixin return True here
-            return event.is_chunk_switch_event
+    def is_chunk_switch_event(cls, event: Event) -> bool:
 
         # these events inherit the ChunkSwitchEvent mixin and *always* yield a completed chunk
         if cls.event_updates_and_yields_chunk(event):
@@ -356,7 +330,7 @@ class OMPEventModel(BaseEventModel):
         )
 
     @classmethod
-    def get_task_completed(cls, event: Event) -> None:
+    def get_task_completed(cls, event: Event) -> int:
         if cls.is_task_leave_event(event):
             return event.unique_id
         elif cls.is_task_switch_event(event):

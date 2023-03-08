@@ -5,7 +5,6 @@ from loggingdecorators import on_init
 from igraph import Graph
 from otter.definitions import EventModel
 from otter.core.chunks import Chunk
-from otter.core.chunks import yield_chunks as otter_core_yield_chunks
 from otter.core.events import Event
 from otter.core.tasks import TaskRegistry, NullTask
 from otter.log import logger_getter
