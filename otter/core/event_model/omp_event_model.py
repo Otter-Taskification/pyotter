@@ -430,6 +430,15 @@ class OMPEventModel(BaseEventModel):
             return ((all(vertex['_is_task_leave_node']) and vertex.indegree() == 0) or
                     (all(vertex['_is_task_enter_node']) and vertex.outdegree() == 0))
 
+    def reject_task_create(self, events: List[Event]) -> List[Event]:
+        events_filtered = [event for event in events if not self.is_task_create_event(event)]
+        if len(events_filtered) == 0:
+            raise NotImplementedError("No events remain after filtering")
+        n_args = len(events)
+        n_accept = len(events_filtered)
+        self.log.debug(f"return {n_accept}/{n_args}: {events_filtered}")
+        return events_filtered
+
 
 @OMPEventModel.update_chunks_on(event_type=EventType.parallel_begin)
 def update_chunks_parallel_begin(event: Event, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict, task_registry: TaskRegistry) -> None:
@@ -964,7 +973,7 @@ def reduce_by_task_cluster_id(event_model: OMPEventModel, reductions: ReductionD
     labeller = SequenceLabeller(key_is_not_none('_task_cluster_id'), group_by='_task_cluster_id')
 
     # When combining events by _task_cluster_id, reject task-create events (in favour of task-switch events)
-    reductions['event'] = LoggingValidatingReduction(handlers.reject_task_create)
+    reductions['event'] = LoggingValidatingReduction(event_model.reject_task_create)
 
     vcount = graph.vcount()
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
