@@ -54,6 +54,7 @@ def run() -> None:
     for vertex in g.vs:
         event = vertex['event']
         log.debug(f"unpacking vertex {event=}")
+        # TODO: remove _Event api call
         attributes = otter.core.events.unpack(event)
         for key, value in attributes.items():
             log.debug(f"  got {key}={value}")
