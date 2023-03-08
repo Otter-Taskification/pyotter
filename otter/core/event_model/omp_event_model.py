@@ -6,7 +6,6 @@ from itertools import islice
 from igraph import Graph, disjoint_union, Vertex
 from otter.definitions import Attr, EventModel, TaskStatus, EventType, RegionType, EdgeType, Endpoint, TaskType, TaskSyncType
 from otter.core.chunks import Chunk
-from otter.core.chunks import yield_chunks as otter_core_yield_chunks
 from otter.core.events import (
     is_event_list,
     Event,
@@ -174,7 +173,6 @@ class OMPEventModel(BaseEventModel):
             log.debug(f"task start time: {task.id}={task.start_ts}")
 
     def chunk_to_graph(self, chunk: Chunk) -> Graph:
-        # TODO: re-implement Chunk.graph here, make all calls to _Event api the responsibility of the event model
         return omp_chunk_to_graph(self, chunk)
 
     def combine_graphs(self, graphs: Iterable[Graph]) -> Graph:
@@ -430,7 +428,7 @@ def update_chunks_parallel_begin(event: Event, chunk_dict: ChunkDict, chunk_stac
     if parallel_chunk_key in chunk_dict:
         parallel_chunk = chunk_dict[parallel_chunk_key]
     else:
-        parallel_chunk = Chunk(task_registry, event.region_type)
+        parallel_chunk = Chunk(event.region_type)
         chunk_dict[parallel_chunk_key] = parallel_chunk
     parallel_chunk.append_event(event)
 
@@ -462,7 +460,7 @@ def update_chunks_initial_task_enter(event: Event, chunk_dict: ChunkDict, chunk_
     if chunk_key in chunk_dict:
         chunk = chunk_dict[chunk_key]
     else:
-        chunk = Chunk(task_registry, event.region_type)
+        chunk = Chunk(event.region_type)
         chunk_dict[chunk_key] = chunk
     chunk.append_event(event)
 
@@ -524,7 +522,7 @@ def update_chunks_single_begin(event: Event, chunk_dict: ChunkDict, chunk_stack:
     if task_chunk_key in chunk_dict:
         chunk = chunk_dict[task_chunk_key]
     else:
-        chunk = Chunk(task_registry, event.region_type)
+        chunk = Chunk(event.region_type)
         chunk_dict[task_chunk_key] = chunk
     chunk.append_event(event)
 
@@ -562,7 +560,7 @@ def update_chunks_task_switch(event: Event, chunk_dict: ChunkDict, chunk_stack: 
     if next_chunk_key in chunk_dict:
         next_chunk = chunk_dict[next_chunk_key]
     else:
-        next_chunk = Chunk(task_registry, event.next_task_region_type)
+        next_chunk = Chunk(event.next_task_region_type)
         chunk_dict[next_chunk_key] = next_chunk
     next_chunk.append_event(event)
     # Allow nested parallel regions to append to next_chunk where a task
@@ -620,7 +618,7 @@ def omp_chunk_to_graph(event_model: OMPEventModel, chunk: Chunk) -> Graph:
         # vertex['event'] is always a list of 1 or more events
         v = graph.add_vertex(event=[event])
 
-        encountering_task = chunk.tasks[event.encountering_task_id]
+        encountering_task = event_model.task_registry[event.encountering_task_id]
         if encountering_task is NullTask:
             encountering_task = None
 
@@ -765,7 +763,7 @@ def omp_chunk_to_graph(event_model: OMPEventModel, chunk: Chunk) -> Graph:
             dummy_vertex['_task_cluster_id'] = (event.unique_id, Endpoint.leave)
             dummy_vertex['_is_dummy_task_vertex'] = True
 
-            created_task = chunk.tasks[event.unique_id]
+            created_task = event_model.task_registry[event.unique_id]
 
             # If there is a task group context currently active, add the created task to it
             # Otherwise add to the relevant cache
@@ -875,6 +873,7 @@ def reduce_by_parallel_sequence(event_model: OMPEventModel, reductions: Reductio
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
     vcount_prev, vcount = vcount, graph.vcount()
     event_model.log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
+    return graph
 
 def reduce_by_single_exec_event(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
@@ -890,6 +889,7 @@ def reduce_by_single_exec_event(event_model: OMPEventModel, reductions: Reductio
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
     vcount_prev, vcount = vcount, graph.vcount()
     event_model.log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
+    return graph
 
 def reduce_by_master_event(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
@@ -909,6 +909,7 @@ def reduce_by_master_event(event_model: OMPEventModel, reductions: ReductionDict
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
     vcount_prev, vcount = vcount, graph.vcount()
     event_model.log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
+    return graph
 
 def remove_redundant_master_edges(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
@@ -930,6 +931,7 @@ def remove_redundant_master_edges(event_model: OMPEventModel, reductions: Reduct
     redundant_edges = list(filter(lambda edge: (edge.source_vertex, edge.target_vertex) in neighbour_pairs, graph.es))
     event_model.log.info(f"deleting redundant edges due to master regions: {len(redundant_edges)}")
     graph.delete_edges(redundant_edges)
+    return graph
 
     """
     ********************************************************************************
@@ -952,6 +954,7 @@ def reduce_by_task_cluster_id(event_model: OMPEventModel, reductions: ReductionD
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
     vcount_prev, vcount = vcount, graph.vcount()
     event_model.log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
+    return graph
 
 def reduce_by_task_id_for_empty_tasks(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
@@ -972,6 +975,7 @@ def reduce_by_task_id_for_empty_tasks(event_model: OMPEventModel, reductions: Re
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
     vcount_prev, vcount = vcount, graph.vcount()
     event_model.log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
+    return graph
 
 def reduce_by_sync_cluster_id(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
@@ -989,6 +993,7 @@ def reduce_by_sync_cluster_id(event_model: OMPEventModel, reductions: ReductionD
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
     vcount_prev, vcount = vcount, graph.vcount()
     event_model.log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
+    return graph
 
 
 def combine_graphs(event_model: OMPEventModel, task_registry: TaskRegistry, graphs: Iterable[Graph]) -> Graph:
@@ -1070,18 +1075,12 @@ def combine_graphs(event_model: OMPEventModel, task_registry: TaskRegistry, grap
                     log.debug(f"    ++ got synchronised descendant task {descendant_task_id}")
 
     log.info(f"combining vertices...")
-
-    # TODO: move remaining graph reduction logic here
-    # TODO: then make sure event-model-specific logic contained inside event_model module
-
-    reduce_by_parallel_sequence(event_model, strategies, graph)
-    reduce_by_single_exec_event(event_model, strategies, graph)
-    reduce_by_master_event(event_model, strategies, graph)
-    remove_redundant_master_edges(event_model, strategies, graph)
-    reduce_by_task_cluster_id(event_model, strategies, graph)
-    reduce_by_task_id_for_empty_tasks(event_model, strategies, graph)
-    reduce_by_sync_cluster_id(event_model, strategies, graph)
-
+    graph = reduce_by_parallel_sequence(event_model, strategies, graph)
+    graph = reduce_by_single_exec_event(event_model, strategies, graph)
+    graph = reduce_by_master_event(event_model, strategies, graph)
+    graph = remove_redundant_master_edges(event_model, strategies, graph)
+    graph = reduce_by_task_cluster_id(event_model, strategies, graph)
+    graph = reduce_by_task_id_for_empty_tasks(event_model, strategies, graph)
+    graph = reduce_by_sync_cluster_id(event_model, strategies, graph)
     graph.simplify(combine_edges='first')
-
     return graph
