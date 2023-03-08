@@ -199,7 +199,7 @@ def _return_unique_event(args, region_type):
     return result
 
 
-@warn_deprecated
+@warn_deprecated(stacklevel=4)
 def return_unique_single_executor_event(args):
     assert events.is_event_list(args)
     result = _return_unique_event(args, RegionType.single_executor)
@@ -207,14 +207,14 @@ def return_unique_single_executor_event(args):
     return result
 
 
-@warn_deprecated
+@warn_deprecated(stacklevel=4)
 def return_unique_master_event(args):
     assert events.is_event_list(args)
     result = _return_unique_event(args, RegionType.master)
     assert events.is_event_list(result)
     return result
 
-@warn_deprecated
+@warn_deprecated(stacklevel=4)
 def return_unique_taskswitch_complete_event(args):
     assert events.is_event_list(args)
     # TODO: remove _Event api call
@@ -223,7 +223,7 @@ def return_unique_taskswitch_complete_event(args):
     assert len(event_set) == 1
     return event_set.pop()
 
-@warn_deprecated
+@warn_deprecated(stacklevel=4)
 def return_unique_taskgroup_complete_event(args):
     assert events.is_event_list(args)
     # TODO: remove _Event api call
@@ -232,7 +232,7 @@ def return_unique_taskgroup_complete_event(args):
     assert len(event_set) == 1
     return event_set.pop()
 
-@warn_deprecated
+@warn_deprecated(stacklevel=4)
 def reject_task_create(args):
     logger = get_module_logger()
     # TODO: remove _Event api call

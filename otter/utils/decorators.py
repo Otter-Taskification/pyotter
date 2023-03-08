@@ -4,6 +4,7 @@ from warnings import warn
 from functools import partial, wraps
 
 
+# TODO: prepend f"{func}" to msg to always have function name visible in the warning
 def _decorate_function_with_warning(func: Callable, msg: str, category: Type[Warning], stacklevel: int) -> Callable:
     @wraps(func)
     def warning_wrapper(*args, **kwargs):
@@ -16,7 +17,7 @@ def _decorate_generator_with_warning(func: Callable, msg: str, category: Type[Wa
     @wraps(func)
     def warning_wrapper(*args, **kwargs):
         warn(msg, category=category, stacklevel=stacklevel)
-        yield func(*args, **kwargs)
+        yield from func(*args, **kwargs)
     return warning_wrapper
 
 
@@ -48,9 +49,11 @@ def with_warning(*arglist, category: Type[Warning]=UserWarning, stacklevel: int 
         return partial(_with_warning, msg, category, stacklevel)
 
 
+# TODO: warning should always include the function name e.g. when called with no args
 def warn_deprecated(*arglist, stacklevel: int = 2):
     """
-    Wrap a function with a warning that it is deprecated.
+    Wrap a function with a warning that it is deprecated. If passed a string, return a decorator which will wrap a
+    function to issue a warning containing that string
     """
     argc = len(arglist)
     if argc not in [0, 1]:
