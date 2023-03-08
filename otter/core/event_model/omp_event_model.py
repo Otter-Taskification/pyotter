@@ -90,7 +90,7 @@ class OMPEventModel(BaseEventModel):
             handler = cls.chunk_update_handlers.get(key)
         return handler
 
-    def yield_chunks(self, events: Iterable[Event], use_core: bool=True, use_event_api=True, update_chunks_via_event: bool=True) -> Iterable[Chunk]:
+    def yield_chunks(self, events: Iterable[Event], use_core: bool = False, use_event_api: bool = False, update_chunks_via_event: bool = False) -> Iterable[Chunk]:
 
         # Use otter.core.chunks.yield_chunk by default until logic lifted out of that module and into event_model
         if use_core:

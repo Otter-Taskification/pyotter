@@ -362,6 +362,7 @@ class Chunk:
         return g
 
 
+# TODO: remove this function, it uses old Chunk init method and creates implicitly during _Event.update_chunks
 def yield_chunks(events: Iterable[Event], task_registry: TaskRegistry) -> Iterable[Chunk]:
 
     log = get_module_logger()

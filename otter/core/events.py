@@ -56,6 +56,7 @@ class EventFactory:
     # A wrapper which iterates over the OTF2 reader's events and looks up the 
     # correct class with which to instantiate each event
 
+    @warn_deprecated
     @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, reader: OTF2Reader, default_cls: type=None):
         if default_cls is not None and not issubclass(default_cls, _Event):
@@ -662,6 +663,8 @@ def unpack(event: List[_Event]) -> dict:
         raise TypeError(f"{type(event)}")
 
 
+# TODO: could I remove this wrapper class entirely and replace it with a set of functions for querying an event's attributes?
+# TODO: need to understand how expensive this class is to create once for each OTF2 event.
 class NewEvent:
     """A basic wrapper for OTF2 events"""
 
