@@ -15,7 +15,7 @@ from otf2.events import _Event as OTF2Event
 
 get_module_logger = log.logger_getter("events")
 
-is_event = lambda item: isinstance(item, (_Event, NewEvent))
+is_event = lambda item: isinstance(item, Event)
 all_events = lambda args: all(map(is_event, args))
 any_events = lambda args: any(map(is_event, args))
 is_event_list = lambda args: isinstance(args, list) and all_events(args)
@@ -651,21 +651,10 @@ class PhaseEnd(LeaveMixin, DefaultUpdateChunksMixin, _Event):
     def vertex_label(self):
         return self.phase_name
 
-@warn_deprecated
-# TODO: should be the responsibility of an event_model to know how to unpack an event's attributes
-def unpack(event: List[_Event]) -> dict:
-    assert is_event_list(event)
-    if is_event(event):
-        return dict(event.yield_attributes())
-    elif is_event_list(event):
-        return transpose_list_to_dict([dict(e.yield_attributes()) for e in event])
-    else:
-        raise TypeError(f"{type(event)}")
-
 
 # TODO: could I remove this wrapper class entirely and replace it with a set of functions for querying an event's attributes?
 # TODO: need to understand how expensive this class is to create once for each OTF2 event.
-class NewEvent:
+class Event:
     """A basic wrapper for OTF2 events"""
 
     _additional_attributes = [
@@ -728,6 +717,13 @@ class NewEvent:
     def vertex_shape_key(self):
         return self.vertex_color_key
 
-
-# Type-hinting alias for internal _Event class
-Event = Union[_Event, NewEvent]
+@warn_deprecated
+# TODO: should be the responsibility of an event_model to know how to unpack an event's attributes
+def unpack(event: Union[List[Event], Event]) -> dict:
+    assert is_event_list(event)
+    if is_event(event):
+        return dict(event.yield_attributes())
+    elif is_event_list(event):
+        return transpose_list_to_dict([dict(e.yield_attributes()) for e in event])
+    else:
+        raise TypeError(f"{type(event)}")

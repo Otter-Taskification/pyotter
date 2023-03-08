@@ -63,8 +63,7 @@ class LoggingValidatingReduction:
         # TODO: if reduction is None, this doesn't actually perform a reduction - is that intentional?
         self.reduction = reduction if reduction else (lambda arg: arg)
 
-        # TODO: remove reference to _Event once NewEvent fully adopted
-        self.accept = accept or [list, events._Event, events.NewEvent]
+        self.accept = accept or [list, events.Event]
         self.log = log.get_logger(self.__class__.__name__)
 
         # TODO: don't bake decorated reduction in, lift out and allow to be injected

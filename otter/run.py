@@ -5,7 +5,7 @@ from collections import Counter
 from typing import Iterable, Dict
 import otter
 from otter.core.event_model import get_event_model
-from otter.core.events import NewEvent, Location
+from otter.core.events import Event, Location
 
 
 def run() -> None:
@@ -25,14 +25,9 @@ def run() -> None:
         log.info(f"Found event model name: {str(event_model_name)}")
         log.info(f"Using event model: {event_model}")
         log.info(f"generating chunks")
-        # TODO: switch to new event class once _Event api calls all lifted up into EventModel scope
-        use_new_event = True
-        if use_new_event:
-            attributes: Dict[str: OTF2Attribute] = {attr.name: attr for attr in reader.definitions.attributes}
-            locations: Dict[OTF2Location: Location] = {location: Location(location) for location in reader.definitions.locations}
-            event_iter: Iterable[NewEvent] = (NewEvent(event, locations[location], attributes) for location, event in reader.events)
-        else:
-            event_iter = otter.core.events.EventFactory(reader)
+        attributes: Dict[str: OTF2Attribute] = {attr.name: attr for attr in reader.definitions.attributes}
+        locations: Dict[OTF2Location: Location] = {location: Location(location) for location in reader.definitions.locations}
+        event_iter: Iterable[Event] = (Event(event, locations[location], attributes) for location, event in reader.events)
         chunks = list(event_model.yield_chunks(event_iter))
         # TODO: temporary check, factor out once switched to new event class
         event_model.warn_for_incomplete_chunks(chunks)

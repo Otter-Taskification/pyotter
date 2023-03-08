@@ -9,7 +9,6 @@ from otter.core.chunks import Chunk
 from otter.core.chunks import yield_chunks as otter_core_yield_chunks
 from otter.core.events import (
     is_event_list,
-    _Event,
     Event,
     ChunkSwitchEventMixin,
     MasterBegin,
@@ -1028,7 +1027,7 @@ def combine_graphs(event_model: OMPEventModel, task_registry: TaskRegistry, grap
 
     # Supply the logic to use when combining each of these vertex attributes
     attribute_handlers: List[Tuple[str, Reduction, Iterable[type]]] = [
-        ("_master_enter_event", handlers.return_unique_master_event, (type(None), _Event)),
+        ("_master_enter_event", handlers.return_unique_master_event, (type(None), Event)),
         ("_task_cluster_id", handlers.pass_the_unique_value, (type(None), tuple)),
         ("_is_task_enter_node", handlers.pass_bool_value, (type(None), bool)),
         ("_is_task_leave_node", handlers.pass_bool_value, (type(None), bool))
