@@ -2,6 +2,7 @@ import itertools as it
 from collections import defaultdict
 from collections.abc import Iterable
 
+# TODO: seems to be dead code, not used anywhere
 def pairwise(iterable):
     # https://docs.python.org/3/library/itertools.html#itertools.pairwise
 

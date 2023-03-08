@@ -4,6 +4,6 @@ from . import utils
 from . import reader
 from . import styling
 from . import reporting
-from .run import run
+from .main import main
 
 utils.find_dot_or_die()

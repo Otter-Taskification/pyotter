@@ -1,6 +1,7 @@
 import warnings
 from otf2.definitions import Attribute as OTF2Attribute
 from otf2 import LocationType as OTF2Location
+# TODO this import seems to be dead code?
 from collections import Counter
 from typing import Iterable, Dict
 import otter
@@ -8,7 +9,7 @@ from otter.core.event_model import get_event_model
 from otter.core.events import Event, Location
 
 
-def run() -> None:
+def main() -> None:
 
     args = otter.utils.get_args()
     otter.log.initialise(args)
