@@ -1,6 +1,7 @@
 from enum import Enum
 from typing import Union
 
+# TODO: suspect some Attr values are missing here e.g. requested_parallelism, next_task_id - is there a reason they aren't present?
 class Attr(str, Enum):
     time = "time"
     event_type = "event_type"
