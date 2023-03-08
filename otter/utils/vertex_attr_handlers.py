@@ -12,6 +12,7 @@ from ..log import DEBUG
 from ..definitions import RegionType
 from ..core import events
 from ..utils import flatten
+from .decorators import warn_deprecated
 from loggingdecorators import on_init, on_call
 
 get_module_logger = log.logger_getter("vertex.attr")
@@ -24,7 +25,6 @@ class Reduction(Protocol[V]):
     """
     def __call__(self, collection: Iterable[Optional[V]]) -> Optional[V]: ...
 
-# TODO: prefer CamelCase for classes, find better name
 class ReductionDict(dict):
     """
     Maps strings to reduction operations
@@ -42,7 +42,6 @@ class ReductionDict(dict):
         return super().__setitem__(key, value)
 
 
-# TODO: prefer CamelCase for classes, find better name
 # TODO: this class does too many things - decorates the handler to call, validates reduction arguments, applies handler
 class LoggingValidatingReduction:
     """
@@ -167,6 +166,7 @@ def pass_the_set_of_values(args):
         return items
 
 
+@warn_deprecated
 def _return_unique_event(args, region_type):
     """
     Expects args to be one of:
@@ -199,6 +199,7 @@ def _return_unique_event(args, region_type):
     return result
 
 
+@warn_deprecated
 def return_unique_single_executor_event(args):
     assert events.is_event_list(args)
     result = _return_unique_event(args, RegionType.single_executor)
@@ -206,12 +207,14 @@ def return_unique_single_executor_event(args):
     return result
 
 
+@warn_deprecated
 def return_unique_master_event(args):
     assert events.is_event_list(args)
     result = _return_unique_event(args, RegionType.master)
     assert events.is_event_list(result)
     return result
 
+@warn_deprecated
 def return_unique_taskswitch_complete_event(args):
     assert events.is_event_list(args)
     # TODO: remove _Event api call
@@ -220,6 +223,7 @@ def return_unique_taskswitch_complete_event(args):
     assert len(event_set) == 1
     return event_set.pop()
 
+@warn_deprecated
 def return_unique_taskgroup_complete_event(args):
     assert events.is_event_list(args)
     # TODO: remove _Event api call
@@ -228,6 +232,7 @@ def return_unique_taskgroup_complete_event(args):
     assert len(event_set) == 1
     return event_set.pop()
 
+@warn_deprecated
 def reject_task_create(args):
     logger = get_module_logger()
     # TODO: remove _Event api call
