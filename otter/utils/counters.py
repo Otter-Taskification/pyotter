@@ -1,13 +1,7 @@
-from collections import Counter
-from itertools import chain, count
+from itertools import count
 from collections import defaultdict
-from typing import Union, List, Callable, Iterable, TypeVar, Dict
+from typing import Union, List, Callable, Iterable
 
-
-class PrettyCounter(Counter):
-
-    def __repr__(self):
-        return "\n".join([f"{self[k]:>6} {k}" for k in self]) + f"\nTotal count: {sum(self.values())}"
 
 class SequenceLabeller:
     """
@@ -15,12 +9,11 @@ class SequenceLabeller:
     argument to determine a common label to use. Where it is False assign a unique label.
     """
 
-    # TODO: maybe the name "group_label" is more informative than "group_by"
-    def __init__(self, predicate: Callable, group_by: Union[Callable, str] = "event"):
-        if isinstance(group_by, str):
-            self._group_by = lambda item: item[group_by]
-        elif callable(group_by):
-            self._group_by = group_by
+    def __init__(self, predicate: Callable, group_label: Union[Callable, str] = "event"):
+        if isinstance(group_label, str):
+            self._group_label = lambda item: item[group_label]
+        elif callable(group_label):
+            self._group_label = group_label
         else:
             raise TypeError("group_by must be callable or str")
         self._predicate = predicate
@@ -31,4 +24,4 @@ class SequenceLabeller:
         vertex_counter = count()
         cluster_counter = count(start=count_not_true)
         get_label = defaultdict(lambda: next(cluster_counter))
-        return [get_label[self._group_by(item)] if item_true else next(vertex_counter) for item, item_true in zip(sequence, is_true)]
+        return [get_label[self._group_label(item)] if item_true else next(vertex_counter) for item, item_true in zip(sequence, is_true)]

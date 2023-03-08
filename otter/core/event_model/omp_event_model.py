@@ -98,7 +98,7 @@ class OMPEventModel(BaseEventModel):
             log.debug(f"got event {k} with vertex label {event.get('vertex_label')}: {event}")
 
             # TODO: should be able to simplify this nested if-else, since EventType.thread_begin, EventType.thread_end
-            # TODO: presumably shouldn't be classes as chunk-switch events (they don't update the chunks at all)
+            # TODO: presumably shouldn't be classed as chunk-switch events (they don't update the chunks at all)
             if self.is_chunk_switch_event(event):
                 log.debug(f"updating chunks")
                 if self.event_updates_chunks(event):
@@ -864,7 +864,7 @@ def reduce_by_parallel_sequence(event_model: OMPEventModel, reductions: Reductio
     event_model.log.info(f"combining vertices by parallel sequence ID")
 
     # Label vertices with the same _parallel_sequence_id
-    labeller = SequenceLabeller(key_is_not_none('_parallel_sequence_id'), group_by='_parallel_sequence_id')
+    labeller = SequenceLabeller(key_is_not_none('_parallel_sequence_id'), group_label='_parallel_sequence_id')
 
     # When combining the event vertex attribute, prioritise single-executor over single-other
     reductions['event'] = LoggingValidatingReduction(handlers.return_unique_single_executor_event)
@@ -883,7 +883,7 @@ def reduce_by_single_exec_event(event_model: OMPEventModel, reductions: Reductio
     event_model.log.info(f"combining vertices by single-begin/end event")
 
     # Label single-executor vertices which refer to the same event.
-    labeller = SequenceLabeller(lambda vtx: event_model.all_single_exec_events(vtx['event']), group_by=lambda vtx: vtx['event'][0])
+    labeller = SequenceLabeller(lambda vtx: event_model.all_single_exec_events(vtx['event']), group_label=lambda vtx: vtx['event'][0])
 
     vcount = graph.vcount()
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
@@ -900,7 +900,7 @@ def reduce_by_master_event(event_model: OMPEventModel, reductions: ReductionDict
     # Label vertices which refer to the same master-begin/end event
     # SUSPECT THIS SHOULD BE "vertex['event'][0]"
     # NOT TESTED!
-    labeller = SequenceLabeller(lambda vtx: event_model.all_master_events(vtx['event']), group_by=lambda vtx: vtx['event'][0])
+    labeller = SequenceLabeller(lambda vtx: event_model.all_master_events(vtx['event']), group_label=lambda vtx: vtx['event'][0])
 
     # When combining events, there should be exactly 1 unique master-begin/end event
     reductions['event'] = LoggingValidatingReduction(handlers.return_unique_master_event)
@@ -945,7 +945,7 @@ def reduce_by_task_cluster_id(event_model: OMPEventModel, reductions: ReductionD
     event_model.log.info("combining vertices by task ID & endpoint")
 
     # Label vertices which have the same _task_cluster_id
-    labeller = SequenceLabeller(key_is_not_none('_task_cluster_id'), group_by='_task_cluster_id')
+    labeller = SequenceLabeller(key_is_not_none('_task_cluster_id'), group_label='_task_cluster_id')
 
     # When combining events by _task_cluster_id, reject task-create events (in favour of task-switch events)
     reductions['event'] = LoggingValidatingReduction(event_model.reject_task_create)
@@ -964,7 +964,7 @@ def reduce_by_task_id_for_empty_tasks(event_model: OMPEventModel, reductions: Re
     event_model.log.info("combining vertices by task ID where there are no nested nodes")
 
     # Label vertices which represent empty tasks and have the same task ID
-    labeller = SequenceLabeller(event_model.is_empty_task_region, group_by=lambda v: v['_task_cluster_id'][0])
+    labeller = SequenceLabeller(event_model.is_empty_task_region, group_label=lambda v: v['_task_cluster_id'][0])
 
     # Combine _task_cluster_id tuples in a set (to remove duplicates)
     reductions['_task_cluster_id'] = LoggingValidatingReduction(handlers.pass_the_set_of_values,
@@ -984,7 +984,7 @@ def reduce_by_sync_cluster_id(event_model: OMPEventModel, reductions: ReductionD
     event_model.log.info("combining redundant sync and loop enter/leave node pairs")
 
     # Label vertices with the same _sync_cluster_id
-    labeller = SequenceLabeller(key_is_not_none('_sync_cluster_id'), group_by='_sync_cluster_id')
+    labeller = SequenceLabeller(key_is_not_none('_sync_cluster_id'), group_label='_sync_cluster_id')
 
     # Silently return the list of combined arguments
     reductions['event'] = LoggingValidatingReduction(handlers.pass_args)

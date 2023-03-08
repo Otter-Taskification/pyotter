@@ -1,7 +1,6 @@
 import warnings
 from otf2.definitions import Attribute as OTF2Attribute
 from otf2 import LocationType as OTF2Location
-# TODO this import seems to be dead code?
 from collections import Counter
 from typing import Iterable, Dict
 import otter
@@ -30,7 +29,7 @@ def main() -> None:
         locations: Dict[OTF2Location: Location] = {location: Location(location) for location in reader.definitions.locations}
         event_iter: Iterable[Event] = (Event(event, locations[location], attributes) for location, event in reader.events)
         chunks = list(event_model.yield_chunks(event_iter))
-        # TODO: temporary check, factor out once switched to new event class
+        # TODO: temporary check, factor out once new event models are passing
         event_model.warn_for_incomplete_chunks(chunks)
         graphs = list(event_model.chunk_to_graph(chunk) for chunk in chunks)
 
@@ -75,10 +74,11 @@ def main() -> None:
                 else:
                     f.write(f"  {name:>35} {n_levels:>6} levels (...)\n")
 
-            # Counter = otter.utils.counters.PrettyCounter(value for value in g.vs['region_type'])
+            region_type_count = Counter(g.vs['region_type'])
+            region_types = "\n".join([f"{region_type_count[k]:>6} {k}" for k in region_type_count]) + f"\nTotal count: {sum(region_type_count.values())}"
 
-            f.write("\nCount of vertex['event'] types:\n")
-            f.write(str(Counter))
+            f.write("\nCount of vertex['region_type'] values:\n")
+            f.write(region_types)
             f.write("\n\n")
 
             f.write("### EDGE ATTRIBUTES:\n")
