@@ -117,41 +117,6 @@ class OMPEventModel(BaseEventModel):
             else:
                 self.append_to_encountering_task_chunk(event)
 
-            # TODO: should be able to simplify this nested if-else, since EventType.thread_begin, EventType.thread_end
-            # TODO: presumably shouldn't be classed as chunk-switch events (they don't update the chunks at all)
-            # if self.is_chunk_switch_event(event):
-            #     log.debug(f"updating chunks")
-            #     if self.event_updates_chunks(event):
-            #         handler = self.get_update_chunk_handler(event)
-            #         if self.event_yields_chunk(event):
-            #             # update and yield a completed chunk
-            #             # require that update_chunks yields non-None value in this case
-            #             if not handler:
-            #                 # expect this branch should be unreachable as we have implemented callbacks for all
-            #                 # events which can yield chunks
-            #                 # yield from event.update_chunks(self.chunk_dict, self.chunk_stack)
-            #                 raise NotImplementedError(f"no chunk-yielding handler for {event}")
-            #             self.log.info(f"applying handler {handler=}")
-            #             completed_chunk = handler(event, self.chunk_dict, self.chunk_stack, self.task_registry)
-            #             assert completed_chunk is not None
-            #             yield completed_chunk
-            #         else:
-            #             # event must update chunks without producing a completed chunk
-            #             assert (
-            #                 self.event_updates_chunks_but_cant_yield_chunk(event)
-            #             or (self.event_updates_and_may_yield_chunk(event) and not self.event_yields_chunk(event)
-            #             ))
-            #             self.log.info(f"applying handler {handler=}")
-            #             result = handler(event, self.chunk_dict, self.chunk_stack, self.task_registry)
-            #             assert result is None
-            #     elif self.event_applies_default_chunk_update(event):
-            #         self.append_to_encountering_task_chunk(event)
-            #     else:
-            #         # this event doesn't update the chunks at all e.g. ThreadBegin, ThreadEnd
-            #         pass
-            # else:
-            #     self.append_to_encountering_task_chunk(event)
-
             if self.is_task_register_event(event):
                 task_registry.register_task(self.get_task_data(event))
 
