@@ -1,11 +1,11 @@
-from typing import Protocol, Dict, Iterable, Any, TypeVar, Type, Deque
+from typing import Protocol, Dict, Iterable, Any, TypeVar, Type, Deque, Tuple
 from collections import defaultdict, deque
 from abc import ABC, abstractmethod
 from loggingdecorators import on_init
 from igraph import Graph
 from otter.definitions import EventModel
 from otter.core.chunks import Chunk
-from otter.core.events import Event
+from otter.core.events import Event, Location
 from otter.core.tasks import TaskRegistry, NullTask
 from otter.log import logger_getter
 
@@ -18,8 +18,7 @@ class EventModelProtocol(Protocol):
     def __init__(self, task_registry: TaskRegistry):
         pass
 
-    def yield_chunks(self, events: Iterable[Event], use_core: bool=True, use_event_api=True, update_chunks_via_event: bool=True) -> Iterable[Chunk]:
-        # Will replace otter.chunks.yield_chunks
+    def yield_chunks(self, events: Iterable[Tuple[Event, Location]]) -> Iterable[Chunk]:
         pass
 
     def chunk_to_graph(self, chunk: Chunk) -> Graph:

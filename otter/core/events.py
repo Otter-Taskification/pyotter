@@ -663,9 +663,8 @@ class Event:
         "vertex_shape_key"
     ]
 
-    def __init__(self, otf2_event: OTF2Event, location: Location, attribute_lookup: Dict[str, OTF2Attribute]) -> None:
+    def __init__(self, otf2_event: OTF2Event, attribute_lookup: Dict[str, OTF2Attribute]) -> None:
         self._event = otf2_event
-        self._location = location
         self._attribute_lookup = attribute_lookup
 
     def __repr__(self) -> str:
@@ -673,7 +672,7 @@ class Event:
 
     @property
     def _base_repr(self):
-        return f"{type(self).__name__}(time={self.time}, loc={self._location.name})"
+        return f"{type(self).__name__}(time={self.time})"
 
     # TODO: could it be more efficient to setattr for all the event attributes in __init__? Need to test
     def __getattr__(self, attr: Attr):

@@ -2,7 +2,7 @@ import warnings
 from otf2.definitions import Attribute as OTF2Attribute
 from otf2 import LocationType as OTF2Location
 from collections import Counter
-from typing import Iterable, Dict
+from typing import Iterable, Dict, Tuple
 import otter
 from otter.core.event_model import get_event_model
 from otter.core.events import Event, Location
@@ -27,7 +27,7 @@ def main() -> None:
         log.info(f"generating chunks")
         attributes: Dict[str: OTF2Attribute] = {attr.name: attr for attr in reader.definitions.attributes}
         locations: Dict[OTF2Location: Location] = {location: Location(location) for location in reader.definitions.locations}
-        event_iter: Iterable[Event] = (Event(event, locations[location], attributes) for location, event in reader.events)
+        event_iter: Iterable[Tuple[Event, Location]] = ((Event(event, attributes), locations[location]) for location, event in reader.events)
         chunks = list(event_model.yield_chunks(event_iter))
         # TODO: temporary check, factor out once new event models are passing
         event_model.warn_for_incomplete_chunks(chunks)
