@@ -403,3 +403,29 @@ class TaskRegistry:
                 child.num_descendants = self.calculate_num_descendants(child)
             descendants += child.num_descendants
         return descendants
+
+    def notify_task_start_ts(self, task_id: int, time: int) -> None:
+        task = self[task_id]
+        if task.start_ts is None:
+            task.start_ts = time
+
+    def update_task_duration(self, prior_task_id: int, next_task_id: int, time: int) -> None:
+        prior_task = self[prior_task_id]
+        if prior_task is not NullTask:
+            self.log.debug(f"got prior task: {prior_task}")
+            prior_task.update_exclusive_duration(time)
+        next_task = self[next_task_id]
+        if next_task is not NullTask:
+            self.log.debug(f"got next task: {next_task}")
+            next_task.resumed_at(time)
+
+    def notify_task_complete_ts(self, completed_task_id: int, time: int) -> None:
+        completed_task = self[completed_task_id]
+        if completed_task is not NullTask:
+            completed_task.end_ts = time
+
+    def log_all_task_ts(self):
+        self.log.debug("BEGIN LOGGING TASK TIMESTAMPS")
+        for task in self:
+            self.log.debug(f"{str(task.id):>6}:{task.start_ts}:{task.end_ts}")
+        self.log.debug("END LOGGING TASK TIMESTAMPS")

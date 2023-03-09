@@ -152,45 +152,28 @@ class OMPEventModel(BaseEventModel):
             # else:
             #     self.append_to_encountering_task_chunk(event)
 
-            # TODO: might want to absorb all the task-updating logic below into the task registry, but guided by an
-            #   event model which would be responsible for knowing which events should trigger task updates
             if self.is_task_register_event(event):
                 task_registry.register_task(self.get_task_data(event))
 
             if self.is_update_task_start_ts_event(event):
-                task = task_registry[self.get_task_entered(event)]
-                log.debug(f"notifying task start time: {task.id} @ {event.time}")
-                if task.start_ts is None:
-                    task.start_ts = event.time
+                task_entered = self.get_task_entered(event)
+                log.debug(f"notifying task start time: {task_entered} started at {event.time}")
+                task_registry.notify_task_start_ts(task_entered, event.time)
 
             if self.is_update_duration_event(event):
                 prior_task_id, next_task_id = self.get_tasks_switched(event)
-                log.debug(
-                    f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint:>8} {event}")
-
-                prior_task = task_registry[prior_task_id]
-                if prior_task is not NullTask:
-                    log.debug(f"got prior task: {prior_task}")
-                    prior_task.update_exclusive_duration(event.time)
-
-                next_task = task_registry[next_task_id]
-                if next_task is not NullTask:
-                    log.debug(f"got next task: {next_task}")
-                    next_task.resumed_at(event.time)
+                log.debug(f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint} {event.event_type}")
+                task_registry.update_task_duration(prior_task_id, next_task_id, event.time)
 
             if self.is_task_complete_event(event):
                 completed_task_id = self.get_task_completed(event)
                 log.debug(f"event <{event}> notifying task {completed_task_id} of end_ts")
-                completed_task = task_registry[completed_task_id]
-                if completed_task is not NullTask:
-                    completed_task.end_ts = event.time
+                task_registry.notify_task_complete_ts(completed_task_id, event.time)
 
         log.debug(f"exhausted {events}")
         task_registry.calculate_all_inclusive_duration()
         task_registry.calculate_all_num_descendants()
-
-        for task in task_registry:
-            log.debug(f"task start time: {task.id}={task.start_ts}")
+        task_registry.log_all_task_ts()
 
     def chunk_to_graph(self, chunk: Chunk) -> Graph:
         return omp_chunk_to_graph(self, chunk)
