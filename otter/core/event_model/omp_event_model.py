@@ -346,9 +346,9 @@ class OMPEventModel(BaseEventModel):
         self.log.debug(f"return {n_accept}/{n_args}: {events_filtered}")
         return events_filtered
 
-# TODO: remove task_registry argument from update functions
+
 @OMPEventModel.update_chunks_on(event_type=EventType.parallel_begin)
-def update_chunks_parallel_begin(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict, task_registry: TaskRegistry) -> None:
+def update_chunks_parallel_begin(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict) -> None:
     log = get_module_logger()
     task_chunk_key = (location.name, event.encountering_task_id, RegionType.task)
     parallel_chunk_key = (location.name, event.unique_id, RegionType.parallel)
@@ -370,7 +370,7 @@ def update_chunks_parallel_begin(event: Event, location: Location, chunk_dict: C
 
 
 @OMPEventModel.update_chunks_on(event_type=EventType.parallel_end)
-def update_chunks_parallel_end(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict, task_registry: TaskRegistry) -> Chunk:
+def update_chunks_parallel_end(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict) -> Chunk:
     log = get_module_logger()
     task_chunk_key = (location.name, event.encountering_task_id, RegionType.task)
     log.debug(f"{update_chunks_parallel_end.__name__}: {task_chunk_key=}")
@@ -389,7 +389,7 @@ def update_chunks_parallel_end(event: Event, location: Location, chunk_dict: Chu
 
 
 @OMPEventModel.update_chunks_on(event_type=EventType.task_enter, region_type=RegionType.initial_task)
-def update_chunks_initial_task_enter(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict, task_registry: TaskRegistry) -> None:
+def update_chunks_initial_task_enter(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict) -> None:
     log = get_module_logger()
     chunk_key = location.name, event.unique_id, RegionType.task
     log.debug(f"{update_chunks_initial_task_enter.__name__}: {chunk_key=}")
@@ -408,7 +408,7 @@ def update_chunks_initial_task_enter(event: Event, location: Location, chunk_dic
 
 
 @OMPEventModel.update_chunks_on(event_type=EventType.task_leave, region_type=RegionType.initial_task)
-def update_chunks_initial_task_leave(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict, task_registry: TaskRegistry) -> Chunk:
+def update_chunks_initial_task_leave(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict) -> Chunk:
     log = get_module_logger()
     chunk_key = location.name, event.unique_id, RegionType.task
     log.debug(f"{update_chunks_initial_task_leave.__name__}: {chunk_key=}")
@@ -418,7 +418,7 @@ def update_chunks_initial_task_leave(event: Event, location: Location, chunk_dic
 
 
 @OMPEventModel.update_chunks_on(event_type=EventType.task_enter, region_type=RegionType.implicit_task)
-def update_chunks_implicit_task_enter(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict, task_registry: TaskRegistry) -> None:
+def update_chunks_implicit_task_enter(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict) -> None:
     log = get_module_logger()
     # (location name, current parallel ID, defn.RegionType.parallel)
     chunk_key = location.name, location.current_parallel_region, RegionType.parallel
@@ -434,7 +434,7 @@ def update_chunks_implicit_task_enter(event: Event, location: Location, chunk_di
 
 
 @OMPEventModel.update_chunks_on(event_type=EventType.task_leave, region_type=RegionType.implicit_task)
-def update_chunks_implicit_task_leave(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict, task_registry: TaskRegistry) -> None:
+def update_chunks_implicit_task_leave(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict) -> None:
     log = get_module_logger()
     # don't yield until parallel-end
     chunk_key = event.unique_id
@@ -445,7 +445,7 @@ def update_chunks_implicit_task_leave(event: Event, location: Location, chunk_di
 
 @OMPEventModel.update_chunks_on(event_type=EventType.master_begin, region_type=RegionType.master)
 @OMPEventModel.update_chunks_on(event_type=EventType.workshare_begin, region_type=RegionType.single_executor)
-def update_chunks_single_begin(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict, task_registry: TaskRegistry) -> None:
+def update_chunks_single_begin(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict) -> None:
     log = get_module_logger()
     # Nested region - append to task chunk, push onto stack, create nested chunk
     task_chunk_key = event.encountering_task_id
@@ -465,7 +465,7 @@ def update_chunks_single_begin(event: Event, location: Location, chunk_dict: Chu
 
 @OMPEventModel.update_chunks_on(event_type=EventType.master_end, region_type=RegionType.master)
 @OMPEventModel.update_chunks_on(event_type=EventType.workshare_end, region_type=RegionType.single_executor)
-def update_chunks_single_end(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict, task_registry: TaskRegistry) -> Chunk:
+def update_chunks_single_end(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict) -> Chunk:
     log = get_module_logger()
     # Nested region - append to inner chunk, yield, then pop enclosing chunk & append to that chunk
     task_chunk_key = event.encountering_task_id
@@ -478,7 +478,7 @@ def update_chunks_single_end(event: Event, location: Location, chunk_dict: Chunk
 
 
 @OMPEventModel.update_chunks_on(event_type=EventType.task_switch)
-def update_chunks_task_switch(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict, task_registry: TaskRegistry) -> Optional[Chunk]:
+def update_chunks_task_switch(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict) -> Optional[Chunk]:
     log = get_module_logger()
     this_chunk_key = event.encountering_task_id
     next_chunk_key = event.next_task_id
