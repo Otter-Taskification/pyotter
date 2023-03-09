@@ -67,7 +67,7 @@ class OMPEventModel(BaseEventModel):
         """
 
         def decorator(handler: ChunkUpdateHandlerFn) -> ChunkUpdateHandlerFn:
-            key = cls.chunk_update_handlers_key(event_type, region_type)
+            key = cls.make_chunk_update_handlers_key(event_type, region_type)
             # print(f"Registering handler: {handler} with {key=}")
             assert(key not in cls.chunk_update_handlers)
             cls.chunk_update_handlers[key] = handler
@@ -75,16 +75,23 @@ class OMPEventModel(BaseEventModel):
         return decorator
 
     @staticmethod
-    def chunk_update_handlers_key(event_type: EventType, region_type: Optional[RegionType] = None) -> ChunkUpdateHandlerKey:
+    def make_chunk_update_handlers_key(event_type: EventType, region_type: Optional[RegionType] = None) -> ChunkUpdateHandlerKey:
         return region_type, event_type
+
+    @classmethod
+    def get_chunk_update_handlers_key(cls, event: Event, fallback: bool = False) -> ChunkUpdateHandlerKey:
+        if fallback or not (Attr.region_type in event):
+            return cls.make_chunk_update_handlers_key(event.event_type)
+        else:
+            return cls.make_chunk_update_handlers_key(event.event_type, event.region_type)
 
     @classmethod
     def get_update_chunk_handler(cls, event: Event) -> Optional[ChunkUpdateHandlerFn]:
         # Look up the handler by region & event type, falling back to just event type.
-        key = cls.chunk_update_handlers_key(event.event_type, event.region_type)
+        key = cls.get_chunk_update_handlers_key(event)
         handler = cls.chunk_update_handlers.get(key)
         if not handler:
-            key = cls.chunk_update_handlers_key(event.event_type)
+            key = cls.get_chunk_update_handlers_key(event, fallback=True)
             handler = cls.chunk_update_handlers.get(key)
         return handler
 
@@ -97,24 +104,19 @@ class OMPEventModel(BaseEventModel):
         for k, event in enumerate(events):
             log.debug(f"got event {k} with vertex label {event.get('vertex_label')}: {event}")
 
-            if self.has_special_chunk_update_logic(event):
-                handler = self.get_update_chunk_handler(event)
-                if self.event_completes_chunk(event):
-                    completed_chunk = handler(event, self.chunk_dict, self.chunk_stack, self.task_registry)
-                    assert completed_chunk is not None
-                    yield completed_chunk
-                elif self.event_updates_chunk(event):
-                    assert (
-                        self.event_updates_chunks_but_cant_yield_chunk(event)
-                    or (self.event_updates_and_may_yield_chunk(event) and not self.event_yields_chunk(event)
-                    ))
-                    result = handler(event, self.chunk_dict, self.chunk_stack, self.task_registry)
-                    assert result is None
-                else:
-                    assert False # developer error
-            elif self.event_doesnt_update_and_doesnt_yield_chunk(event):
+            handler = self.get_update_chunk_handler(event)
+            if self.event_completes_chunk(event) or self.event_updates_chunk(event):
+                assert handler is not None, f"{dict(event.yield_attributes())}"
+            if self.event_completes_chunk(event):
+                completed_chunk = handler(event, self.chunk_dict, self.chunk_stack, self.task_registry)
+                assert completed_chunk is not None
+                yield completed_chunk
+            elif self.event_updates_chunk(event):
+                result = handler(event, self.chunk_dict, self.chunk_stack, self.task_registry)
+                assert result is None
+            elif self.event_skips_chunk_update(event):
                 pass
-            else:
+            else: # event applies default chunk update logic
                 self.append_to_encountering_task_chunk(event)
 
             if self.is_task_register_event(event):
@@ -150,49 +152,17 @@ class OMPEventModel(BaseEventModel):
         self.chunk_dict[event.encountering_task_id].append_event(event)
 
     @classmethod
-    def has_special_chunk_update_logic(cls, event: Event) -> bool:
-        return (cls.event_updates_and_yields_chunk(event)
-                or cls.event_updates_and_may_yield_chunk(event)
-                or cls.event_updates_chunks_but_cant_yield_chunk(event))
-
-    @classmethod
     def event_completes_chunk(cls, event: Event) -> bool:
-        return (cls.event_updates_and_yields_chunk(event)
-                or (cls.event_updates_and_may_yield_chunk(event)
-                    and event.prior_task_status == TaskStatus.complete)
-                )
+        return (cls.event_updates_and_completes_chunk(event)
+                or (cls.is_task_switch_event(event) and event.prior_task_status == TaskStatus.complete))
 
     @classmethod
     def event_updates_chunk(cls, event: Event) -> bool:
-        return (cls.event_updates_chunks_but_cant_yield_chunk(event)
-                or (cls.event_updates_and_may_yield_chunk(event)
-                    and event.prior_task_status != TaskStatus.complete))
-
-    @classmethod
-    def is_chunk_switch_event(cls, event: Event) -> bool:
-
-        # these events inherit the ChunkSwitchEvent mixin and *always* yield a completed chunk
-        if cls.event_updates_and_yields_chunk(event):
-            return True
-
-        # these events inherit the ChunkSwitchEvent mixin and *may* yield a completed chunk
-        if cls.event_updates_and_may_yield_chunk(event):
-            return True
-
-        # these events inherit the ChunkSwitchEvent mixin and *do* update the chunks, but *never* yield a completed chunk
-        if cls.event_updates_chunks_but_cant_yield_chunk(event):
-            return True
-
-        # these events inherit the ChunkSwitchEvent mixin, *don't* update any chunks and *never* yield a completed chunk
-        if cls.event_doesnt_update_and_doesnt_yield_chunk(event):
-            return True
-
-        # represents an unhandled _Event which includes this mixin and should have returned True in this function
-        if isinstance(event, ChunkSwitchEventMixin):
-            raise TypeError(type(event))
+        return (cls.event_updates_and_doesnt_complete_chunk(event)
+                or (cls.is_task_switch_event(event) and event.prior_task_status != TaskStatus.complete))
 
     @staticmethod
-    def event_updates_and_yields_chunk(event: Event) -> bool:
+    def event_updates_and_completes_chunk(event: Event) -> bool:
         # parallel-end, single-executor-end, master-end and initial-task-leave always complete a chunk
         return (event.get("region_type"), event.event_type) in [
             (RegionType.parallel, EventType.parallel_end),
@@ -201,13 +171,8 @@ class OMPEventModel(BaseEventModel):
             (RegionType.initial_task, EventType.task_leave)
         ]
 
-    @classmethod
-    def event_updates_and_may_yield_chunk(cls, event: Event) -> bool:
-        # task-switch completes a chunk only if the prior task was completed
-        return cls.is_task_switch_event(event)
-
     @staticmethod
-    def event_updates_chunks_but_cant_yield_chunk(event: Event) -> bool:
+    def event_updates_and_doesnt_complete_chunk(event: Event) -> bool:
         # parallel-begin, single-executor-begin, master-begin, initial-task-enter, implicit-task-enter/leave
         # these events have special chunk-updating logic but never complete a chunk
         return (event.get("region_type"), event.event_type) in [
@@ -220,30 +185,15 @@ class OMPEventModel(BaseEventModel):
         ]
 
     @staticmethod
-    def event_doesnt_update_and_doesnt_yield_chunk(event: Event) -> bool:
+    def event_skips_chunk_update(event: Event) -> bool:
         # thread-begin/end events aren't represented in chunks, so won't update them
         return event.event_type in [EventType.thread_begin, EventType.thread_end]
 
     @classmethod
-    def event_updates_chunks(cls, event: Event) -> bool:
-        # These events require some specific logic to update chunks
-        # Some of these *also* yield a completed chunk
-        # EVERYTHING WHICH CAN POSSIBLY YIELD A COMPLETED CHUNK ALSO UPDATES THE CHUNKS
-        return (
-            cls.event_updates_and_yields_chunk(event)
-         or cls.event_updates_and_may_yield_chunk(event)
-         or cls.event_updates_chunks_but_cant_yield_chunk(event)
-        )
-
-    @classmethod
-    def event_applies_default_chunk_update(cls, event: Event) -> bool:
-        return not (cls.event_updates_chunks(event) or cls.event_doesnt_update_and_doesnt_yield_chunk(event))
-
-    @classmethod
     def event_yields_chunk(cls, event: Event) -> bool:
-        if cls.event_updates_and_yields_chunk(event):
+        if cls.event_updates_and_completes_chunk(event):
             return True
-        if cls.event_updates_and_may_yield_chunk(event):
+        if cls.is_task_switch_event(event):
             assert cls.is_task_switch_event(event)
             return event.prior_task_status == TaskStatus.complete
 
@@ -824,24 +774,6 @@ def is_leave_event(event: Event) -> bool:
     )
 
 
-"""
-Steps to implement here:
-log.info(f"combining vertices by parallel sequence ID")
-log.info(f"combining vertices by single-begin/end event")
-log.info(f"combining vertices by master-begin/end event")
-log.info(f"deleting redundant edges due to master regions: {len(redundant_edges)}")
-log.info("combining vertices by task ID & endpoint")
-log.info("combining vertices by task ID where there are no nested nodes")
-log.info("combining redundant sync and loop enter/leave node pairs")
-graph.simplify(combine_edges='first')
-
-# The graph is then combined. Remaining steps:
-# Unpack vertex event attributes
-# Dump graph details to file
-# Clean up temporary vertex attributes
-# Write report
-"""
-
 def reduce_by_parallel_sequence(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
     Contract vertices according to _parallel_sequence_id to combine the chunks generated by the threads of a parallel block.
@@ -862,6 +794,7 @@ def reduce_by_parallel_sequence(event_model: OMPEventModel, reductions: Reductio
     event_model.log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
     return graph
 
+
 def reduce_by_single_exec_event(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
     Contract those vertices which refer to the same single-executor event. This connects single-executor chunks to the
@@ -877,6 +810,7 @@ def reduce_by_single_exec_event(event_model: OMPEventModel, reductions: Reductio
     vcount_prev, vcount = vcount, graph.vcount()
     event_model.log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
     return graph
+
 
 def reduce_by_master_event(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
@@ -897,6 +831,7 @@ def reduce_by_master_event(event_model: OMPEventModel, reductions: ReductionDict
     vcount_prev, vcount = vcount, graph.vcount()
     event_model.log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
     return graph
+
 
 def remove_redundant_master_edges(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
@@ -920,10 +855,6 @@ def remove_redundant_master_edges(event_model: OMPEventModel, reductions: Reduct
     graph.delete_edges(redundant_edges)
     return graph
 
-    """
-    ********************************************************************************
-    ********************************************************************************
-    """
 
 def reduce_by_task_cluster_id(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
@@ -942,6 +873,7 @@ def reduce_by_task_cluster_id(event_model: OMPEventModel, reductions: ReductionD
     vcount_prev, vcount = vcount, graph.vcount()
     event_model.log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
     return graph
+
 
 def reduce_by_task_id_for_empty_tasks(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
@@ -963,6 +895,7 @@ def reduce_by_task_id_for_empty_tasks(event_model: OMPEventModel, reductions: Re
     vcount_prev, vcount = vcount, graph.vcount()
     event_model.log.info(f"vertex count updated: {vcount_prev} -> {vcount}")
     return graph
+
 
 def reduce_by_sync_cluster_id(event_model: OMPEventModel, reductions: ReductionDict, graph: Graph) -> Graph:
     """
