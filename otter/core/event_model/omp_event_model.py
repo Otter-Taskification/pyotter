@@ -1,6 +1,6 @@
 from .event_model import EventModelFactory, BaseEventModel
 from collections import defaultdict
-from typing import Iterable, Dict, Any, Deque, Callable, Tuple, Optional, List
+from typing import Iterable, Dict, Any, Deque, Callable, Tuple, Optional, List, Union
 from warnings import warn
 from itertools import islice
 from igraph import Graph, disjoint_union, Vertex
@@ -25,6 +25,7 @@ from otter.utils import handlers
 get_module_logger = logger_getter("omp_event_model")
 
 # Type hint aliases
+EventList = List[Event]
 ChunkDict = Dict[Any, Chunk]
 ChunkStackDict = Dict[Any, Deque[Chunk]]
 ChunkUpdateHandlerKey = Tuple[Optional[RegionType], EventType]
@@ -107,11 +108,11 @@ class OMPEventModel(BaseEventModel):
 
             handler = self.get_update_chunk_handler(event)
             if self.event_completes_chunk(event):
-                completed_chunk = handler(event, location, self.chunk_dict, self.chunk_stack, self.task_registry)
+                completed_chunk = handler(event, location, self.chunk_dict, self.chunk_stack)
                 assert completed_chunk is not None
                 yield completed_chunk
             elif self.event_updates_chunk(event):
-                result = handler(event, location, self.chunk_dict, self.chunk_stack, self.task_registry)
+                result = handler(event, location, self.chunk_dict, self.chunk_stack)
                 assert result is None
             elif self.event_skips_chunk_update(event):
                 pass
@@ -263,6 +264,14 @@ class OMPEventModel(BaseEventModel):
         )
 
     @classmethod
+    def is_task_switch_complete_event(cls, event: Event) -> bool:
+        return event.prior_task_status in [TaskStatus.complete, TaskStatus.cancel]
+
+    @classmethod
+    def is_task_group_end_event(cls, event: Event) -> bool:
+        return (event.region_type, event.event_type) == (RegionType.taskgroup, EventType.sync_end)
+
+    @classmethod
     def get_task_completed(cls, event: Event) -> int:
         if cls.is_task_leave_event(event):
             return event.unique_id
@@ -345,6 +354,62 @@ class OMPEventModel(BaseEventModel):
         n_accept = len(events_filtered)
         self.log.debug(f"return {n_accept}/{n_args}: {events_filtered}")
         return events_filtered
+
+    def _return_unique_event(self, events: Union[EventList, List[EventList]], region_type: RegionType):
+        """
+        Expects args to be one of:
+            - List[events._Event]
+            - List[List[events._Event]]
+        Reduce the argument down to a List[events._Event] first
+        Expects to find & return exactly 1 single-executor event in this list
+        Error otherwise
+        """
+        assert is_event_list(events)
+
+        # args is guaranteed to be a list of events
+        unique_events = set(e for e in events if e.region_type == region_type)
+
+        if len(unique_events) == 1:
+            event = unique_events.pop()
+            self.log.debug(f"returning event: {event}")
+            result = [event]
+        elif len(unique_events) == 0:
+            event_types = set(type(e).__name__ for e in events)
+            self.log.debug(f"no {region_type} events, returning event list ({event_types=})")
+            result = events
+        else:
+            # error: if >1 event arrived here, the vertices were somehow mis-labelled
+            self.log.error(f"multiple {region_type} events received: {events}")
+            raise ValueError(f"multiple {region_type} events received: {events}")
+
+        assert is_event_list(result)
+        return result
+
+    def return_unique_single_executor_event(self, events):
+        assert is_event_list(events)
+        result = self._return_unique_event(events, RegionType.single_executor)
+        assert is_event_list(result)
+        return result
+
+    def return_unique_master_event(self, events):
+        assert is_event_list(events)
+        result = self._return_unique_event(events, RegionType.master)
+        assert is_event_list(result)
+        return result
+
+    def return_unique_taskswitch_complete_event(self, events):
+        assert is_event_list(events)
+        assert all(self.is_task_switch_event(event) for event in events)
+        event_set = set(event for event in events if self.is_task_switch_complete_event(event))
+        assert len(event_set) == 1
+        return event_set.pop()
+
+    def return_unique_taskgroup_complete_event(self, events):
+        assert is_event_list(events)
+        assert all(self.is_task_group_end_event(event) for event in events)
+        event_set = set(events)
+        assert len(event_set) == 1
+        return event_set.pop()
 
 
 @OMPEventModel.update_chunks_on(event_type=EventType.parallel_begin)
@@ -785,7 +850,7 @@ def reduce_by_parallel_sequence(event_model: OMPEventModel, reductions: Reductio
     labeller = SequenceLabeller(key_is_not_none('_parallel_sequence_id'), group_label='_parallel_sequence_id')
 
     # When combining the event vertex attribute, prioritise single-executor over single-other
-    reductions['event'] = LoggingValidatingReduction(handlers.return_unique_single_executor_event)
+    reductions['event'] = LoggingValidatingReduction(event_model.return_unique_single_executor_event)
 
     vcount = graph.vcount()
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
@@ -823,7 +888,7 @@ def reduce_by_master_event(event_model: OMPEventModel, reductions: ReductionDict
     labeller = SequenceLabeller(lambda vtx: event_model.all_master_events(vtx['event']), group_label=lambda vtx: vtx['event'][0])
 
     # When combining events, there should be exactly 1 unique master-begin/end event
-    reductions['event'] = LoggingValidatingReduction(handlers.return_unique_master_event)
+    reductions['event'] = LoggingValidatingReduction(event_model.return_unique_master_event)
 
     vcount = graph.vcount()
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
@@ -951,7 +1016,7 @@ def combine_graphs(event_model: OMPEventModel, task_registry: TaskRegistry, grap
 
     # Supply the logic to use when combining each of these vertex attributes
     attribute_handlers: List[Tuple[str, Reduction, Iterable[type]]] = [
-        ("_master_enter_event", handlers.return_unique_master_event, (type(None), Event)),
+        ("_master_enter_event", event_model.return_unique_master_event, (type(None), Event)),
         ("_task_cluster_id", handlers.pass_the_unique_value, (type(None), tuple)),
         ("_is_task_enter_node", handlers.pass_bool_value, (type(None), bool)),
         ("_is_task_leave_node", handlers.pass_bool_value, (type(None), bool))
