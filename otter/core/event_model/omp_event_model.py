@@ -1,4 +1,4 @@
-from .event_model import EventModelFactory, BaseEventModel
+from .event_model import EventModelFactory, BaseEventModel, EventList, ChunkDict, ChunkStackDict, ChunkUpdateHandlerKey, ChunkUpdateHandlerFn
 from collections import defaultdict
 from typing import Iterable, Dict, Any, Deque, Callable, Tuple, Optional, List, Union
 from warnings import warn
@@ -35,9 +35,6 @@ ChunkUpdateHandlerFn = Callable[[Event, Location, ChunkDict, ChunkStackDict, Tas
 @EventModelFactory.register(EventModel.OMP)
 class OMPEventModel(BaseEventModel):
 
-    # Handlers which update chunks, some of which will return a completed chunk
-    chunk_update_handlers: Dict[ChunkUpdateHandlerKey, ChunkUpdateHandlerFn] = dict()
-
     def __init__(self, *args, **kwargs):
         # A dictionary mapping a single-exec or master-begin event to a list of tasks to be synchronised
         self._task_sync_cache: Dict[Event, List[Task]] = defaultdict(list)
@@ -51,105 +48,11 @@ class OMPEventModel(BaseEventModel):
         assert (event.region_type, event.event_type) in ((RegionType.single_executor, EventType.workshare_begin), (RegionType.master, EventType.master_begin))
         self._task_sync_cache[event].clear()
 
-    @classmethod
-    def update_chunks_on(cls, event_type: EventType, region_type: RegionType = None) -> Decorator[ChunkUpdateHandlerFn]:
-        """
-        Register a function which will be called to update the relevant chunks when a matching event is encountered.
-        Some events use both region type and event type in the key, others use just the event type. Handlers are first
-        looked up by region type and event type, falling back to just the event type if no handler is found in the first
-        case.
-
-        Args:
-            event_type: the type of event for which this callback should be invoked
-            region_type: the region type of the event for which this callback should be invoked
-
-        Returns:
-            A decorator which registers the decorated function to be called when a matching event is encountered.
-
-        """
-
-        def decorator(handler: ChunkUpdateHandlerFn) -> ChunkUpdateHandlerFn:
-            key = cls.make_chunk_update_handlers_key(event_type, region_type)
-            # print(f"Registering handler: {handler} with {key=}")
-            assert(key not in cls.chunk_update_handlers)
-            cls.chunk_update_handlers[key] = handler
-            return handler
-        return decorator
-
-    @staticmethod
-    def make_chunk_update_handlers_key(event_type: EventType, region_type: Optional[RegionType] = None) -> ChunkUpdateHandlerKey:
-        return region_type, event_type
-
-    @classmethod
-    def get_chunk_update_handlers_key(cls, event: Event, fallback: bool = False) -> ChunkUpdateHandlerKey:
-        if fallback or not (Attr.region_type in event):
-            return cls.make_chunk_update_handlers_key(event.event_type)
-        else:
-            return cls.make_chunk_update_handlers_key(event.event_type, event.region_type)
-
-    @classmethod
-    def get_update_chunk_handler(cls, event: Event) -> Optional[ChunkUpdateHandlerFn]:
-        # Look up the handler by region & event type, falling back to just event type.
-        key = cls.get_chunk_update_handlers_key(event)
-        handler = cls.chunk_update_handlers.get(key)
-        if not handler:
-            key = cls.get_chunk_update_handlers_key(event, fallback=True)
-            handler = cls.chunk_update_handlers.get(key)
-        return handler
-
-    def yield_chunks(self, events_iter: Iterable[Tuple[Event, Location]]) -> Iterable[Chunk]:
-
-        log = self.log
-        task_registry = self.task_registry
-        log.debug(f"receiving events from {events_iter}")
-
-        for k, (event, location) in enumerate(events_iter):
-            log.debug(f"got event {k} with vertex label {event.get('vertex_label')}: {event}")
-
-            handler = self.get_update_chunk_handler(event)
-            if self.event_completes_chunk(event):
-                completed_chunk = handler(event, location, self.chunk_dict, self.chunk_stack)
-                assert completed_chunk is not None
-                yield completed_chunk
-            elif self.event_updates_chunk(event):
-                result = handler(event, location, self.chunk_dict, self.chunk_stack)
-                assert result is None
-            elif self.event_skips_chunk_update(event):
-                pass
-            else: # event applies default chunk update logic
-                self.append_to_encountering_task_chunk(event)
-
-            if self.is_task_register_event(event):
-                task_registry.register_task(self.get_task_data(event))
-
-            if self.is_update_task_start_ts_event(event):
-                task_entered = self.get_task_entered(event)
-                log.debug(f"notifying task start time: {task_entered} started at {event.time}")
-                task_registry.notify_task_start_ts(task_entered, event.time)
-
-            if self.is_update_duration_event(event):
-                prior_task_id, next_task_id = self.get_tasks_switched(event)
-                log.debug(f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint} {event.event_type}")
-                task_registry.update_task_duration(prior_task_id, next_task_id, event.time)
-
-            if self.is_task_complete_event(event):
-                completed_task_id = self.get_task_completed(event)
-                log.debug(f"event <{event}> notifying task {completed_task_id} of end_ts")
-                task_registry.notify_task_complete_ts(completed_task_id, event.time)
-
-        log.debug(f"exhausted {events_iter}")
-        task_registry.calculate_all_inclusive_duration()
-        task_registry.calculate_all_num_descendants()
-        task_registry.log_all_task_ts()
-
     def chunk_to_graph(self, chunk: Chunk) -> Graph:
         return omp_chunk_to_graph(self, chunk)
 
     def combine_graphs(self, graphs: Iterable[Graph]) -> Graph:
         return combine_graphs(self, self.task_registry, graphs)
-
-    def append_to_encountering_task_chunk(self, event: Event):
-        self.chunk_dict[event.encountering_task_id].append_event(event)
 
     @classmethod
     def event_completes_chunk(cls, event: Event) -> bool:
@@ -310,12 +213,6 @@ class OMPEventModel(BaseEventModel):
     @classmethod
     def events_bridge_parallel_region(cls, previous: Event, current: Event) -> bool:
         return cls.events_bridge_region(previous, current, [RegionType.parallel])
-
-    def warn_for_incomplete_chunks(self, chunks: Iterable[Chunk]) -> None:
-        chunks_stored = set(self.chunk_dict.values())
-        chunks_returned = set(chunks)
-        for incomplete in chunks_stored - chunks_returned:
-            warn(f"Chunk was never returned:\n{incomplete}", category=UserWarning)
 
     @staticmethod
     def check_events(events: Iterable[Event], reduce: Callable[[Iterable[bool]], bool], predicate: Callable[[Event], bool]) -> bool:

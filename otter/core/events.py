@@ -668,7 +668,8 @@ class Event:
         self._attribute_lookup = attribute_lookup
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(time={self.time}, endpoint={self._event.attributes[self._attribute_lookup['endpoint']]}, type={type(self._event).__name__})"
+        # return f"{type(self).__name__}(time={self.time}, endpoint={self._event.attributes[self._attribute_lookup['endpoint']]}, type={type(self._event).__name__})"
+        return f"{type(self).__name__}(time={self.time}, {', '.join(f'{name}={getattr(self, name)}' for name in self._attribute_lookup if name in self)})"
 
     @property
     def _base_repr(self):
@@ -681,7 +682,7 @@ class Event:
         try:
             return self._event.attributes[self._attribute_lookup[attr]]
         except KeyError:
-            raise AttributeError(f"attribute '{attr}' not found in {self}") from None
+            raise AttributeError(f"attribute '{attr}' not found") from None
 
     def __contains__(self, attr: Attr):
         if attr == defn.Attr.time:

@@ -6,6 +6,7 @@ from typing import Iterable, Dict, Tuple
 import otter
 from otter.core.event_model import get_event_model
 from otter.core.events import Event, Location
+from otter.definitions import EventModel
 
 
 def main() -> None:
@@ -20,14 +21,14 @@ def main() -> None:
     log.info(f"reading OTF2 anchorfile: {args.anchorfile}")
     with otter.reader.get_otf2_reader(args.anchorfile) as reader:
         task_registry = otter.core.tasks.TaskRegistry()
-        event_model_name = reader.get_event_model_name()
+        event_model_name: EventModel = reader.get_event_model_name()
         event_model = get_event_model(event_model_name, task_registry)
         log.info(f"Found event model name: {str(event_model_name)}")
         log.info(f"Using event model: {event_model}")
         log.info(f"generating chunks")
         attributes: Dict[str: OTF2Attribute] = {attr.name: attr for attr in reader.definitions.attributes}
         locations: Dict[OTF2Location: Location] = {location: Location(location) for location in reader.definitions.locations}
-        event_iter: Iterable[Tuple[Event, Location]] = ((Event(event, attributes), locations[location]) for location, event in reader.events)
+        event_iter: Iterable[Tuple[Location, Event]] = ((locations[location], Event(event, attributes)) for location, event in reader.events)
         chunks = list(event_model.yield_chunks(event_iter))
         # TODO: temporary check, factor out once new event models are passing
         event_model.warn_for_incomplete_chunks(chunks)
@@ -37,6 +38,9 @@ def main() -> None:
     if args.loglevel == "DEBUG":
         log.info(f"dumping chunks, tasks and graphs to log files")
         otter.utils.dump_to_log_file(chunks, graphs, task_registry)
+
+    if event_model_name == EventModel.TASKGRAPH:
+        return
 
     g = event_model.combine_graphs(graphs)
 
