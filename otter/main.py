@@ -39,9 +39,6 @@ def main() -> None:
         log.info(f"dumping chunks, tasks and graphs to log files")
         otter.utils.dump_to_log_file(chunks, graphs, task_registry)
 
-    if event_model_name == EventModel.TASKGRAPH:
-        return
-
     g = event_model.combine_graphs(graphs)
 
     # Unpack vertex event attributes
