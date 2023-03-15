@@ -23,6 +23,7 @@ from .decorators import warn_deprecated
 
 
 def dump_to_log_file(chunks, graphs, tasks):
+    from ..reporting.report import save_graph_to_dot, convert_to_svg
     chunk_log = get_logger("chunks_debug")
     graph_log = get_logger("graphs_debug")
     task_log = get_logger("tasks_debug")
@@ -30,7 +31,7 @@ def dump_to_log_file(chunks, graphs, tasks):
     graph_log.debug(">>> BEGIN GRAPHS <<<")
     chunk_log.debug(f">>> BEGIN CHUNKS <<<")
 
-    for chunk, graph in zip(chunks, graphs):
+    for k, (chunk, graph) in enumerate(zip(chunks, graphs)):
 
         # write chunk
         for line in chunk.to_text():
@@ -44,6 +45,12 @@ def dump_to_log_file(chunks, graphs, tasks):
         for vertex in graph.vs:
             graph_log.debug(f"{vertex}")
         graph_log.debug("")
+
+        # write graph as a dot file and convert to svg
+        dotfile = f"graph_{k}.dot"
+        svgfile = f"graph_{k}.svg"
+        save_graph_to_dot(graph, dotfile)
+        convert_to_svg(dotfile, svgfile)
 
     chunk_log.debug(f">>> END CHUNKS <<<")
     graph_log.debug(">>> END GRAPHS <<<")
