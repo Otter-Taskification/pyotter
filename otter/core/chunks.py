@@ -52,6 +52,10 @@ class Chunk:
         return None if len(self._events) == 0 else self._events[-1]
 
     @property
+    def events(self) -> Iterable[Event]:
+        yield from self._events
+
+    @property
     def type(self) -> defn.RegionType:
         return self._type
 
