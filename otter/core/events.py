@@ -720,7 +720,11 @@ class Event:
 @warn_deprecated
 # TODO: should be the responsibility of an event_model to know how to unpack an event's attributes
 def unpack(event: Union[List[Event], Event]) -> dict:
-    assert is_event_list(event)
+    try:
+        assert is_event_list(event)
+    except AssertionError:
+        print(event)
+        assert False
     # TODO: if we assert List[Event], why then check for just Event?
     if is_event(event):
         return dict(event.yield_attributes())

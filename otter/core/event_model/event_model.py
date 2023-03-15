@@ -130,6 +130,10 @@ class BaseEventModel(ABC):
         raise NotImplementedError()
 
     @abstractmethod
+    def is_task_create_event(self, event: Event) -> bool:
+        raise NotImplementedError()
+
+    @abstractmethod
     def is_task_register_event(self, event: Event) -> bool:
         raise NotImplementedError()
 

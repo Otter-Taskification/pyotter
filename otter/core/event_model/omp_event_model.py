@@ -504,7 +504,7 @@ def omp_chunk_to_graph(event_model: OMPEventModel, chunk: Chunk) -> Graph:
     # Used for labelling sequences of certain events in a parallel chunk
     sequence_count = 1
 
-    for event in islice(chunk._events, 1, None):
+    for event in islice(chunk.events, 1, None):
 
         if event.region_type in [RegionType.implicit_task]:
             continue
