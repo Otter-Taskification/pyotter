@@ -102,40 +102,17 @@ def style_tasks(t):
 class StyleVertexShapeAsRegionType(graph_styling.BaseGraphStyle):
 
     def get_vertex_style(self, vertex) -> Tuple[graph_styling.VertexStyle, str]:
-        label = vertex['vertex_label'] or " "
-        style = graph_styling.VertexStyle(
+        return graph_styling.VertexStyle(
             "filled",
             shapemap_region_type.get(vertex["vertex_color_key"], "circle"),
-            colormap_region_type.get(vertex["vertex_shape_key"], "fuchsia")
+            colormap_region_type.get(vertex["vertex_shape_key"], "fuchsia"),
+            vertex['vertex_label'] or " "
         )
-        return style, label
 
 def style_graph(graph: Graph, style: graph_styling.GraphStylingProtocol = StyleVertexShapeAsRegionType()):
-
-    assert(defn.Attr.edge_type in graph.es.attribute_names())
-
-    logger = get_module_logger()
-    logger.info(f"styling graph:")
-    for line in str(graph).split("\n"):
-        logger.info(f"{line}")
-
-    if 'name' in graph.vs.attribute_names():
-        raise ValueError()
-
-    if "label" in graph.vs.attribute_names():
-        logger.warn("vertex labels already defined, not overwritten")
-    else:
-        logger.debug("defining vertex labels")
-        graph.vs['label'] = [v['vertex_label'] or " " for v in graph.vs]
-
     per_vertex_styles_labels = [style.get_vertex_style(vertex) for vertex in graph.vs]
-    vertex_styles_tuples, vertex_labels = list(map(list, zip(*per_vertex_styles_labels)))
-    vertex_styles, vertex_shapes, vertex_colors = list(map(list, zip(*vertex_styles_tuples)))
+    vertex_styles, vertex_shapes, vertex_colors, vertex_labels = list(map(list, zip(*per_vertex_styles_labels)))
     graph.vs['style'] = vertex_styles
     graph.vs['shape'] = vertex_shapes
     graph.vs['color'] = vertex_colors
-
-    # graph.vs['style'] = "filled"
-    # graph.vs['shape'] = [shapemap_region_type[key] for key in graph.vs["vertex_color_key"]]
-    # graph.vs['color'] = [colormap_region_type[key] for key in graph.vs["vertex_shape_key"]]
-    # graph.es['color'] = [colormap_edge_type[key] for key in graph.es[defn.Attr.edge_type]]
+    graph.vs['label'] = vertex_labels

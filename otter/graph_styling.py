@@ -7,6 +7,7 @@ class VertexStyle(NamedTuple):
     style: str
     shape: str
     color: str
+    label: str
 
 
 class EdgeStyle(NamedTuple):
@@ -33,7 +34,7 @@ class GraphStylingProtocol(Protocol):
     def edge_font(self) -> FontStyle:
         pass
 
-    def get_vertex_style(self, vertex) -> Tuple[VertexStyle, str]:
+    def get_vertex_style(self, vertex) -> VertexStyle:
         pass
 
     def get_edge_style(self, edge, source_vertex, target_vertex) -> EdgeStyle:
@@ -63,8 +64,8 @@ class BaseGraphStyle:
         return self._edge_font
 
     @staticmethod
-    def get_vertex_style(vertex) -> Tuple[VertexStyle, str]:
-        return VertexStyle("filled", "circle", "fuchsia"), vertex["label"]
+    def get_vertex_style(vertex) -> VertexStyle:
+        return VertexStyle("filled", "circle", "fuchsia", vertex["label"])
 
     @staticmethod
     def get_edge_style(edge, source_vertex, target_vertex) -> EdgeStyle:
@@ -73,18 +74,15 @@ class BaseGraphStyle:
 
 class DebugGraphStyle(BaseGraphStyle):
 
-    def __init__(self):
-        super().__init__()
-        self._vertex_styles = {
-            Endpoint.enter:    VertexStyle("filled", "box", "blue"),
-            Endpoint.leave:    VertexStyle("filled", "box", "red"),
-            Endpoint.discrete: VertexStyle("filled", "box", "green")
-        }
-
-    def get_vertex_style(self, vertex) -> Tuple[VertexStyle, str]:
-        style = self._vertex_styles.get(vertex["endpoint"], default=VertexStyle("filled", "box", "fuchsia"))
+    def get_vertex_style(self, vertex) -> VertexStyle:
+        endpoint = vertex["endpoint"]
         label = str(vertex["event"])
-        return style, label
+        if endpoint == Endpoint.enter:
+            return VertexStyle("filled", "box", "blue", label)
+        elif endpoint == Endpoint.leave:
+            return VertexStyle("filled", "box", "red", label)
+        elif endpoint == Endpoint.discrete:
+            return VertexStyle("filled", "box", "green", label)
 
     def get_edge_style(self, edge, source_vertex, target_vertex) -> EdgeStyle:
         return EdgeStyle("black", f"{source_vertex['unique_id']} -> {target_vertex['unique_id']}", 1.0)
@@ -95,7 +93,7 @@ class VertexAsHTMLTableStyle(BaseGraphStyle):
     def __init__(self) -> None:
         super().__init__()
 
-    def get_vertex_style(self, vertex) -> Tuple[VertexStyle, str]:
+    def get_vertex_style(self, vertex) -> VertexStyle:
         """Make a HTML-like table from the event attributes"""
         endpoint = vertex["endpoint"]
         attributes = vertex["_event.attributes"] # should be the dict of event attributes (task_graph: event.attributes)
@@ -111,7 +109,7 @@ class VertexAsHTMLTableStyle(BaseGraphStyle):
         label_body = str(
             make.graphviz_record_table(attributes, table_attr={'td': {'align': 'left'}})
         )
-        return VertexStyle("filled", "plaintext", color), f"<{label_body}>"
+        return VertexStyle("filled", "plaintext", color, f"<{label_body}>")
 
     def get_edge_style(self, edge, source_vertex, target_vertex) -> EdgeStyle:
         if edge[Attr.edge_type] == EdgeType.taskwait:
