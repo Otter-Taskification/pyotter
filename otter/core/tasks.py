@@ -336,7 +336,8 @@ class TaskRegistry:
         if t.id in self._dict:
             raise ValueError(f"task {t.id} was already registered in {self}")
         self._dict[t.id] = t
-        if t.id > 0:
+        # if the task's parent was recorded as NULL at runtime, t.parent_id is None
+        if t.id > 0 and t.parent_id is not None:
             self[t.parent_id].append_child(t.id)
         for name in t.keys():
             if name not in self._task_attribute_set:
