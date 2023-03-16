@@ -9,7 +9,7 @@ get_module_logger = log.logger_getter("styling")
 # Map region type to node color
 colormap_region_type = { # default grey
     'initial_task': 'green',
-    'implicit_task': 'fuchsia',
+    'implicit_task': 'grey',
     'explicit_task': 'cyan',
     'parallel': 'yellow',
     'single_executor': 'blue',
