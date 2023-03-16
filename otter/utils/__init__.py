@@ -2,24 +2,17 @@ from warnings import warn
 from typing import Callable
 from inspect import isgeneratorfunction, isfunction
 from functools import partial
+from collections import Counter
 from .counters import SequenceLabeller
 from .iterate import pairwise, flatten, transpose_list_to_dict
-# from .vertex_predicates import key_is_not_none, \
-#     is_region_type, \
-#     is_empty_task_region, \
-#     is_terminal_task_vertex, \
-#     is_task_group_end_vertex, \
-#     is_single_executor, \
-#     is_master, \
-#     is_taskwait
 from . import vertex_predicates as vpred
-# from .edge_predicates import edge_connects_same_type
 from . import edge_predicates as epred
 from .vertex_attr_handlers import LoggingValidatingReduction, ReductionDict
 from . import vertex_attr_handlers as handlers
 from ..log import get_logger
 from .args import get_args
 from .decorators import warn_deprecated
+from igraph import Graph
 
 
 def dump_to_log_file(chunks, graphs, tasks):
@@ -111,3 +104,53 @@ def append_history(lines, file):
     newlines = readline.get_current_history_length()
     readline.set_history_length(1000)
     readline.append_history_file(newlines - lines, file)
+
+
+def assert_vertex_event_list(graph: Graph) -> None:
+    from ..core.events import Event
+    for vertex in graph.vs:
+        event_list = vertex['event_list']
+        assert isinstance(event_list, list)
+        assert all(isinstance(item, Event) for item in event_list)
+
+
+def dump_graph_to_file(graph: Graph, filename: str = "graph.log") -> None:
+    log = get_logger("main")
+    log.info(f"writing graph to graph.log")
+    with open(filename, "w") as f:
+        f.write("### VERTEX ATTRIBUTES:\n")
+        for name in graph.vs.attribute_names():
+            levels = set(flatten(graph.vs[name]))
+            n_levels = len(levels)
+            if n_levels <= 6:
+                f.write(f"  {name:>35} {n_levels:>6} levels {list(levels)}\n")
+            else:
+                f.write(f"  {name:>35} {n_levels:>6} levels (...)\n")
+
+        region_type_count = Counter(graph.vs['region_type'])
+        region_types = "\n".join([f"{region_type_count[k]:>6} {k}" for k in
+                                  region_type_count]) + f"\nTotal count: {sum(region_type_count.values())}"
+
+        f.write("\nCount of vertex['region_type'] values:\n")
+        f.write(region_types)
+        f.write("\n\n")
+
+        f.write("### EDGE ATTRIBUTES:\n")
+        for name in graph.es.attribute_names():
+            levels = set(flatten(graph.es[name]))
+            n_levels = len(levels)
+            if n_levels <= 6:
+                f.write(f"  {name:>35} {n_levels:>6} levels ({list(levels)})\n")
+            else:
+                f.write(f"  {name:>35} {n_levels:>6} levels (...)\n")
+
+        f.write("\n")
+
+        f.write("### VERTICES:\n")
+        for v in graph.vs:
+            f.write(f"{v}\n")
+
+        f.write("\n")
+        f.write("### EDGES:\n")
+        for e in graph.es:
+            f.write(f"{e.tuple}\n")
