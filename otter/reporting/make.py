@@ -28,10 +28,10 @@ def table(keys: list, tidy_keys: dict, rows: list, **kwargs):
 
 def graphviz_record_table(object_attr: dict, **kwargs):
     """A HTML-like table where each row represents one key-value pair of some object's attributes"""
-    attr = defaultdict(lambda: dict(), kwargs.get("attr", dict()))
-    with tag("table", **attr["table"]) as table:
+    table_attr = defaultdict(lambda: dict(), kwargs.get("table_attr", dict()))
+    with tag("table", **table_attr["table"]) as t:
         for key, value in object_attr.items():
-            with table.add(tag("tr", **attr["tr"])) as row:
-                row.append(wrap("td", wrap("b", key), **attr["td"]))
-                row.append(wrap("td", value, **attr["td"]))
-    return table
+            with t.add(tag("tr", **table_attr["tr"])) as tr:
+                tr.append(wrap("td", wrap("b", key), **table_attr["td"]))
+                tr.append(wrap("td", value, **table_attr["td"]))
+    return t
