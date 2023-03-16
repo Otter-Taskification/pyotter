@@ -4,13 +4,13 @@
 import warnings
 from otf2.definitions import Attribute as OTF2Attribute
 from otf2 import LocationType as OTF2Location
-from collections import Counter
 from typing import Iterable, Dict, Tuple
 import otter
 from otter.core.event_model import get_event_model
 from otter.core.events import Event, Location
 from otter.definitions import EventModel
 from otter import graph_styling
+from igraph import Graph
 
 
 def main() -> None:
@@ -45,17 +45,18 @@ def main() -> None:
 
     graph = event_model.combine_graphs(graphs)
 
-    # vertex['event'] should always be a list of 1 or more events
-    for vertex in graph.vs:
-        event_list = vertex['event_list']
-        assert isinstance(event_list, list)
-        assert all(isinstance(item, Event) for item in event_list)
+    # vertex['event_list'] should always be a list of 1 or more events
+    if args.loglevel == "DEBUG":
+        otter.utils.assert_vertex_event_list(graph)
 
     # Unpack vertex event attributes
     for vertex in graph.vs:
-        event = vertex['event_list']
-        log.debug(f"unpacking vertex {event=}")
-        attributes = otter.core.events.unpack(event)
+        event_list = vertex['event_list']
+        log.debug(f"unpacking vertex event_list:")
+        if args.loglevel == "DEBUG":
+            for event in event_list:
+                log.debug(f"  {event}")
+        attributes = event_model.unpack(event_list)
         for key, value in attributes.items():
             log.debug(f"  got {key}={value}")
             if isinstance(value, list):
@@ -74,43 +75,7 @@ def main() -> None:
 
     # Dump graph details to file
     if args.loglevel == "DEBUG":
-        log.info(f"writing graph to graph.log")
-        with open("graph.log", "w") as f:
-            f.write("### VERTEX ATTRIBUTES:\n")
-            for name in graph.vs.attribute_names():
-                levels = set(otter.utils.flatten(graph.vs[name]))
-                n_levels = len(levels)
-                if n_levels <= 6:
-                    f.write(f"  {name:>35} {n_levels:>6} levels {list(levels)}\n")
-                else:
-                    f.write(f"  {name:>35} {n_levels:>6} levels (...)\n")
-
-            region_type_count = Counter(graph.vs['region_type'])
-            region_types = "\n".join([f"{region_type_count[k]:>6} {k}" for k in region_type_count]) + f"\nTotal count: {sum(region_type_count.values())}"
-
-            f.write("\nCount of vertex['region_type'] values:\n")
-            f.write(region_types)
-            f.write("\n\n")
-
-            f.write("### EDGE ATTRIBUTES:\n")
-            for name in graph.es.attribute_names():
-                levels = set(otter.utils.flatten(graph.es[name]))
-                n_levels = len(levels)
-                if n_levels <= 6:
-                    f.write(f"  {name:>35} {n_levels:>6} levels ({list(levels)})\n")
-                else:
-                    f.write(f"  {name:>35} {n_levels:>6} levels (...)\n")
-
-            f.write("\n")
-
-            f.write("### VERTICES:\n")
-            for v in graph.vs:
-                f.write(f"{v}\n")
-
-            f.write("\n")
-            f.write("### EDGES:\n")
-            for e in graph.es:
-                f.write(f"{e.tuple}\n")
+        otter.utils.dump_graph_to_file(graph)
 
     # Clean up temporary vertex attributes
     for name in graph.vs.attribute_names():
@@ -123,8 +88,7 @@ def main() -> None:
         otter.styling.style_graph(graph)
         otter.styling.style_tasks(task_registry.task_tree())
         otter.reporting.write_report(args, graph, task_registry)
+        log.info(f"report written to {args.report}")
 
     if args.interact:
         otter.utils.interact(locals(), graph)
-
-    log.info("Done!")
