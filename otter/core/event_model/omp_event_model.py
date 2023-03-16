@@ -238,8 +238,8 @@ class OMPEventModel(BaseEventModel):
         if vertex['_is_task_enter_node'] or vertex['_is_task_leave_node']:
             return ((vertex['_is_task_leave_node'] == True and vertex.indegree() == 0) or
                     (vertex['_is_task_enter_node'] == True and vertex.outdegree() == 0))
-        # TODO: could this be refactored? Don't we already ensure that vertex['event'] is always a list?
-        if type(vertex['event']) is list and set(map(type, vertex['event'])) in [{EventType.task_switch}]:
+        # TODO: could this be refactored? Don't we already ensure that vertex['event_list'] is always a list?
+        if type(vertex['event_list']) is list and set(map(type, vertex['event_list'])) in [{EventType.task_switch}]:
             return ((all(vertex['_is_task_leave_node']) and vertex.indegree() == 0) or
                     (all(vertex['_is_task_enter_node']) and vertex.outdegree() == 0))
 
@@ -473,7 +473,7 @@ def omp_chunk_to_graph(event_model: OMPEventModel, chunk: Chunk) -> Graph:
     chunk.log.debug(f"transforming chunk to graph (type={chunk.type}) {chunk.first=}")
 
     graph: Graph = Graph(directed=True)
-    prior_vertex = graph.add_vertex(event=[chunk.first])
+    prior_vertex = graph.add_vertex(event_list=[chunk.first])
     prior_event = chunk.first
 
     # Used to save taskgroup-enter event to match to taskgroup-leave event
@@ -513,8 +513,8 @@ def omp_chunk_to_graph(event_model: OMPEventModel, chunk: Chunk) -> Graph:
             continue
 
         # The vertex representing this event
-        # vertex['event'] is always a list of 1 or more events
-        v = graph.add_vertex(event=[event])
+        # vertex['event_list'] is always a list of 1 or more events
+        v = graph.add_vertex(event_list=[event])
 
         encountering_task = event_model.task_registry[event.encountering_task_id]
         if encountering_task is NullTask:
@@ -657,7 +657,7 @@ def omp_chunk_to_graph(event_model: OMPEventModel, chunk: Chunk) -> Graph:
         # For task-create add dummy nodes for easier merging
         if event_model.is_task_create_event(event):
             v['_task_cluster_id'] = (event.unique_id, Endpoint.enter)
-            dummy_vertex = graph.add_vertex(event=[event])
+            dummy_vertex = graph.add_vertex(event_list=[event])
             dummy_vertex['_task_cluster_id'] = (event.unique_id, Endpoint.leave)
             dummy_vertex['_is_dummy_task_vertex'] = True
 
@@ -709,7 +709,7 @@ def omp_chunk_to_graph(event_model: OMPEventModel, chunk: Chunk) -> Graph:
             pass
         elif len(chunk) <= 2 or (chunk.type == RegionType.parallel and len(chunk) <= 4):
             # Parallel chunks contain implicit-task-begin/end events which are skipped, but count towards len(self)
-            chunk.log.debug(f"no internal vertices - add edge from: {graph.vs[0]['event']} to: {graph.vs[1]['event']}")
+            chunk.log.debug(f"no internal vertices - add edge from: {graph.vs[0]['event_list']} to: {graph.vs[1]['event_list']}")
             graph.add_edge(graph.vs[0], graph.vs[1])
 
     # For parallel & single-executor chunks which are disconnected and have internal vertices (and thus some edges), connect start & end vertices
@@ -747,7 +747,7 @@ def reduce_by_parallel_sequence(event_model: OMPEventModel, reductions: Reductio
     labeller = SequenceLabeller(key_is_not_none('_parallel_sequence_id'), group_label='_parallel_sequence_id')
 
     # When combining the event vertex attribute, prioritise single-executor over single-other
-    reductions['event'] = LoggingValidatingReduction(event_model.return_unique_single_executor_event)
+    reductions['event_list'] = LoggingValidatingReduction(event_model.return_unique_single_executor_event)
 
     vcount = graph.vcount()
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
@@ -764,7 +764,7 @@ def reduce_by_single_exec_event(event_model: OMPEventModel, reductions: Reductio
     event_model.log.info(f"combining vertices by single-begin/end event")
 
     # Label single-executor vertices which refer to the same event.
-    labeller = SequenceLabeller(lambda vtx: event_model.all_single_exec_events(vtx['event']), group_label=lambda vtx: vtx['event'][0])
+    labeller = SequenceLabeller(lambda vtx: event_model.all_single_exec_events(vtx['event_list']), group_label=lambda vtx: vtx['event_list'][0])
 
     vcount = graph.vcount()
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
@@ -780,12 +780,12 @@ def reduce_by_master_event(event_model: OMPEventModel, reductions: ReductionDict
     event_model.log.info(f"combining vertices by master-begin/end event")
 
     # Label vertices which refer to the same master-begin/end event
-    # SUSPECT THIS SHOULD BE "vertex['event'][0]"
+    # SUSPECT THIS SHOULD BE "vertex['event_list'][0]"
     # NOT TESTED!
-    labeller = SequenceLabeller(lambda vtx: event_model.all_master_events(vtx['event']), group_label=lambda vtx: vtx['event'][0])
+    labeller = SequenceLabeller(lambda vtx: event_model.all_master_events(vtx['event_list']), group_label=lambda vtx: vtx['event_list'][0])
 
     # When combining events, there should be exactly 1 unique master-begin/end event
-    reductions['event'] = LoggingValidatingReduction(event_model.return_unique_master_event)
+    reductions['event_list'] = LoggingValidatingReduction(event_model.return_unique_master_event)
 
     vcount = graph.vcount()
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
@@ -802,12 +802,12 @@ def remove_redundant_master_edges(event_model: OMPEventModel, reductions: Reduct
     *** WARNING ********************************************************************
     ********************************************************************************
 
-    *** This step assumes vertex['event'] is a bare event instead of an event list ***
+    *** This step assumes vertex['event_list'] is a bare event instead of an event list ***
     """
 
-    master_enter_vertices = filter(lambda vertex: isinstance(vertex['event'], MasterBegin), graph.vs)
-    master_leave_vertices = filter(lambda vertex: isinstance(vertex['event'], MasterEnd), graph.vs)
-    master_enter_vertex_map = {enter_vertex['event']: enter_vertex for enter_vertex in master_enter_vertices}
+    master_enter_vertices = filter(lambda vertex: isinstance(vertex['event_list'], MasterBegin), graph.vs)
+    master_leave_vertices = filter(lambda vertex: isinstance(vertex['event_list'], MasterEnd), graph.vs)
+    master_enter_vertex_map = {enter_vertex['event_list']: enter_vertex for enter_vertex in master_enter_vertices}
     master_vertex_pairs = ((master_enter_vertex_map[leave_vertex['_master_enter_event']], leave_vertex) for leave_vertex
                            in master_leave_vertices)
     neighbour_pairs = {(enter.predecessors()[0], leave.successors()[0]) for enter, leave in master_vertex_pairs}
@@ -827,7 +827,7 @@ def reduce_by_task_cluster_id(event_model: OMPEventModel, reductions: ReductionD
     labeller = SequenceLabeller(key_is_not_none('_task_cluster_id'), group_label='_task_cluster_id')
 
     # When combining events by _task_cluster_id, reject task-create events (in favour of task-switch events)
-    reductions['event'] = LoggingValidatingReduction(event_model.reject_task_create)
+    reductions['event_list'] = LoggingValidatingReduction(event_model.reject_task_create)
 
     vcount = graph.vcount()
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
@@ -868,7 +868,7 @@ def reduce_by_sync_cluster_id(event_model: OMPEventModel, reductions: ReductionD
     labeller = SequenceLabeller(key_is_not_none('_sync_cluster_id'), group_label='_sync_cluster_id')
 
     # Silently return the list of combined arguments
-    reductions['event'] = LoggingValidatingReduction(handlers.pass_args)
+    reductions['event_list'] = LoggingValidatingReduction(handlers.pass_args)
 
     vcount = graph.vcount()
     graph.contract_vertices(labeller.label(graph.vs), combine_attrs=reductions)
@@ -926,9 +926,9 @@ def combine_graphs(event_model: OMPEventModel, task_registry: TaskRegistry, grap
     # into the chunk where the task-create event happened
     log.debug(f"notify each task of its dummy task-create vertex")
     for dummy_vertex in filter(lambda v: v['_is_dummy_task_vertex'], graph.vs):
-        assert is_event_list(dummy_vertex['event'])
-        assert len(dummy_vertex['event']) == 1
-        event = dummy_vertex['event'][0]
+        assert is_event_list(dummy_vertex['event_list'])
+        assert len(dummy_vertex['event_list']) == 1
+        event = dummy_vertex['event_list'][0]
         assert event_model.is_task_create_event(event)
         task_id = event_model.get_task_created(event)
         task_created = task_registry[task_id]

@@ -87,8 +87,8 @@ class TaskGraphEventModel(BaseEventModel):
         if vertex['_is_task_enter_node'] or vertex['_is_task_leave_node']:
             return ((vertex['_is_task_leave_node'] is True and vertex.indegree() == 0) or
                     (vertex['_is_task_enter_node'] is True and vertex.outdegree() == 0))
-        # TODO: could this be refactored? Don't we already ensure that vertex['event'] is always a list?
-        if type(vertex['event']) is list and set(map(type, vertex['event'])) in [{EventType.task_switch}]:
+        # TODO: could this be refactored? Don't we already ensure that vertex['event_list'] is always a list?
+        if type(vertex['event_list']) is list and set(map(type, vertex['event_list'])) in [{EventType.task_switch}]:
             return ((all(vertex['_is_task_leave_node']) and vertex.indegree() == 0) or
                     (all(vertex['_is_task_enter_node']) and vertex.outdegree() == 0))
 
@@ -121,7 +121,7 @@ def task_graph_chunk_to_graph(event_model: TaskGraphEventModel, chunk: Chunk) ->
     chunk.log.debug(f"transforming chunk to graph (type={chunk.type}) {chunk.first=}")
 
     graph: Graph = Graph(directed=True)
-    prior_vertex = graph.add_vertex(event=[chunk.first])
+    prior_vertex = graph.add_vertex(event_list=[chunk.first])
     prior_event = chunk.first
 
     if chunk.type == RegionType.explicit_task:
@@ -131,8 +131,8 @@ def task_graph_chunk_to_graph(event_model: TaskGraphEventModel, chunk: Chunk) ->
     for event in islice(chunk.events, 1, None):
 
         # The vertex representing this event
-        # vertex['event'] is always a list of 1 or more events
-        v = graph.add_vertex(event=[event])
+        # vertex['event_list'] is always a list of 1 or more events
+        v = graph.add_vertex(event_list=[event])
 
         encountering_task = event_model.task_registry[event.encountering_task_id]
         if encountering_task is NullTask:
@@ -166,7 +166,7 @@ def task_graph_chunk_to_graph(event_model: TaskGraphEventModel, chunk: Chunk) ->
             v['_task_cluster_id'] = (event.unique_id, Endpoint.enter)
             # store event in the dummy vertex temporarily only until we notify the corresponding task of this dummy
             # vertex, then set to None so that it doesn't collide with the task-leave event which has the same _task_cluster_id
-            dummy_vertex = graph.add_vertex(event=[event])
+            dummy_vertex = graph.add_vertex(event_list=[event])
             dummy_vertex['_task_cluster_id'] = (event.unique_id, Endpoint.leave)
             dummy_vertex['_is_dummy_task_vertex'] = True
 
@@ -209,7 +209,7 @@ def reduce_by_task_cluster_id(event_model: TaskGraphEventModel, reductions: Redu
     labeller = SequenceLabeller(key_is_not_none('_task_cluster_id'), group_label='_task_cluster_id')
 
     # When combining events by _task_cluster_id, ...
-    reductions['event'] = LoggingValidatingReduction(handlers.pass_the_unique_value)
+    reductions['event_list'] = LoggingValidatingReduction(handlers.pass_the_unique_value)
 
     new_labels = labeller.label(graph.vs)
 
@@ -233,7 +233,7 @@ def reduce_by_task_id_for_empty_tasks(event_model: TaskGraphEventModel, reductio
     # Label vertices which represent empty tasks and have the same task ID
     labeller = SequenceLabeller(event_model.is_empty_task_region, group_label=lambda v: v['_task_cluster_id'][0])
 
-    reductions['event'] = LoggingValidatingReduction(handlers.pass_args)
+    reductions['event_list'] = LoggingValidatingReduction(handlers.pass_args)
 
     # Combine _task_cluster_id tuples in a set (to remove duplicates)
     reductions['_task_cluster_id'] = LoggingValidatingReduction(handlers.pass_the_set_of_values,
@@ -290,16 +290,16 @@ def combine_graphs(event_model: TaskGraphEventModel, task_registry: TaskRegistry
     # into the chunk where the task-create event happened
     log.debug(f"notify each task of its dummy task-create vertex")
     for dummy_vertex in (v for v in graph.vs if v['_is_dummy_task_vertex']):
-        assert all(isinstance(event, Event) for event in dummy_vertex['event'])
-        assert len(dummy_vertex['event']) == 1
-        event = dummy_vertex['event'][0]
+        assert all(isinstance(event, Event) for event in dummy_vertex['event_list'])
+        assert len(dummy_vertex['event_list']) == 1
+        event = dummy_vertex['event_list'][0]
         assert event_model.is_task_create_event(event)
         task_id = event_model.get_task_created(event)
         task_created = task_registry[task_id]
         setattr(task_created, '_dummy_vertex', dummy_vertex)
         log.debug(f" - notify task {task_id} of vertex {task_created._dummy_vertex}")
         # replace event with None so it doesn't collide with the task-leave event which has the same _task_cluster_id
-        dummy_vertex['event'][0] = None
+        dummy_vertex['event_list'][0] = None
 
     # Get all the task sync contexts from the taskwait vertices and create edges for them
     log.debug(f"getting task synchronisation contexts")

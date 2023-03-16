@@ -45,9 +45,15 @@ def main() -> None:
 
     graph = event_model.combine_graphs(graphs)
 
+    # vertex['event'] should always be a list of 1 or more events
+    for vertex in graph.vs:
+        event_list = vertex['event_list']
+        assert isinstance(event_list, list)
+        assert all(isinstance(item, Event) for item in event_list)
+
     # Unpack vertex event attributes
     for vertex in graph.vs:
-        event = vertex['event']
+        event = vertex['event_list']
         log.debug(f"unpacking vertex {event=}")
         attributes = otter.core.events.unpack(event)
         for key, value in attributes.items():
@@ -111,7 +117,7 @@ def main() -> None:
         if name.startswith("_"):
             del graph.vs[name]
 
-    del graph.vs['event']
+    del graph.vs['event_list']
 
     if args.report:
         otter.styling.style_graph(graph)
