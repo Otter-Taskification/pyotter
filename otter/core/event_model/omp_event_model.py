@@ -308,6 +308,26 @@ class OMPEventModel(BaseEventModel):
         assert len(event_set) == 1
         return event_set.pop()
 
+    @staticmethod
+    def get_augmented_event_attributes(event: Event) -> Dict:
+        attr = event.to_dict()
+        event_type, unique_id, region_type = event.get(Attr.event_type), event.get(Attr.unique_id), event.get(Attr.region_type)
+        if event_type == EventType.task_switch:
+            if event.prior_task_status in [TaskStatus.complete, TaskStatus.cancel]:
+                attr['vertex_label'] = event.get(Attr.prior_task_id)
+                attr['vertex_color_key'] = region_type
+                attr['vertex_shape_key'] = region_type
+            else:
+                next_task_region_type = event.get(Attr.next_task_region_type)
+                attr['vertex_label'] = event.get(Attr.next_task_id)
+                attr['vertex_color_key'] = next_task_region_type
+                attr['vertex_shape_key'] = next_task_region_type
+        else:
+            attr['vertex_label'] = unique_id
+            attr['vertex_color_key'] = region_type
+            attr['vertex_shape_key'] = region_type
+        return attr
+
 
 @OMPEventModel.update_chunks_on(event_type=EventType.parallel_begin)
 def update_chunks_parallel_begin(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict) -> None:
