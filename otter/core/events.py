@@ -657,12 +657,6 @@ class PhaseEnd(LeaveMixin, DefaultUpdateChunksMixin, _Event):
 class Event:
     """A basic wrapper for OTF2 events"""
 
-    _additional_attributes = [
-        "vertex_label",
-        "vertex_color_key",
-        "vertex_shape_key"
-    ]
-
     def __init__(self, otf2_event: OTF2Event, attribute_lookup: Dict[str, OTF2Attribute]) -> None:
         self._event = otf2_event
         self._attribute_lookup = attribute_lookup
@@ -695,15 +689,10 @@ class Event:
         except AttributeError:
             return default
 
-    def yield_attributes(self):
-        yield "time", self.time
-        names = [attr_name for attr_name in self._attribute_lookup if attr_name in self]
-        for name in chain(names, self._additional_attributes):
-            try:
-                yield name, getattr(self, name)
-            except AttributeError:
-                get_module_logger().debug(f"{self.yield_attributes}: attribute was not found: {name=}, {self.event_type=}, {self.region_type=})")
-                yield name, f"{self.__class__.__name__}.{name}=UNDEFINED"
+    def to_dict(self) -> Dict:
+        as_dict = {name: getattr(self, name) for name in self._attribute_lookup if name in self}
+        as_dict['time'] = self.time
+        return as_dict
 
     @property
     def vertex_label(self):
@@ -716,19 +705,3 @@ class Event:
     @property
     def vertex_shape_key(self):
         return self.vertex_color_key
-
-@warn_deprecated
-# TODO: should be the responsibility of an event_model to know how to unpack an event's attributes
-def unpack(event: Union[List[Event], Event]) -> dict:
-    try:
-        assert is_event_list(event)
-    except AssertionError:
-        print(event)
-        assert False
-    # TODO: if we assert List[Event], why then check for just Event?
-    if is_event(event):
-        return dict(event.yield_attributes())
-    elif is_event_list(event):
-        return transpose_list_to_dict([dict(e.yield_attributes()) for e in event])
-    else:
-        raise TypeError(f"{type(event)}")
