@@ -88,7 +88,7 @@ class VertexAsHTMLTableStyle(DefaultGraphStyle):
         label_body = str(
             make.graphviz_record_table(
                 event.attributes,
-                attr={
+                table_attr={
                     'td': {'align': 'left'}
                 }
             )
