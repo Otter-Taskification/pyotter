@@ -9,6 +9,7 @@ from otter.core.events import Event, Location
 from otter.core.tasks import TaskRegistry, NullTask
 from otter.log import logger_getter
 from otter.utils.typing import Decorator
+from otter.utils import transpose_list_to_dict
 
 # Type hint aliases
 EventList = List[Event]
@@ -204,6 +205,15 @@ class BaseEventModel(ABC):
 
     def append_to_encountering_task_chunk(self, event: Event) -> None:
         self.chunk_dict[event.encountering_task_id].append_event(event)
+
+    @staticmethod
+    @abstractmethod
+    def get_augmented_event_attributes(event: Event) -> Dict:
+        raise NotImplementedError()
+
+    @classmethod
+    def unpack(cls, event_list: List[Event]) -> Dict:
+        return transpose_list_to_dict([cls.get_augmented_event_attributes(event) for event in event_list])
 
 
 def get_event_model(model_name: EventModel, task_registry: TaskRegistry) -> EventModelProtocol:
