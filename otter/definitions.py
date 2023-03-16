@@ -11,6 +11,7 @@ class Attr(str, Enum):
     encountering_task_id = "encountering_task_id"
     task_type = "task_type"
     parent_task_id = "parent_task_id"
+    next_task_id = "next_task_id"
     edge_type = "edge_type"
     prior_task_id = "prior_task_id"
     prior_task_status = "prior_task_status"
