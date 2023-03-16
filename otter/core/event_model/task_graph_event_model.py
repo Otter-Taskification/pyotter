@@ -1,6 +1,6 @@
 from .event_model import EventModelFactory, BaseEventModel, EventList, ChunkDict, ChunkStackDict, ChunkUpdateHandlerKey, ChunkUpdateHandlerFn
 from itertools import islice
-from typing import Iterable, Tuple, Optional, List
+from typing import Iterable, Tuple, Optional, List, Dict
 from igraph import Graph, disjoint_union, Vertex
 from otter.definitions import EventModel, EventType, TaskStatus, Endpoint, NullTaskID, Attr, RegionType, TaskSyncType, EdgeType
 from otter.core.chunks import Chunk
@@ -91,6 +91,15 @@ class TaskGraphEventModel(BaseEventModel):
         if type(vertex['event_list']) is list and set(map(type, vertex['event_list'])) in [{EventType.task_switch}]:
             return ((all(vertex['_is_task_leave_node']) and vertex.indegree() == 0) or
                     (all(vertex['_is_task_enter_node']) and vertex.outdegree() == 0))
+
+    @staticmethod
+    def get_augmented_event_attributes(event: Event) -> Dict:
+        attr = event.to_dict()
+        unique_id, region_type = event.get(Attr.unique_id), event.get(Attr.region_type)
+        attr['vertex_label'] = unique_id
+        attr['vertex_color_key'] = region_type
+        attr['vertex_shape_key'] = region_type
+        return attr
 
 
 @TaskGraphEventModel.update_chunks_on(event_type=EventType.task_switch)
