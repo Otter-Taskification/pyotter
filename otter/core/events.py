@@ -1,13 +1,8 @@
-from abc import ABC, abstractmethod
 from collections import deque
-from typing import List, Union, Dict
-from itertools import chain
+from typing import Dict
 from loggingdecorators import on_init
-from ..utils import transpose_list_to_dict
-from ..utils.decorators import warn_deprecated
 from .. import log
 from .. import definitions as defn
-from ..reader import OTF2Reader
 from ..definitions import Attr
 from otf2.definitions import Attribute as OTF2Attribute
 from otf2 import LocationType as OTF2Location
