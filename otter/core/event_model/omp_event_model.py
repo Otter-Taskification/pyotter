@@ -9,10 +9,7 @@ from otter.core.chunks import Chunk
 from otter.core.events import (
     is_event_list,
     Event,
-    Location,
-    ChunkSwitchEventMixin,
-    MasterBegin,
-    MasterEnd
+    Location
 )
 from otter.core.tasks import NullTask, Task, TaskData, TaskRegistry, TaskSynchronisationContext
 from otter.log import logger_getter, DEBUG
@@ -825,8 +822,8 @@ def remove_redundant_master_edges(event_model: OMPEventModel, reductions: Reduct
     *** This step assumes vertex['event_list'] is a bare event instead of an event list ***
     """
 
-    master_enter_vertices = filter(lambda vertex: isinstance(vertex['event_list'], MasterBegin), graph.vs)
-    master_leave_vertices = filter(lambda vertex: isinstance(vertex['event_list'], MasterEnd), graph.vs)
+    master_enter_vertices = filter(lambda vertex: event_model.is_event_type(vertex['event_list'], EventType.master_begin), graph.vs)
+    master_leave_vertices = filter(lambda vertex: event_model.is_event_type(vertex['event_list'], EventType.master_end), graph.vs)
     master_enter_vertex_map = {enter_vertex['event_list']: enter_vertex for enter_vertex in master_enter_vertices}
     master_vertex_pairs = ((master_enter_vertex_map[leave_vertex['_master_enter_event']], leave_vertex) for leave_vertex
                            in master_leave_vertices)
