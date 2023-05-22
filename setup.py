@@ -20,7 +20,8 @@ setup(name="pyotter",
     install_requires=[
         'pyyaml>=6.0',
         'python-igraph==0.9.1',
-        'loggingdecorators>=0.1.3'
+        'loggingdecorators>=0.1.3',
+        'address_to_line>=0.1.2'
     ],
     dependency_links=['https://perftools.pages.jsc.fz-juelich.de/cicd/otf2/']
 )

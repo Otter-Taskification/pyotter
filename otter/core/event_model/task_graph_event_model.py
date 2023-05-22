@@ -1,12 +1,13 @@
+from warnings import warn
 from .event_model import EventModelFactory, BaseEventModel, EventList, ChunkDict, ChunkStackDict, ChunkUpdateHandlerKey, ChunkUpdateHandlerFn
 from itertools import islice
-from typing import Iterable, Tuple, Optional, List, Dict
+from typing import Iterable, Tuple, Optional, List, Dict, Set
 from igraph import Graph, disjoint_union, Vertex
 from otter.definitions import EventModel, EventType, TaskStatus, Endpoint, NullTaskID, Attr, RegionType, TaskSyncType, EdgeType
 from otter.core.chunks import Chunk
 from otter.core.events import Event, Location, is_event_list
 from otter.core.tasks import TaskData, NullTask, TaskSynchronisationContext, TaskRegistry
-from otter.utils import SequenceLabeller, LoggingValidatingReduction, ReductionDict, handlers
+from otter.utils import SequenceLabeller, LoggingValidatingReduction, ReductionDict, handlers, transpose_list_to_dict
 from otter.utils.vertex_attr_handlers import Reduction
 from otter.utils.vertex_predicates import key_is_not_none
 from otter.log import logger_getter, DEBUG
@@ -16,6 +17,10 @@ get_module_logger = logger_getter("task_graph_event_model")
 
 @EventModelFactory.register(EventModel.TASKGRAPH)
 class TaskGraphEventModel(BaseEventModel):
+
+    def __init__(self, task_registry: TaskRegistry, *args, gather_return_addresses: Set[int] = None, **kwargs):
+        super().__init__(task_registry)
+        self._return_addresses = gather_return_addresses if gather_return_addresses is not None else None
 
     def chunk_to_graph(self, chunk) -> Graph:
         return task_graph_chunk_to_graph(self, chunk)
@@ -71,6 +76,7 @@ class TaskGraphEventModel(BaseEventModel):
             Attr.unique_id:       event.unique_id,
             Attr.task_type:       event.region_type, # TODO: is this correct?
             Attr.parent_task_id:  event.parent_task_id,
+            Attr.task_flavour:    event.task_flavour,
             Attr.time:            event.time
         }
         if Attr.source_file_name in event and Attr.source_func_name in event and Attr.source_line_number in event:
@@ -92,14 +98,42 @@ class TaskGraphEventModel(BaseEventModel):
             return ((all(vertex['_is_task_leave_node']) and vertex.indegree() == 0) or
                     (all(vertex['_is_task_enter_node']) and vertex.outdegree() == 0))
 
+    @classmethod
+    def unpack(cls, event_list: List[Event]) -> Dict:
+        return transpose_list_to_dict([cls.get_augmented_event_attributes(event) for event in event_list], allow_missing=False)
+
     @staticmethod
     def get_augmented_event_attributes(event: Event) -> Dict:
         attr = event.to_dict()
         unique_id, region_type = event.get(Attr.unique_id), event.get(Attr.region_type)
         attr['vertex_label'] = unique_id
-        attr['vertex_color_key'] = region_type
+        if Attr.task_flavour in event:
+            attr['vertex_color_key'] = event.task_flavour
+        else:
+            attr['vertex_color_key'] = region_type
         attr['vertex_shape_key'] = region_type
         return attr
+
+    def pre_yield_event_callback(self, event: Event) -> None:
+        """Called once for each event before it is sent to super().yield_chunks"""
+        if event.event_type == EventType.task_switch and event.unique_id == event.parent_task_id:
+            warn(f"Task is own parent {event=}", category=Warning)
+
+    def post_yield_event_callback(self, event: Event) -> None:
+        """Called once for each event after it has been sent to super().yield_chunks"""
+        if self._return_addresses is not None:
+            address = event.caller_return_address
+            if address not in self._return_addresses:
+                self._return_addresses.add(address)
+
+    def yield_events_with_warning(self, events_iter: Iterable[Tuple[Location, Event]]) -> Iterable[Tuple[Location, Event]]:
+        for location, event in events_iter:
+            self.pre_yield_event_callback(event)
+            yield location, event
+            self.post_yield_event_callback(event)
+
+    def yield_chunks(self, events_iter: Iterable[Tuple[Location, Event]]) -> Iterable[Chunk]:
+        yield from super().yield_chunks(self.yield_events_with_warning(events_iter))
 
 
 @TaskGraphEventModel.update_chunks_on(event_type=EventType.task_switch)

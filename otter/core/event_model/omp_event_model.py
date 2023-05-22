@@ -35,10 +35,10 @@ ChunkUpdateHandlerFn = Callable[[Event, Location, ChunkDict, ChunkStackDict, Tas
 @EventModelFactory.register(EventModel.OMP)
 class OMPEventModel(BaseEventModel):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, task_registry: TaskRegistry, *args, **kwargs):
+        super().__init__(task_registry)
         # A dictionary mapping a single-exec or master-begin event to a list of tasks to be synchronised
         self._task_sync_cache: Dict[Event, List[Task]] = defaultdict(list)
-        super().__init__(*args, **kwargs)
 
     def get_task_synchronisation_cache(self, event: Event) -> List[Task]:
         assert (event.region_type, event.event_type) in ((RegionType.single_executor, EventType.workshare_begin), (RegionType.master, EventType.master_begin))

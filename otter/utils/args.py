@@ -16,11 +16,12 @@ def get_args():
     parser.add_argument('--profile', dest='profile', help='profiling output')
     parser.add_argument('--warn-deprecated', dest='warnings', help='Allow warnings about deprecated code', action="append_const", const=DeprecationWarning)
     parser.add_argument('--warn-user', dest='warnings', help='Allow user warnings', action="append_const", const=UserWarning)
+    parser.add_argument('--warn-all', dest='warn_all', help='Turn on all warnings', action="store_true")
     args = parser.parse_args()
 
-    if args.report is None:
+    # if args.report is None:
         # parser.error("must specify the report output path with --report")
-        args.report = "otter-report"
+        # args.report = "otter-report"
 
     try:
         check_args(args)
@@ -36,14 +37,15 @@ def get_args():
 def check_args(args):
     import os
 
-    if args.warnings is None:
+    if args.warn_all:
+        args.warnings = [cls for cls in Warning.__subclasses__()]
+    elif args.warnings is None:
         args.warnings = list()
 
     # Anchorfile must exist
     if not os.path.isfile(args.anchorfile):
         raise FileNotFoundError(args.anchorfile)
     args.anchorfile = os.path.abspath(args.anchorfile)
-
 
     if args.report is not None:
 

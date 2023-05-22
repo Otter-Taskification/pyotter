@@ -15,7 +15,8 @@ from .decorators import warn_deprecated
 from igraph import Graph
 
 
-def dump_to_log_file(chunks, graphs, tasks):
+def dump_to_log_file(chunks, graphs, tasks, where=None):
+    from os import path
     from ..reporting.report import save_graph_to_dot, convert_to_svg
     chunk_log = get_logger("chunks_debug")
     graph_log = get_logger("graphs_debug")
@@ -42,6 +43,9 @@ def dump_to_log_file(chunks, graphs, tasks):
         # write graph as a dot file and convert to svg
         dotfile = f"graph_{k}.dot"
         svgfile = f"graph_{k}.svg"
+        if where is not None:
+            dotfile = path.join(where, dotfile)
+            svgfile = path.join(where, svgfile)
         save_graph_to_dot(graph, dotfile)
         convert_to_svg(dotfile, svgfile)
 
@@ -114,22 +118,25 @@ def assert_vertex_event_list(graph: Graph) -> None:
         assert all(isinstance(item, Event) for item in event_list)
 
 
-def dump_graph_to_file(graph: Graph, filename: str = "graph.log") -> None:
+def dump_graph_to_file(graph: Graph, filename: str = "graph.log", no_flatten: list=None) -> None:
     log = get_logger("main")
-    log.info(f"writing graph to graph.log")
+    log.info(f"writing graph to {filename}")
     with open(filename, "w") as f:
         f.write("### VERTEX ATTRIBUTES:\n")
         for name in graph.vs.attribute_names():
-            levels = set(flatten(graph.vs[name]))
+            levels = set(flatten(graph.vs[name], exclude=no_flatten))
             n_levels = len(levels)
             if n_levels <= 6:
                 f.write(f"  {name:>35} {n_levels:>6} levels {list(levels)}\n")
             else:
                 f.write(f"  {name:>35} {n_levels:>6} levels (...)\n")
 
-        region_type_count = Counter(graph.vs['region_type'])
-        region_types = "\n".join([f"{region_type_count[k]:>6} {k}" for k in
-                                  region_type_count]) + f"\nTotal count: {sum(region_type_count.values())}"
+        try:
+            region_type_count = Counter(graph.vs['region_type'])
+            region_types = "\n".join([f"{region_type_count[k]:>6} {k}" for k in
+                                      region_type_count]) + f"\nTotal count: {sum(region_type_count.values())}"
+        except KeyError as e:
+            region_types = f"{e}"
 
         f.write("\nCount of vertex['region_type'] values:\n")
         f.write(region_types)

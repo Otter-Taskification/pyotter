@@ -216,5 +216,5 @@ class BaseEventModel(ABC):
         return transpose_list_to_dict([cls.get_augmented_event_attributes(event) for event in event_list])
 
 
-def get_event_model(model_name: EventModel, task_registry: TaskRegistry) -> EventModelProtocol:
-    return EventModelFactory.get_model(model_name)(task_registry)
+def get_event_model(model_name: EventModel, task_registry: TaskRegistry, *args, **kwargs) -> EventModelProtocol:
+    return EventModelFactory.get_model(model_name)(task_registry, *args, **kwargs)

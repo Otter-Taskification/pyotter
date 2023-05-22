@@ -83,6 +83,10 @@ loggers:
     handlers: [infoConsole]
     propagate: True
 
+  otter.project:
+    handlers: [infoConsole]
+    propagate: True
+
   otter.initialise:
     handlers: [debugInitFile]
     propagate: False

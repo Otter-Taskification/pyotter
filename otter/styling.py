@@ -30,6 +30,13 @@ colormap_region_type = { # default grey
     'leave': 'red'
 }
 
+colormap_task_flavour = {
+    '0': 'green',
+    '1': 'orange',
+    '2': 'blue',
+    '3': 'yellow'
+}
+
 colormap_edge_type = { # default black
     'taskwait': 'red',
     'taskgroup': 'red',
@@ -104,8 +111,25 @@ class StyleVertexShapeAsRegionType(graph_styling.BaseGraphStyle):
     def get_vertex_style(self, vertex) -> Tuple[graph_styling.VertexStyle, str]:
         return graph_styling.VertexStyle(
             "filled",
-            shapemap_region_type.get(vertex["vertex_color_key"], "circle"),
-            colormap_region_type.get(vertex["vertex_shape_key"], "fuchsia"),
+            shapemap_region_type.get(vertex["vertex_shape_key"], "circle"),
+            colormap_region_type.get(vertex["vertex_color_key"], "fuchsia"),
+            vertex['vertex_label'] or " "
+        )
+
+
+class StyleVertexShapeAsRegionTypeAndColourAsTaskFlavour(graph_styling.BaseGraphStyle):
+
+    def get_vertex_style(self, vertex) -> Tuple[graph_styling.VertexStyle, str]:
+        default_colour = "fuchsia"
+        task_flavour = vertex["task_flavour"]
+        if task_flavour is not None:
+            colour = colormap_task_flavour.get(task_flavour, default_colour)
+        else:
+            colour = colormap_region_type.get(vertex["vertex_color_key"], default_colour)
+        return graph_styling.VertexStyle(
+            "filled",
+            shapemap_region_type.get(vertex["vertex_shape_key"], "circle"),
+            colour,
             vertex['vertex_label'] or " "
         )
 

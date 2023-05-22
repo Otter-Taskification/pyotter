@@ -1,7 +1,7 @@
 from functools import lru_cache
 from itertools import chain
 from collections import deque
-from typing import Dict, Any
+from typing import Dict, Tuple, List, Any, AnyStr
 import igraph as ig
 from loggingdecorators import on_init
 from .. import log
@@ -70,6 +70,18 @@ class TaskSynchronisationContext:
 class Task:
     """Represents an instance of a task"""
 
+    _properties_ = ["id",
+        "start_ts",
+        "end_ts",
+        "exclusive_duration",
+        "inclusive_duration",
+        "num_children",
+        "num_descendants",
+        "source_file_name",
+        "source_func_name",
+        "source_line_number"
+    ]
+
     @on_init(logger=log.logger_getter("init_logger"))
     def __init__(self, task_data: TaskData):
         self.logger = get_module_logger()
@@ -112,6 +124,13 @@ class Task:
             self.parent_id,
             ", ".join([str(c) for c in self.children])
         )
+
+    def __iter__(self) -> Tuple[Any]:
+        return tuple(getattr(self, name) for name in self._properties_)
+
+    @classmethod
+    def properties(cls) -> List[AnyStr]:
+        return cls._properties_
 
     def append_to_barrier_cache(self, task):
         """Add a task to the barrier cache, ready to be passed to a synchronisation
@@ -257,17 +276,7 @@ class Task:
 
     def keys(self):
         exclude = ["logger"]
-        properties = ["start_ts",
-            "end_ts",
-            "exclusive_duration",
-            "inclusive_duration",
-            "num_children",
-            "num_descendants",
-            "source_file_name",
-            "source_func_name",
-            "source_line_number"
-        ]
-        names = list(vars(self).keys()) + properties
+        names = list(vars(self).keys()) + self._properties_
         return (name for name in names if not name in exclude and not name.startswith("_"))
 
     def as_dict(self):
