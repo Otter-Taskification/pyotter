@@ -36,3 +36,15 @@ def transpose_list_to_dict(list_of_dicts, allow_missing: bool = True):
             if value is not None or allow_missing:
                 D[key].append(value)
     return D
+
+def batched(iterable, n):
+    # credit: https://docs.python.org/3/library/itertools.html#itertools-recipes
+    if n < 1:
+        raise ValueError('n must be at least one')
+    items = iter(iterable)
+    while True:
+        batch = tuple(it.islice(items, n))
+        if batch:
+            yield batch
+        else:
+            break

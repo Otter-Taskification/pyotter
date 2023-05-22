@@ -4,7 +4,7 @@ from inspect import isgeneratorfunction, isfunction
 from functools import partial
 from collections import Counter
 from .counters import SequenceLabeller
-from .iterate import pairwise, flatten, transpose_list_to_dict
+from .iterate import pairwise, flatten, transpose_list_to_dict, batched
 from . import vertex_predicates as vpred
 from . import edge_predicates as epred
 from .vertex_attr_handlers import LoggingValidatingReduction, ReductionDict

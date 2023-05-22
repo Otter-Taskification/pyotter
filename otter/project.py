@@ -3,11 +3,13 @@ import os
 import abc
 import sqlite3
 import address_to_line as a2l
+from contextlib import closing
 from typing import AnyStr, Set, Dict, Iterable, Tuple
 from otf2.definitions import Attribute as OTF2Attribute
 from otf2 import LocationType as OTF2Location
 from . import log
 from . import utils
+from . import db
 from .reader import get_otf2_reader
 from .core.event_model.event_model import EventModel, get_event_model
 from .core.events import Event, Location
@@ -25,14 +27,13 @@ class Project(abc.ABC):
         self.debug_dir = "debug_output"
         self.maps_file = self.abspath(os.path.join(self.aux_dir, "maps"))
         self.source_location_db = self.abspath(os.path.join(self.aux_dir, "srcloc.db"))
+        self.tasks_db = self.abspath(os.path.join(self.aux_dir, "tasks.db"))
         self.return_addresses: Set[int] = set()
         self.event_model = None
         self.task_registry = TaskRegistry()
         self.chunks = list()
-        if self.debug:
-            if not os.path.exists(self.abspath(self.debug_dir)):
-                os.mkdir(self.abspath(self.debug_dir))
         self._check_input_files()
+        self._prepare_environment()
 
     def _check_input_files(self) -> None:
         if not os.path.isdir(self.abspath(self.aux_dir)):
@@ -40,6 +41,17 @@ class Project(abc.ABC):
         if not os.path.isfile(self.maps_file):
             raise FileNotFoundError(self.maps_file)
         self.log.info(f"Found maps file: {self.maps_file}")
+
+    def _prepare_environment(self) -> None:
+        """Prepare the environment - create any folders, databases, etc required by the project"""
+        abs_debug_dir = self.abspath(self.debug_dir)
+        self.log.info(f"preparing environment")
+        if self.debug:
+            if not os.path.exists(abs_debug_dir):
+                os.mkdir(abs_debug_dir)
+        self.log.info(f"creating tasks database at {self.tasks_db}")
+        with closing(sqlite3.connect(self.tasks_db)) as con:
+            con.executescript(db.scripts.create_tasks)
 
     def abspath(self, relname: AnyStr) -> AnyStr:
         return os.path.abspath(os.path.join(self.project_root, relname))
@@ -84,38 +96,67 @@ class Project(abc.ABC):
         return self
 
     def unpack_vertex_event_attributes(self) -> None:
+        self.log.info("unpacking vertex event attributes")
+        logger = log.get_logger("unpack_event")
         for vertex in self.graph.vs:
             event_list = vertex['event_list']
-            self.log.debug(f"unpacking vertex event_list:")
+            logger.debug(f"unpacking vertex event_list")
             if self.debug:
                 for event in event_list:
-                    self.log.debug(f"  {event}")
+                    logger.debug(f"  {event}")
             attributes = self.event_model.unpack(event_list)
             for key, value in attributes.items():
-                self.log.debug(f"  got {key}={value}")
+                logger.debug(f"  got {key}={value}")
                 if isinstance(value, list):
                     s = set(value)
                     if len(s) == 1:
                         value = s.pop()
                     else:
-                        self.log.debug(f"  concatenate {len(value)} values")
+                        logger.debug(f"  concatenate {len(value)} values")
                         value = ";".join(str(item) for item in value)
                 if isinstance(value, int):
                     value = str(value)
                 elif value == "":
                     value = None
-                self.log.debug(f"    unpacked {value=}")
+                logger.debug(f"    unpacked {value=}")
                 vertex[key] = value
 
     def cleanup_temporary_attributes(self) -> None:
+        self.log.info("cleaning up temporary graph attributes")
         for name in self.graph.vs.attribute_names():
             if name.startswith("_"):
                 del self.graph.vs[name]
 
+    def write_tasks_to_db(self) -> None:
+        self.log.info(f"Writing tasks to {self.tasks_db}")
+        insert_tasks = db.scripts.insert_tasks
+        insert_relns = db.scripts.insert_task_relations
+        with closing(sqlite3.connect(self.tasks_db)) as con:
+
+            # Write the tasks
+            for tasks in utils.batched(self.task_registry, 100):
+                con.executemany(
+                    insert_tasks,
+                    ((task.id, str(task.start_ts), str(task.end_ts)) for task in tasks)
+                )
+            con.commit()
+
+            # Write the task parent-child relationships
+            all_relations = ((task.id, child_id) for task in self.task_registry for child_id in task.children)
+            for relations in utils.batched(all_relations, 100):
+                con.executemany(
+                    insert_relns,
+                    relations
+                )
+            con.commit()
+
+            tasks_inserted, = con.execute("select count(*) from task").fetchone()
+            self.log.info(f"wrote {tasks_inserted} tasks")
 
     @abc.abstractmethod
     def run(self) -> Project:
         self.process_trace()
+        self.write_tasks_to_db()
         self.resolve_return_addresses()
         if self.debug:
             utils.assert_vertex_event_list(self.graph)

@@ -1,0 +1,2 @@
+-- Normalise the database of tasks
+-- Currently does nothing
