@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Union
+from typing import Union, NamedTuple
 
 # TODO: suspect some Attr values are missing here e.g. requested_parallelism, next_task_id - is there a reason they aren't present?
 class Attr(str, Enum):
@@ -21,6 +21,12 @@ class Attr(str, Enum):
     source_line_number = "source_line_number"
     phase_type = "phase_type"
     task_flavour = "task_flavour"
+    source_line = "source_line"
+    source_file = "source_file"
+    source_func = "source_func"
+    task_init_line = "task_init_line"
+    task_init_file = "task_init_file"
+    task_init_func = "task_init_func"
 
 class EventType(str, Enum):
     thread_begin = "thread_begin"
@@ -109,6 +115,11 @@ class EventModel(str, Enum):
     OMP = "OMP"
     TASKGRAPH = "TASKGRAPH"
     UNKNOWN = "UNKNOWN"
+
+class SourceLocation(NamedTuple):
+    file: str
+    func: str
+    line: int
 
 NullTaskID = 18446744073709551615
 

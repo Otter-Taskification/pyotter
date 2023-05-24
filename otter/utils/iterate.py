@@ -1,6 +1,9 @@
 import itertools as it
 from collections import defaultdict
 from collections.abc import Iterable
+from typing import TypeVar
+
+T = TypeVar("T")
 
 # TODO: seems to be dead code, not used anywhere
 def pairwise(iterable):
@@ -37,7 +40,7 @@ def transpose_list_to_dict(list_of_dicts, allow_missing: bool = True):
                 D[key].append(value)
     return D
 
-def batched(iterable, n):
+def batched(iterable: Iterable[T], n) -> Iterable[Iterable[T]]:
     # credit: https://docs.python.org/3/library/itertools.html#itertools-recipes
     if n < 1:
         raise ValueError('n must be at least one')

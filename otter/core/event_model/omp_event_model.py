@@ -4,7 +4,7 @@ from typing import Iterable, Dict, Any, Deque, Callable, Tuple, Optional, List, 
 from warnings import warn
 from itertools import islice
 from igraph import Graph, disjoint_union, Vertex
-from otter.definitions import Attr, EventModel, TaskStatus, EventType, RegionType, EdgeType, Endpoint, TaskType, TaskSyncType
+from otter.definitions import Attr, EventModel, TaskStatus, EventType, RegionType, EdgeType, Endpoint, TaskType, TaskSyncType, SourceLocation
 from otter.core.chunks import Chunk
 from otter.core.events import (
     is_event_list,
@@ -195,6 +195,12 @@ class OMPEventModel(BaseEventModel):
             data[Attr.source_func_name] = event.source_func_name
             data[Attr.source_line_number] = event.source_line_number
         return data
+
+    def get_task_start_location(self, event: Event) -> SourceLocation:
+        raise NotImplementedError()
+
+    def get_task_end_location(self, event: Event) -> SourceLocation:
+        raise NotImplementedError()
 
     @staticmethod
     def events_bridge_region(previous: Event, current: Event, region_types: List[RegionType]) -> bool:

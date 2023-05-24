@@ -25,6 +25,7 @@ def main() -> None:
     ).run()
 
     if args.report:
+        log.info("preparing report")
         otter.styling.style_graph(project.graph, style=otter.styling.StyleVertexShapeAsRegionTypeAndColourAsTaskFlavour())
         otter.styling.style_tasks(project.task_registry.task_tree())
         otter.reporting.write_report(args, project.graph, project.task_registry)

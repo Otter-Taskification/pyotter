@@ -3,10 +3,10 @@ from collections import defaultdict, deque
 from abc import ABC, abstractmethod
 from loggingdecorators import on_init
 from igraph import Graph
-from otter.definitions import EventModel, Attr, TaskStatus, EventType, RegionType, EdgeType, Endpoint, TaskType, TaskSyncType
+from otter.definitions import EventModel, Attr, TaskStatus, EventType, RegionType, EdgeType, Endpoint, TaskType, TaskSyncType, SourceLocation
 from otter.core.chunks import Chunk
 from otter.core.events import Event, Location
-from otter.core.tasks import TaskRegistry, NullTask
+from otter.core.tasks import TaskRegistry, NullTask, TaskData
 from otter.log import logger_getter
 from otter.utils.typing import Decorator
 from otter.utils import transpose_list_to_dict
@@ -186,7 +186,7 @@ class BaseEventModel(ABC):
             if self.is_update_task_start_ts_event(event):
                 task_entered = self.get_task_entered(event)
                 log.debug(f"notifying task start time: {task_entered} started at {event.time}")
-                task_registry.notify_task_start_ts(task_entered, event.time)
+                task_registry.notify_task_start(task_entered, event.time, self.get_task_start_location(event))
 
             if self.is_update_duration_event(event):
                 prior_task_id, next_task_id = self.get_tasks_switched(event)
@@ -196,7 +196,7 @@ class BaseEventModel(ABC):
             if self.is_task_complete_event(event):
                 completed_task_id = self.get_task_completed(event)
                 log.debug(f"event <{event}> notifying task {completed_task_id} of end_ts")
-                task_registry.notify_task_complete_ts(completed_task_id, event.time)
+                task_registry.notify_task_end(completed_task_id, event.time, self.get_task_end_location(event))
 
         log.debug(f"exhausted {events_iter}")
         task_registry.calculate_all_inclusive_duration()
@@ -209,6 +209,20 @@ class BaseEventModel(ABC):
     @staticmethod
     @abstractmethod
     def get_augmented_event_attributes(event: Event) -> Dict:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_task_data(self, event: Event) -> TaskData:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_task_start_location(self, event: Event) -> SourceLocation:
+        """For an event which represents the start of a task, get the source location of this event"""
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_task_end_location(self, event: Event) -> SourceLocation:
+        """For an event which represents the end of a task, get the source location of this event"""
         raise NotImplementedError()
 
     @classmethod

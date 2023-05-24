@@ -3,7 +3,7 @@ from .event_model import EventModelFactory, BaseEventModel, EventList, ChunkDict
 from itertools import islice
 from typing import Iterable, Tuple, Optional, List, Dict, Set
 from igraph import Graph, disjoint_union, Vertex
-from otter.definitions import EventModel, EventType, TaskStatus, Endpoint, NullTaskID, Attr, RegionType, TaskSyncType, EdgeType
+from otter.definitions import EventModel, EventType, TaskStatus, Endpoint, NullTaskID, Attr, RegionType, TaskSyncType, EdgeType, SourceLocation
 from otter.core.chunks import Chunk
 from otter.core.events import Event, Location, is_event_list
 from otter.core.tasks import TaskData, NullTask, TaskSynchronisationContext, TaskRegistry
@@ -69,21 +69,29 @@ class TaskGraphEventModel(BaseEventModel):
     def get_task_entered(event: Event) -> id:
         return event.unique_id
 
-    @classmethod
-    def get_task_data(cls, event: Event) -> TaskData:
-        assert cls.is_task_register_event(event)
+    def get_task_data(self, event: Event) -> TaskData:
+        assert self.is_task_register_event(event)
         data = {
             Attr.unique_id:       event.unique_id,
             Attr.task_type:       event.region_type, # TODO: is this correct?
             Attr.parent_task_id:  event.parent_task_id,
             Attr.task_flavour:    event.task_flavour,
-            Attr.time:            event.time
+            Attr.time:            event.time,
+            Attr.task_init_file:  event.task_init_file,
+            Attr.task_init_func:  event.task_init_func,
+            Attr.task_init_line:  event.task_init_line,
         }
         if Attr.source_file_name in event and Attr.source_func_name in event and Attr.source_line_number in event:
             data[Attr.source_file_name] = event.source_file_name
             data[Attr.source_func_name] = event.source_func_name
             data[Attr.source_line_number] = event.source_line_number
         return data
+
+    def get_task_start_location(self, event: Event) -> SourceLocation:
+        return SourceLocation(event.source_file, event.source_func, event.source_line)
+
+    def get_task_end_location(self, event: Event) -> SourceLocation:
+        return SourceLocation(event.source_file, event.source_func, event.source_line)
 
     @classmethod
     def is_empty_task_region(cls, vertex: Vertex) -> bool:

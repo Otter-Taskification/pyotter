@@ -4,13 +4,16 @@ import abc
 import sqlite3
 import address_to_line as a2l
 from contextlib import closing
-from typing import AnyStr, Set, Dict, Iterable, Tuple
+from collections import defaultdict
+from itertools import count
+from typing import AnyStr, Set, Dict, Iterable, Tuple, Set
 from otf2.definitions import Attribute as OTF2Attribute
 from otf2 import LocationType as OTF2Location
 from . import log
 from . import utils
 from . import db
 from .reader import get_otf2_reader
+from .definitions import SourceLocation
 from .core.event_model.event_model import EventModel, get_event_model
 from .core.events import Event, Location
 from .core.tasks import TaskRegistry, Task
@@ -49,9 +52,14 @@ class Project(abc.ABC):
         if self.debug:
             if not os.path.exists(abs_debug_dir):
                 os.mkdir(abs_debug_dir)
-        self.log.info(f"creating tasks database at {self.tasks_db}")
+        if os.path.exists(self.tasks_db):
+            self.log.warn(f"overwriting tasks database {self.tasks_db}")
+            os.remove(self.tasks_db)
+        else:
+            self.log.info(f"creating tasks database {self.tasks_db}")
         with closing(sqlite3.connect(self.tasks_db)) as con:
             con.executescript(db.scripts.create_tasks)
+            con.executescript(db.scripts.create_views)
 
     def abspath(self, relname: AnyStr) -> AnyStr:
         return os.path.abspath(os.path.join(self.project_root, relname))
@@ -70,9 +78,15 @@ class Project(abc.ABC):
                                                             location, event in reader.events)
             self.chunks = list(self.event_model.yield_chunks(event_iter))
             # TODO: temporary check, factor out once new event models are passing
-            self.event_model.warn_for_incomplete_chunks(self.chunks)
-            self.graphs = list(self.event_model.chunk_to_graph(chunk) for chunk in self.chunks)
-            self.graph = self.event_model.combine_graphs(self.graphs)
+            # self.event_model.warn_for_incomplete_chunks(self.chunks)
+            # self.graphs = list(self.event_model.chunk_to_graph(chunk) for chunk in self.chunks)
+            # self.graph = self.event_model.combine_graphs(self.graphs)
+
+        if self.debug:
+            self.log.debug(f"task registry encountered the following task attributes:")
+            for name in sorted(self.task_registry.attributes):
+                self.log.debug(f" -- {name}")
+
         return self
 
     def resolve_return_addresses(self) -> Project:
@@ -131,15 +145,34 @@ class Project(abc.ABC):
         self.log.info(f"Writing tasks to {self.tasks_db}")
         insert_tasks = db.scripts.insert_tasks
         insert_relns = db.scripts.insert_task_relations
+        insert_source_locations = db.scripts.insert_source_locations
         with closing(sqlite3.connect(self.tasks_db)) as con:
 
-            # Write the tasks
-            for tasks in utils.batched(self.task_registry, 100):
-                con.executemany(
-                    insert_tasks,
-                    ((task.id, str(task.start_ts), str(task.end_ts)) for task in tasks)
-                )
+            # Create unique labels for distinct source locations
+            source_location_counter = count()
+            string_counter = count()
+            source_location_id: Dict[SourceLocation, int] = defaultdict(lambda: next(source_location_counter))
+            string_id: Dict[str, int] = defaultdict(lambda: next(string_counter))
+
+            # Write the tasks and their source locations
+            for tasks in utils.batched(self.task_registry, 1000):
+
+                # TODO: insert task source locations into main task table
+
+                source_location_data = ((task.id, source_location_id[task.initialised_at], source_location_id[task.started_at], source_location_id[task.ended_at]) for task in tasks)
+                con.executemany(insert_source_locations,source_location_data)
+
+                task_data = ((task.id, str(task.start_ts), str(task.end_ts)) for task in tasks)
+                con.executemany(insert_tasks,task_data)
             con.commit()
+
+            # Write the definitions of the source locations, mapping their IDs to string IDs
+            source_location_definitions = ((locid, string_id[location.file], string_id[location.func], location.line) for (location, locid) in source_location_id.items())
+            con.executemany(db.scripts.define_source_locations, source_location_definitions)
+
+            # Write the string definitions mapping ID to the string value
+            source_string_definitions = ((string_key, string) for (string, string_key) in string_id.items())
+            con.executemany(db.scripts.define_source_strings, source_string_definitions)
 
             # Write the task parent-child relationships
             all_relations = ((task.id, child_id) for task in self.task_registry for child_id in task.children)
@@ -160,10 +193,10 @@ class Project(abc.ABC):
         self.resolve_return_addresses()
         if self.debug:
             utils.assert_vertex_event_list(self.graph)
-            self.log.info(f"dumping chunks, tasks and graphs to log files")
-            utils.dump_to_log_file(self.chunks, self.graphs, self.task_registry, where=self.abspath(self.debug_dir))
-            graph_log = self.abspath(os.path.join(self.debug_dir, "graph.log"))
-            utils.dump_graph_to_file(self.graph, filename=graph_log, no_flatten=[Task,])
+            # self.log.info(f"dumping chunks, tasks and graphs to log files")
+            # utils.dump_to_log_file(self.chunks, self.graphs, self.task_registry, where=self.abspath(self.debug_dir))
+            # graph_log = self.abspath(os.path.join(self.debug_dir, "graph.log"))
+            # utils.dump_graph_to_file(self.graph, filename=graph_log, no_flatten=[Task,])
         self.unpack_vertex_event_attributes()
         self.cleanup_temporary_attributes()
         del self.graph.vs['event_list']

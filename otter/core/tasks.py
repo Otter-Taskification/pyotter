@@ -1,11 +1,11 @@
 from functools import lru_cache
 from itertools import chain
 from collections import deque
-from typing import Dict, Tuple, List, Any, AnyStr
+from typing import Dict, Tuple, List, Any, AnyStr, Iterable, Set
 import igraph as ig
 from loggingdecorators import on_init
 from .. import log
-from ..definitions import Attr, AttrValue, NullTaskID, TaskType
+from ..definitions import Attr, AttrValue, NullTaskID, TaskType, SourceLocation
 
 get_module_logger = log.logger_getter("tasks")
 
@@ -70,6 +70,7 @@ class TaskSynchronisationContext:
 class Task:
     """Represents an instance of a task"""
 
+    """A list of symbols exported by a Task through its .keys() method. These must return something when requested via getattr"""
     _properties_ = ["id",
         "start_ts",
         "end_ts",
@@ -77,9 +78,14 @@ class Task:
         "inclusive_duration",
         "num_children",
         "num_descendants",
-        "source_file_name",
-        "source_func_name",
-        "source_line_number"
+
+        # "source_file_name",
+        # "source_func_name",
+        # "source_line_number,"
+
+        "initialised_at",
+        "started_at",
+        "ended_at"
     ]
 
     @on_init(logger=log.logger_getter("init_logger"))
@@ -92,11 +98,25 @@ class Task:
         self.task_type = task_data[Attr.task_type]
         self.crt_ts = task_data[Attr.time]
 
+        # TODO: want to remove these attributes in favour of source_* and task_init*
         # Source location attributes not defined in OMP traces
-        self.source_file_name = task_data.get(Attr.source_file_name)
-        self.source_func_name = task_data.get(Attr.source_func_name)
-        self.source_line_number = task_data.get(Attr.source_line_number)
-        
+        # self.source_file_name = task_data.get(Attr.source_file_name)
+        # self.source_func_name = task_data.get(Attr.source_func_name)
+        # self.source_line_number = task_data.get(Attr.source_line_number)
+
+        # The location where the task was initialised
+        self._init_location: SourceLocation = SourceLocation(
+            task_data[Attr.task_init_file],
+            task_data[Attr.task_init_func],
+            task_data[Attr.task_init_line]
+        )
+
+        # The location where the task started
+        self._start_location: SourceLocation = None
+
+        # The location where the task ended
+        self._end_location: SourceLocation = None
+
         self._children = deque()
         self._end_ts = None
         self._last_resumed_ts = None
@@ -158,6 +178,44 @@ class Task:
         if from_cache:
             self.clear_task_barrier_cache()
         return barrier_context
+
+    @property
+    def start_location(self) -> SourceLocation:
+        if self._start_location is None:
+            raise ValueError(f"start location was never set: {self}")
+        return self._start_location
+
+    @start_location.setter
+    def start_location(self, location: SourceLocation) -> None:
+        if self._start_location is not None:
+            raise RuntimeError(f"start location was already set: {self}")
+        self.logger.debug(f"set task location: start={location}, {self=}")
+        self._start_location = location
+
+    @property
+    def end_location(self) -> SourceLocation:
+        if self._end_location is None:
+            raise ValueError(f"end location was never set: {self}")
+        return self._end_location
+
+    @end_location.setter
+    def end_location(self, location: SourceLocation) -> None:
+        if self._end_location is not None:
+            raise RuntimeError(f"end location was already set: {self}")
+        self.logger.debug(f"set task location: end={location}, {self=}")
+        self._end_location = location
+
+    @property
+    def started_at(self) -> SourceLocation:
+        return self.start_location
+
+    @property
+    def ended_at(self) -> SourceLocation:
+        return self.end_location
+
+    @property
+    def initialised_at(self) -> SourceLocation:
+        return self._init_location
 
     @property
     def task_barrier_cache(self):
@@ -306,7 +364,7 @@ class _NullTask(Task):
 NullTask = _NullTask()
 
 
-class TaskRegistry:
+class TaskRegistry(Iterable[Task]):
     """
     Maintains references to all tasks encountered in a trace
     Maps task ID to task instance, raising KeyError if an unregistered task is requested
@@ -329,7 +387,7 @@ class TaskRegistry:
                 raise KeyError(f"task {uid} was not found in {self}")
         return self._dict[uid]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterable[Task]:
         for task in self._dict.values():
             yield task
 
@@ -414,25 +472,29 @@ class TaskRegistry:
             descendants += child.num_descendants
         return descendants
 
-    def notify_task_start_ts(self, task_id: int, time: int) -> None:
+    def notify_task_start(self, task_id: int, time: int, location: SourceLocation) -> None:
         task = self[task_id]
         if task.start_ts is None:
             task.start_ts = time
+        if location is not None:
+            task.start_location = location
 
     def update_task_duration(self, prior_task_id: int, next_task_id: int, time: int) -> None:
         prior_task = self[prior_task_id]
         if prior_task is not NullTask:
-            self.log.debug(f"got prior task: {prior_task}")
+            # self.log.debug(f"got prior task: {prior_task}")
             prior_task.update_exclusive_duration(time)
         next_task = self[next_task_id]
         if next_task is not NullTask:
-            self.log.debug(f"got next task: {next_task}")
+            # self.log.debug(f"got next task: {next_task}")
             next_task.resumed_at(time)
 
-    def notify_task_complete_ts(self, completed_task_id: int, time: int) -> None:
+    def notify_task_end(self, completed_task_id: int, time: int, location: SourceLocation) -> None:
         completed_task = self[completed_task_id]
         if completed_task is not NullTask:
             completed_task.end_ts = time
+        if location is not None:
+            completed_task.end_location = location
 
     def log_all_task_ts(self):
         self.log.debug("BEGIN LOGGING TASK TIMESTAMPS")

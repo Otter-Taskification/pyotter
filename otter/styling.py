@@ -77,9 +77,15 @@ task_attribute_names = { # default to "UNDEFINED"
     "num_children": "Child Tasks",
     "num_descendants": "Descendant Tasks",
     "start_ts": "Start Time",
+
+    # TODO: these attributes will be removed/renamed in favour of separate attributes for task initialisation/start/end
     "source_file_name": "Source File",
     "source_func_name": "Source Function",
-    "source_line_number": "Source Line No."
+    "source_line_number": "Source Line No.",
+
+    "initialised_at": "Task Initialised",
+    "started_at": "Task Started",
+    "ended_at": "Task Ended"
 }
 
 colormap_task_type = { # default to black
