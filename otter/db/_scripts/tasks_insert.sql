@@ -6,5 +6,7 @@ insert into task values(
     ?, -- end_ts
     ?, -- init_loc_id
     ?, -- start_loc_id
-    ?  -- end_loc_id
+    ?, -- end_loc_id
+    ?, -- task flavour
+    ?  -- user label
 );

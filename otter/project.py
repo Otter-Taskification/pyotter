@@ -163,15 +163,11 @@ class Project(abc.ABC):
                     str(task.end_ts),
                     source_location_id[task.initialised_at],
                     source_location_id[task.started_at],
-                    source_location_id[task.ended_at]
+                    source_location_id[task.ended_at],
+                    task.flavour,
+                    string_id[task.user_label]
                 ) for task in tasks)
                 con.executemany(db.scripts.insert_tasks, task_data)
-
-                # source_location_data = ((task.id, source_location_id[task.initialised_at], source_location_id[task.started_at], source_location_id[task.ended_at]) for task in tasks)
-                # con.executemany(db.scripts.insert_source_locations, source_location_data)
-                #
-                # task_data = ((task.id, str(task.start_ts), str(task.end_ts)) for task in tasks)
-                # con.executemany(db.scripts.insert_tasks, task_data)
 
             con.commit()
 
@@ -180,8 +176,8 @@ class Project(abc.ABC):
             con.executemany(db.scripts.define_source_locations, source_location_definitions)
 
             # Write the string definitions mapping ID to the string value
-            source_string_definitions = ((string_key, string) for (string, string_key) in string_id.items())
-            con.executemany(db.scripts.define_source_strings, source_string_definitions)
+            string_definitions = ((string_key, string) for (string, string_key) in string_id.items())
+            con.executemany(db.scripts.define_strings, string_definitions)
 
             # Write the task parent-child relationships
             all_relations = ((task.id, child_id) for task in self.task_registry for child_id in task.children)

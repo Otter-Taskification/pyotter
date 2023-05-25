@@ -10,14 +10,14 @@ create view if not exists task_init_location(
     select task.id as task
         ,file.text as file
         ,func.text as func
-        ,def.line as line
+        ,src.line as line
     from task
-    inner join src_loc_def as def
-        on def.src_loc_id = task.init_loc_id
-    inner join src_str_def as file
-        on file.id = def.file_id
-    inner join src_str_def as func
-        on func.id = def.func_id
+    inner join source as src
+        on src.src_loc_id = task.init_loc_id
+    inner join string as file
+        on file.id = src.file_id
+    inner join string as func
+        on func.id = src.func_id
 ;
 
 -- Get a readable view of the tasks' start locations
@@ -30,14 +30,14 @@ create view if not exists task_start_location(
     select task.id as task
         ,file.text as file
         ,func.text as func
-        ,def.line as line
+        ,src.line as line
     from task
-    inner join src_loc_def as def
-        on def.src_loc_id = task.start_loc_id
-    inner join src_str_def as file
-        on file.id = def.file_id
-    inner join src_str_def as func
-        on func.id = def.func_id
+    inner join source as src
+        on src.src_loc_id = task.start_loc_id
+    inner join string as file
+        on file.id = src.file_id
+    inner join string as func
+        on func.id = src.func_id
 ;
 
 -- Get a readable view of the tasks' start locations
@@ -50,14 +50,14 @@ create view if not exists task_end_location(
     select task.id as task
         ,file.text as file
         ,func.text as func
-        ,def.line as line
+        ,src.line as line
     from task
-    inner join src_loc_def as def
-        on def.src_loc_id = task.end_loc_id
-    inner join src_str_def as file
-        on file.id = def.file_id
-    inner join src_str_def as func
-        on func.id = def.func_id
+    inner join source as src
+        on src.src_loc_id = task.end_loc_id
+    inner join string as file
+        on file.id = src.file_id
+    inner join string as func
+        on func.id = src.func_id
 ;
 
 -- Union of all source locations
@@ -74,4 +74,16 @@ create view if not exists task_location as
            'end' as type
     from task_end_location
     order by task
+;
+
+-- A readable view of a task's attributes (flavour, label, etc)
+create view if not exists task_attributes as
+    select task.id
+        ,task.flavour
+        ,string.text as task_label
+        ,task.start_ts
+        ,task.end_ts
+    from task
+    left join string
+    on task.user_label = string.id
 ;

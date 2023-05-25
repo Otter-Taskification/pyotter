@@ -1,6 +1,6 @@
 -- Write source locations definitions
 
-insert into src_loc_def values(
+insert into source values(
     ?, -- id
     ?, -- file string id
     ?, -- func string id

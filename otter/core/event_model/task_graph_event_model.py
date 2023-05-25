@@ -76,6 +76,7 @@ class TaskGraphEventModel(BaseEventModel):
             Attr.task_type:       event.region_type, # TODO: is this correct?
             Attr.parent_task_id:  event.parent_task_id,
             Attr.task_flavour:    event.task_flavour,
+            Attr.task_label:      event.task_label,
             Attr.time:            event.time,
             Attr.task_init_file:  event.task_init_file,
             Attr.task_init_func:  event.task_init_func,

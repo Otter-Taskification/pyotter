@@ -21,6 +21,7 @@ class Attr(str, Enum):
     source_line_number = "source_line_number"
     phase_type = "phase_type"
     task_flavour = "task_flavour"
+    task_label = "task_label"
     source_line = "source_line"
     source_file = "source_file"
     source_func = "source_func"

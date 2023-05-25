@@ -96,6 +96,8 @@ class Task:
         if self.parent_id == NullTaskID:
             self.parent_id = None
         self.task_type = task_data[Attr.task_type]
+        self.flavour = task_data[Attr.task_flavour]
+        self.user_label = task_data[Attr.task_label]
         self.crt_ts = task_data[Attr.time]
 
         # TODO: want to remove these attributes in favour of source_* and task_init*
