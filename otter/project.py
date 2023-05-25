@@ -143,9 +143,7 @@ class Project(abc.ABC):
 
     def write_tasks_to_db(self) -> None:
         self.log.info(f"Writing tasks to {self.tasks_db}")
-        insert_tasks = db.scripts.insert_tasks
-        insert_relns = db.scripts.insert_task_relations
-        insert_source_locations = db.scripts.insert_source_locations
+
         with closing(sqlite3.connect(self.tasks_db)) as con:
 
             # Create unique labels for distinct source locations
@@ -160,10 +158,11 @@ class Project(abc.ABC):
                 # TODO: insert task source locations into main task table
 
                 source_location_data = ((task.id, source_location_id[task.initialised_at], source_location_id[task.started_at], source_location_id[task.ended_at]) for task in tasks)
-                con.executemany(insert_source_locations,source_location_data)
+                con.executemany(db.scripts.insert_source_locations, source_location_data)
 
                 task_data = ((task.id, str(task.start_ts), str(task.end_ts)) for task in tasks)
-                con.executemany(insert_tasks,task_data)
+                con.executemany(db.scripts.insert_tasks, task_data)
+
             con.commit()
 
             # Write the definitions of the source locations, mapping their IDs to string IDs
@@ -176,14 +175,11 @@ class Project(abc.ABC):
 
             # Write the task parent-child relationships
             all_relations = ((task.id, child_id) for task in self.task_registry for child_id in task.children)
-            for relations in utils.batched(all_relations, 100):
-                con.executemany(
-                    insert_relns,
-                    relations
-                )
+            for relations in utils.batched(all_relations, 1000):
+                con.executemany(db.scripts.insert_task_relations, relations)
             con.commit()
 
-            tasks_inserted, = con.execute("select count(*) from task").fetchone()
+            tasks_inserted, = con.execute(db.scripts.count_tasks).fetchone()
             self.log.info(f"wrote {tasks_inserted} tasks")
 
     @abc.abstractmethod
