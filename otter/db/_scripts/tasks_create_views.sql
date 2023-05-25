@@ -12,14 +12,12 @@ create view if not exists task_init_location(
         ,func.text as func
         ,def.line as line
     from task
-    inner join src_loc as src
-        on task.id = src.task_id
     inner join src_loc_def as def
-        on src.init_id = def.src_loc_id
+        on def.src_loc_id = task.init_loc_id
     inner join src_str_def as file
-        on def.file_id = file.id
+        on file.id = def.file_id
     inner join src_str_def as func
-        on def.func_id = func.id
+        on func.id = def.func_id
 ;
 
 -- Get a readable view of the tasks' start locations
@@ -34,14 +32,12 @@ create view if not exists task_start_location(
         ,func.text as func
         ,def.line as line
     from task
-    inner join src_loc as src
-        on task.id = src.task_id
     inner join src_loc_def as def
-        on src.start_id = def.src_loc_id
+        on def.src_loc_id = task.start_loc_id
     inner join src_str_def as file
-        on def.file_id = file.id
+        on file.id = def.file_id
     inner join src_str_def as func
-        on def.func_id = func.id
+        on func.id = def.func_id
 ;
 
 -- Get a readable view of the tasks' start locations
@@ -56,12 +52,26 @@ create view if not exists task_end_location(
         ,func.text as func
         ,def.line as line
     from task
-    inner join src_loc as src
-        on task.id = src.task_id
     inner join src_loc_def as def
-        on src.end_id = def.src_loc_id
+        on def.src_loc_id = task.end_loc_id
     inner join src_str_def as file
-        on def.file_id = file.id
+        on file.id = def.file_id
     inner join src_str_def as func
-        on def.func_id = func.id
+        on func.id = def.func_id
+;
+
+-- Union of all source locations
+create view if not exists task_location as
+    select *,
+           'init' as type
+    from task_init_location
+    union
+    select *,
+           'start' as type
+    from task_start_location
+    union
+    select *,
+           'end' as type
+    from task_end_location
+    order by task
 ;
