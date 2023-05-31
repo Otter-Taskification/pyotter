@@ -1,5 +1,5 @@
 import otter
-args = otter.utils.get_args()
+args = otter.args.get_args()
 if args.profile:
     from cProfile import run
     print("Profiling...")

@@ -35,6 +35,8 @@ class Project(abc.ABC):
         self.event_model = None
         self.task_registry = TaskRegistry()
         self.chunks = list()
+        if self.debug:
+            self.log.debug(f"using project: {self}")
         self._check_input_files()
         self._prepare_environment()
 
@@ -87,6 +89,13 @@ class Project(abc.ABC):
             for name in sorted(self.task_registry.attributes):
                 self.log.debug(f" -- {name}")
 
+        return self
+
+    def convert_chunks_to_graphs(self) -> Project:
+        self.log.info("generating graph list")
+        self.graphs = list(self.event_model.chunk_to_graph(chunk) for chunk in self.chunks)
+        self.log.info("generating combined graph")
+        self.graph = self.event_model.combine_graphs(self.graphs)
         return self
 
     def resolve_return_addresses(self) -> Project:
@@ -155,12 +164,11 @@ class Project(abc.ABC):
             # Write the tasks and their source locations
             for tasks in utils.batched(self.task_registry, 1000):
 
-                # TODO: insert task source locations into main task table
-
                 task_data = ((
                     task.id,
                     str(task.start_ts),
                     str(task.end_ts),
+                    task.naive_duration,
                     source_location_id[task.initialised_at],
                     source_location_id[task.started_at],
                     source_location_id[task.ended_at],
@@ -191,17 +199,18 @@ class Project(abc.ABC):
     @abc.abstractmethod
     def run(self) -> Project:
         self.process_trace()
+        self.convert_chunks_to_graphs()
         self.write_tasks_to_db()
-        # self.resolve_return_addresses()
-        # if self.debug:
-        #     utils.assert_vertex_event_list(self.graph)
-            # self.log.info(f"dumping chunks, tasks and graphs to log files")
-            # utils.dump_to_log_file(self.chunks, self.graphs, self.task_registry, where=self.abspath(self.debug_dir))
-            # graph_log = self.abspath(os.path.join(self.debug_dir, "graph.log"))
-            # utils.dump_graph_to_file(self.graph, filename=graph_log, no_flatten=[Task,])
-        # self.unpack_vertex_event_attributes()
-        # self.cleanup_temporary_attributes()
-        # del self.graph.vs['event_list']
+        self.resolve_return_addresses()
+        if self.debug:
+            utils.assert_vertex_event_list(self.graph)
+            self.log.info(f"dumping chunks, tasks and graphs to log files")
+            utils.dump_to_log_file(self.chunks, self.graphs, self.task_registry, where=self.abspath(self.debug_dir))
+            graph_log = self.abspath(os.path.join(self.debug_dir, "graph.log"))
+            utils.dump_graph_to_file(self.graph, filename=graph_log, no_flatten=[Task,])
+        self.unpack_vertex_event_attributes()
+        self.cleanup_temporary_attributes()
+        del self.graph.vs['event_list']
         return self
 
 
@@ -211,3 +220,17 @@ class SimpleProject(Project):
     def run(self) -> SimpleProject:
         super().run()
         return self
+
+
+class DBProject(Project):
+    """Extracts tasks from a trace into a DB"""
+
+    def run(self) -> DBProject:
+        self.process_trace()
+        self.write_tasks_to_db()
+        self.quit()
+        return self
+
+    def quit(self) -> None:
+        self.log.info("done - quitting")
+        raise SystemExit(0)

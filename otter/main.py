@@ -7,7 +7,7 @@ import otter
 
 def main() -> None:
 
-    args = otter.utils.get_args()
+    args = otter.args.get_args()
     otter.log.initialise(args)
     log = otter.log.get_logger("main")
 
@@ -19,7 +19,9 @@ def main() -> None:
         log.info(f"allow warning: {warning}")
         warnings.simplefilter('always', warning)
 
-    project = otter.SimpleProject(
+    Project = getattr(otter.project, args.project)
+
+    project = Project(
         args.anchorfile,
         debug=(args.loglevel == "DEBUG")
     ).run()
