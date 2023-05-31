@@ -5,6 +5,7 @@ create table task(
     id int unique not null,
     start_ts,
     end_ts,
+    duration int,
     init_loc_id int not null,  -- the location where the task was initialised
     start_loc_id int not null, -- the location where the task started
     end_loc_id int not null,   -- the location where the task ended

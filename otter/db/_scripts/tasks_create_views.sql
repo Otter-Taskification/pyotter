@@ -83,6 +83,7 @@ create view if not exists task_attributes as
         ,string.text as task_label
         ,task.start_ts
         ,task.end_ts
+        ,task.duration
     from task
     left join string
     on task.user_label = string.id

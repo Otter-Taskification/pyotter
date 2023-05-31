@@ -122,6 +122,9 @@ class SourceLocation(NamedTuple):
     func: str
     line: int
 
+    def __str__(self) -> str:
+        return f"{self.file}:{self.line} in {self.func}"
+
 NullTaskID = 18446744073709551615
 
 AttrValue = Union[EventType, RegionType, TaskStatus, TaskType, Endpoint, EdgeType, TaskSyncType, TaskEvent, EventModel]
