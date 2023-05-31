@@ -191,7 +191,7 @@ class BaseEventModel(ABC):
             if self.is_update_duration_event(event):
                 prior_task_id, next_task_id = self.get_tasks_switched(event)
                 log.debug(f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint} {event.event_type}")
-                task_registry.update_task_duration(prior_task_id, next_task_id, event.time)
+                # task_registry.update_task_duration(prior_task_id, next_task_id, event.time)
 
             if self.is_task_complete_event(event):
                 completed_task_id = self.get_task_completed(event)
@@ -199,7 +199,7 @@ class BaseEventModel(ABC):
                 task_registry.notify_task_end(completed_task_id, event.time, self.get_task_end_location(event))
 
         log.debug(f"exhausted {events_iter}")
-        task_registry.calculate_all_inclusive_duration()
+        # task_registry.calculate_all_inclusive_duration()
         task_registry.calculate_all_num_descendants()
         task_registry.log_all_task_ts()
 
