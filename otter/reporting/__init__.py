@@ -33,7 +33,7 @@ def write_report(args, g, tasks):
     with open(os.path.join(args.report, "data", "task_attributes.csv"), "w") as csvfile:
         writer = csv.DictWriter(csvfile, task_attributes)
         writer.writerow({
-            key: styling.task_attribute_names[key]
+            key: styling.task_attribute_names.get(key, f"unknown task attribute {key=}")
             for key in task_attributes
         })
         writer.writerows(tasks.data)

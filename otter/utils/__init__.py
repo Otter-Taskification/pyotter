@@ -1,7 +1,3 @@
-from warnings import warn
-from typing import Callable
-from inspect import isgeneratorfunction, isfunction
-from functools import partial
 from collections import Counter
 from .counters import SequenceLabeller
 from .iterate import pairwise, flatten, transpose_list_to_dict, batched
@@ -10,7 +6,6 @@ from . import edge_predicates as epred
 from .vertex_attr_handlers import LoggingValidatingReduction, ReductionDict
 from . import vertex_attr_handlers as handlers
 from ..log import get_logger
-from .args import get_args
 from .decorators import warn_deprecated
 from igraph import Graph
 

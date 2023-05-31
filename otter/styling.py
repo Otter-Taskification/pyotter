@@ -85,7 +85,8 @@ task_attribute_names = { # default to "UNDEFINED"
 
     "initialised_at": "Task Initialised",
     "started_at": "Task Started",
-    "ended_at": "Task Ended"
+    "ended_at": "Task Ended",
+    "flavour": "Flavour"
 }
 
 colormap_task_type = { # default to black
