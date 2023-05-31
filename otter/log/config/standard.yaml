@@ -9,7 +9,8 @@ formatters:
     style: '{'
 
   simple:
-    format: '{name} [{levelname}]: {message}'
+    format: '{asctime} {name} [{levelname}]: {message}'
+    datefmt: '%Y/%m/%d-%H:%M:%S'
     style: '{'
 
   init:
@@ -95,6 +96,10 @@ loggers:
   otter.initialise:
     handlers: [debugInitFile]
     propagate: False
+
+  otter.tasks:
+    handlers: [debugTaskAttrFile]
+    propogate: False
 
   otter.chunks_debug:
     handlers: [debugChunksFile]
