@@ -70,6 +70,8 @@ class TaskSynchronisationContext:
 class Task:
     """Represents an instance of a task"""
 
+    # TODO: clean up this API, it's too confusing which attributes are public and which are not. What attributes are available through a Task?
+
     """A list of symbols exported by a Task through its .keys() method. These must return something when requested via getattr"""
     _properties_ = ["id",
         "start_ts",
@@ -124,6 +126,7 @@ class Task:
         self._last_resumed_ts = None
         self._excl_dur = 0
         self._incl_dur = None
+        self._naive_duration: int = None
         self._num_descendants = None
         self._start_ts = None
 
@@ -296,6 +299,7 @@ class Task:
             raise RuntimeError(f"task {self} already notified of end time")
         self.logger.debug(f"{self} end_ts={time}")
         self._end_ts = time
+        self._naive_duration = self.end_ts - self.start_ts
 
     @property
     def start_ts(self):
@@ -333,6 +337,10 @@ class Task:
     @inclusive_duration.setter
     def inclusive_duration(self, dt):
         self._incl_dur = dt
+
+    @property
+    def naive_duration(self) -> int:
+        return self._naive_duration
 
     def keys(self):
         exclude = ["logger"]
