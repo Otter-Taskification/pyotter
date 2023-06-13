@@ -25,8 +25,11 @@ def flatten(args, exclude: list=None):
     if exclude is not None:
         no_flatten.extend(exclude)
     for item in args:
-        if isinstance(item, Iterable) and not isinstance(item, tuple(no_flatten)):
-            yield from flatten(item, exclude=exclude)
+        if isinstance(item, Iterable):
+            if isinstance(item, tuple(no_flatten)):
+                yield item
+            else:
+                yield from flatten(item, exclude=exclude)
         else:
             yield item
 
