@@ -68,6 +68,7 @@ def prepare_html(args, tasks):
         tasks.attributes,
         styling.task_attribute_names,
         tasks.data,
+        na_value="MISSING",
         attr={
             'table': {'border': '1', 'class': 'data-table'},
             'tr': {'style': 'text-align: center;'}
