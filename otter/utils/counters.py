@@ -3,6 +3,14 @@ from collections import defaultdict
 from typing import Union, List, Callable, Iterable
 
 
+class CountingDict(defaultdict):
+    """A defaultdict which uses ``next(counter)`` to uniquely number its keys"""
+
+    def __init__(self, counter: count = None):
+        counter = counter or count()
+        super().__init__(lambda: next(counter))
+
+
 class SequenceLabeller:
     """
     Determine labels for a sequence of elements. For elements where the given predicate is True, use the group_by
@@ -21,10 +29,10 @@ class SequenceLabeller:
     def label(self, sequence: Iterable) -> List[int]:
         is_true = list(map(self._predicate, sequence))
         count_items = len(sequence)
-        assert(count_items == len(is_true))
+        assert (count_items == len(is_true))
         count_true = sum(is_true)
         count_not_true = count_items - count_true
         vertex_counter = count()
-        cluster_counter = count(start=count_not_true)
-        get_label = defaultdict(lambda: next(cluster_counter))
-        return [get_label[self._group_label(item)] if item_true else next(vertex_counter) for item, item_true in zip(sequence, is_true)]
+        get_label = CountingDict(counter=count(start=count_not_true))
+        return [get_label[self._group_label(item)] if item_true else next(vertex_counter) for item, item_true in
+                zip(sequence, is_true)]

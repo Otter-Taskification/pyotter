@@ -1,5 +1,5 @@
 from collections import Counter
-from .counters import SequenceLabeller
+from .counters import SequenceLabeller, CountingDict
 from .iterate import pairwise, flatten, transpose_list_to_dict, batched
 from . import vertex_predicates as vpred
 from . import edge_predicates as epred
