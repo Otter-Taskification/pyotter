@@ -20,7 +20,10 @@ class SequenceLabeller:
 
     def label(self, sequence: Iterable) -> List[int]:
         is_true = list(map(self._predicate, sequence))
-        count_not_true = len(is_true) - sum(is_true)
+        count_items = len(sequence)
+        assert(count_items == len(is_true))
+        count_true = sum(is_true)
+        count_not_true = count_items - count_true
         vertex_counter = count()
         cluster_counter = count(start=count_not_true)
         get_label = defaultdict(lambda: next(cluster_counter))
