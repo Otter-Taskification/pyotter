@@ -1,13 +1,13 @@
 # TODO: include new graph styling methods from taskgraph to otter top level package
 # TODO: add TEMPORARY vertex["_event.attributes"] as the dict of event attributes
 
+from argparse import Namespace
 import warnings
 import otter
 
 
-def main() -> None:
+def main(args: Namespace) -> None:
 
-    args = otter.args.get_args()
     otter.log.initialise(args)
     log = otter.log.get_logger("main")
 
