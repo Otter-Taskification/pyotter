@@ -1,17 +1,15 @@
 from functools import lru_cache
 from itertools import chain
 from collections import deque
-from typing import Dict, Tuple, List, Any, AnyStr, Iterable, Set
+from typing import Iterable, Deque, List
+from dataclasses import dataclass, field, fields, asdict
 import igraph as ig
 from loggingdecorators import on_init
 from .. import log
-from ..definitions import Attr, AttrValue, NullTaskID, TaskType, SourceLocation
+from ..definitions import NullTaskID, TaskType, SourceLocation
 
 get_module_logger = log.logger_getter("tasks")
-
-
-TaskData = Dict[Attr, AttrValue]
-
+VoidLocation = SourceLocation()
 
 class TaskSynchronisationContext:
     """
@@ -24,7 +22,7 @@ class TaskSynchronisationContext:
 
     A context only includes those tasks explicitly passed to it. It can record
     whether the descendants of those tasks should also be synchronised, although
-    it does not record any information about any descendant tasks.    
+    it does not record any information about any descendant tasks.
     """
 
     @on_init(logger=log.logger_getter("init_logger"))
@@ -67,206 +65,50 @@ class TaskSynchronisationContext:
         return f"{self.__class__.__name__}(descendants={self._descendants})"
 
 
+@dataclass
 class Task:
-    """Represents an instance of a task"""
-
-    # TODO: clean up this API, it's too confusing which attributes are public and which are not. What attributes are available through a Task?
-
-    """A list of symbols exported by a Task through its .keys() method. These must return something when requested via getattr"""
-    _properties_ = ["id",
-        "start_ts",
-        "end_ts",
-        "exclusive_duration",
-        "inclusive_duration",
-        "num_children",
-        "num_descendants",
-
-        # "source_file_name",
-        # "source_func_name",
-        # "source_line_number,"
-
-        "initialised_at",
-        "started_at",
-        "ended_at"
-    ]
+    id: int
+    parent_id: int
+    task_flavour: int
+    task_label: str
+    crt_ts: int
+    task_type: TaskType = field(init=False, default=TaskType.explicit)
+    init_location: SourceLocation
+    start_location: SourceLocation = field(init=False, default=VoidLocation)
+    end_location: SourceLocation = field(init=False, default=VoidLocation)
+    start_ts: int = field(init=False, default=None)
+    end_ts: int = field(init=False, default=None)
+    inclusive_duration: int = field(init=False, default=None)
+    exclusive_duration: int = field(init=False, default=None)
+    naive_duration: int = field(init=False, default=None)
 
     @on_init(logger=log.logger_getter("init_logger"))
-    def __init__(self, task_data: TaskData):
+    def __post_init__(self):
         self.logger = get_module_logger()
-        self.id = task_data[Attr.unique_id]
-        self.parent_id = task_data[Attr.parent_task_id]
-        if self.parent_id == NullTaskID:
-            self.parent_id = None
-        self.task_type = task_data[Attr.task_type]
-        self.flavour = task_data[Attr.task_flavour]
-        self.user_label = task_data[Attr.task_label]
-        self.crt_ts = task_data[Attr.time]
+        self._children: Deque[int] = deque()
 
-        # TODO: want to remove these attributes in favour of source_* and task_init*
-        # Source location attributes not defined in OMP traces
-        # self.source_file_name = task_data.get(Attr.source_file_name)
-        # self.source_func_name = task_data.get(Attr.source_func_name)
-        # self.source_line_number = task_data.get(Attr.source_line_number)
-
-        # The location where the task was initialised
-        self._init_location: SourceLocation = SourceLocation(
-            task_data[Attr.task_init_file],
-            task_data[Attr.task_init_func],
-            task_data[Attr.task_init_line]
-        )
-
-        # The location where the task started
-        self._start_location: SourceLocation = None
-
-        # The location where the task ended
-        self._end_location: SourceLocation = None
-
-        self._children = deque()
-        self._end_ts = None
-        self._last_resumed_ts = None
-        self._excl_dur = 0
-        self._incl_dur = None
-        self._naive_duration: int = None
-        self._num_descendants = None
-        self._start_ts = None
+        self._num_descendants: int = None
 
         # Stack of TaskSynchronisationContext to manage nested contexts
-        self._task_sync_group_stack = deque()
+        self._task_sync_group_stack: Deque[TaskSynchronisationContext] = deque()
 
         # Stores child tasks created when parsing a chunk into its graph representation
-        self._task_barrier_cache = list()
+        self._task_barrier_cache: List[Task] = list()
 
         # Stores iterables of child tasks created when parsing a chunk into its graph representation
         self._task_barrier_iterables_cache = list()
 
-    def __repr__(self):
-        return "{}(id={}, type={}, crt_ts={}, end_ts={}, parent={}, children=({}))".format(
-            self.__class__,
-            self.id,
-            self.task_type,
-            self.crt_ts,
-            self.end_ts,
-            self.parent_id,
-            ", ".join([str(c) for c in self.children])
-        )
-
-    def __iter__(self) -> Tuple[Any]:
-        return tuple(getattr(self, name) for name in self._properties_)
-
-    @classmethod
-    def properties(cls) -> List[AnyStr]:
-        return cls._properties_
-
-    def append_to_barrier_cache(self, task):
-        """Add a task to the barrier cache, ready to be passed to a synchronisation
-        context upon encountering a task synchronisation barrier
-        """
-        assert isinstance(task, Task)
-        self.logger.debug(f"add task to barrier cache: task {self.id} added task {task.id}")
-        self._task_barrier_cache.append(task)
-
-    def append_to_barrier_iterables_cache(self, iterable):
-        """Add an iterable to the barrier iterables cache, ready to be passed to a synchronisation
-        context upon encountering a task synchronisation barrier
-        """
-        self.logger.debug(f"add iterable to iterables cache: task {self.id} added iterable")
-        self._task_barrier_iterables_cache.append(iterable)
-
-    def synchronise_tasks_at_barrier(self, tasks=None, from_cache=False, descendants=False):
-        """At a task synchronisation barrier, add a set of tasks to a synchronisation
-        context. The tasks may be from the internal cache, or supplied externally.
-        """
-        tasks = self._task_barrier_cache if from_cache else tasks
-        assert tasks is not None
-        self.logger.debug(f"task {self.id} registering tasks synchronised at barrier")
-        barrier_context = TaskSynchronisationContext(tasks, descendants=descendants)
-        if from_cache:
-            self.clear_task_barrier_cache()
-        return barrier_context
-
-    @property
-    def start_location(self) -> SourceLocation:
-        if self._start_location is None:
-            raise ValueError(f"start location was never set: {self}")
-        return self._start_location
-
-    @start_location.setter
-    def start_location(self, location: SourceLocation) -> None:
-        if self._start_location is not None:
+    def set_start_location(self, location: SourceLocation) -> None:
+        if self.start_location is not VoidLocation:
             raise RuntimeError(f"start location was already set: {self}")
         self.logger.debug(f"set task location: start={location}, {self=}")
-        self._start_location = location
+        self.start_location = location
 
-    @property
-    def end_location(self) -> SourceLocation:
-        if self._end_location is None:
-            raise ValueError(f"end location was never set: {self}")
-        return self._end_location
-
-    @end_location.setter
-    def end_location(self, location: SourceLocation) -> None:
-        if self._end_location is not None:
+    def set_end_location(self, location: SourceLocation) -> None:
+        if self.end_location is not VoidLocation:
             raise RuntimeError(f"end location was already set: {self}")
         self.logger.debug(f"set task location: end={location}, {self=}")
-        self._end_location = location
-
-    @property
-    def started_at(self) -> SourceLocation:
-        return self.start_location
-
-    @property
-    def ended_at(self) -> SourceLocation:
-        return self.end_location
-
-    @property
-    def initialised_at(self) -> SourceLocation:
-        return self._init_location
-
-    @property
-    def task_barrier_cache(self):
-        return self._task_barrier_cache
-
-    def clear_task_barrier_cache(self):
-        self._task_barrier_cache.clear()
-
-    @property
-    def task_barrier_iterables_cache(self):
-        return self._task_barrier_iterables_cache
-
-    def clear_task_barrier_iterables_cache(self):
-        self._task_barrier_iterables_cache.clear()
-
-    @property
-    def has_active_task_group(self):
-        return self.num_enclosing_task_sync_groups > 0
-
-    @property
-    def num_enclosing_task_sync_groups(self):
-        return len(self._task_sync_group_stack)
-
-    def synchronise_task_in_current_group(self, task):
-        if self.has_active_task_group:
-            # get enclosing group context
-            self.logger.debug(f"task {self.id} registering task {task.id} in current group")
-            group_context = self.get_current_task_sync_group()
-            group_context.synchronise(task)
-
-    def enter_task_sync_group(self, descendants=True):
-        self.logger.debug(f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})")
-        group_context = TaskSynchronisationContext(tasks=None, descendants=descendants)
-        self._task_sync_group_stack.append(group_context)
-
-    def leave_task_sync_group(self):
-        assert self.has_active_task_group
-        group_context = self._task_sync_group_stack.pop()
-        self.logger.debug(f"task {self.id} left task sync group (levels={self.num_enclosing_task_sync_groups})")
-        return group_context
-
-    def get_current_task_sync_group(self):
-        assert self.has_active_task_group
-        self.logger.debug(f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})")
-        group_context = self._task_sync_group_stack[-1]
-        return group_context
+        self.end_location = location
 
     def append_child(self, child: int):
         self._children.append(child)
@@ -285,76 +127,121 @@ class Task:
             raise RuntimeError(f"task {self} already notified of num. descendants")
         self._num_descendants = n
 
-    @property
-    def children(self):
-        return (child for child in self._children)
+    def iter_children(self) -> Iterable[int]:
+        return iter(self._children)
 
-    @property
-    def end_ts(self):
-        return self._end_ts
-
-    @end_ts.setter
-    def end_ts(self, time):
-        if self._end_ts is not None:
+    def set_end_ts(self, time):
+        if self.end_ts is not None:
             raise RuntimeError(f"task {self} already notified of end time")
         self.logger.debug(f"{self} end_ts={time}")
-        self._end_ts = time
-        self._naive_duration = self.end_ts - self.start_ts
+        self.end_ts = time
+        self.naive_duration = self.end_ts - self.start_ts
 
-    @property
-    def start_ts(self):
-        return self._start_ts
-
-    @start_ts.setter
-    def start_ts(self, time):
+    def set_start_ts(self, time):
         if self.start_ts is not None:
             raise RuntimeError(f"task start time already set: {self}")
-        self._start_ts = time
+        self.start_ts = time
 
-    @property
-    def last_resumed_ts(self):
-        return self._last_resumed_ts
-
-    def resumed_at(self, time):
-        self._last_resumed_ts = time
-        self.logger.debug(f"resumed task {self.id}, duration={self.exclusive_duration}")
-
-    @property
-    def exclusive_duration(self):
-        return self._excl_dur
-
-    def update_exclusive_duration(self, time):
-        if self.last_resumed_ts is None:
-            raise RuntimeError("last resumed time was None")
-        dt = time - self.last_resumed_ts
-        self.logger.debug(f"updated exclusive duration for task {self.id}: {self._excl_dur} -> {self._excl_dur + dt}")
-        self._excl_dur = self._excl_dur + dt
-
-    @property
-    def inclusive_duration(self):
-        return self._incl_dur
-
-    @inclusive_duration.setter
-    def inclusive_duration(self, dt):
-        self._incl_dur = dt
-
-    @property
-    def naive_duration(self) -> int:
-        return self._naive_duration
-
-    def keys(self):
-        exclude = ["logger"]
-        names = list(vars(self).keys()) + self._properties_
-        return (name for name in names if not name in exclude and not name.startswith("_"))
+    def calculate_naive_duration(self) -> None:
+        self.naive_duration = self.end_ts - self.start_ts
 
     def as_dict(self):
-        return {key: getattr(self, key) for key in self.keys()}
+        return asdict(self)
 
     def is_implicit(self) -> bool:
         return self.task_type == TaskType.implicit
 
     def is_explicit(self) -> bool:
         return self.task_type == TaskType.explicit
+
+    def append_to_barrier_cache(self, task):
+        # TODO: consider having TaskRegistry manage barrier caches - why should a Task know about them?
+        """Add a task to the barrier cache, ready to be passed to a synchronisation
+        context upon encountering a task synchronisation barrier
+        """
+        assert isinstance(task, Task)
+        self.logger.debug(f"add task to barrier cache: task {self.id} added task {task.id}")
+        self._task_barrier_cache.append(task)
+
+    def append_to_barrier_iterables_cache(self, iterable):
+        # TODO: consider having TaskRegistry manage barrier caches - why should a Task know about them?
+        """Add an iterable to the barrier iterables cache, ready to be passed to a synchronisation
+        context upon encountering a task synchronisation barrier
+        """
+        self.logger.debug(f"add iterable to iterables cache: task {self.id} added iterable")
+        self._task_barrier_iterables_cache.append(iterable)
+
+    def synchronise_tasks_at_barrier(self, tasks=None, from_cache=False, descendants=False):
+        # TODO: consider having TaskRegistry manage barrier caches - why should a Task know about them?
+        """At a task synchronisation barrier, add a set of tasks to a synchronisation
+        context. The tasks may be from the internal cache, or supplied externally.
+        """
+        tasks = self._task_barrier_cache if from_cache else tasks
+        assert tasks is not None
+        self.logger.debug(f"task {self.id} registering tasks synchronised at barrier")
+        barrier_context = TaskSynchronisationContext(tasks, descendants=descendants)
+        if from_cache:
+            self.clear_task_barrier_cache()
+        return barrier_context
+
+    # TODO: consider having TaskRegistry or some special manager class handle this
+    @property
+    def task_barrier_cache(self):
+        return self._task_barrier_cache
+
+    # TODO: consider having TaskRegistry or some special manager class handle this
+    def clear_task_barrier_cache(self):
+        self._task_barrier_cache.clear()
+
+    # TODO: consider having TaskRegistry or some special manager class handle this
+    @property
+    def task_barrier_iterables_cache(self):
+        return self._task_barrier_iterables_cache
+
+    # TODO: consider having TaskRegistry or some special manager class handle this
+    def clear_task_barrier_iterables_cache(self):
+        self._task_barrier_iterables_cache.clear()
+
+    # TODO: consider having TaskRegistry or some special manager class handle this
+    @property
+    def has_active_task_group(self):
+        return self.num_enclosing_task_sync_groups > 0
+
+    # TODO: consider having TaskRegistry or some special manager class handle this
+    @property
+    def num_enclosing_task_sync_groups(self):
+        return len(self._task_sync_group_stack)
+
+    # TODO: consider having TaskRegistry or some special manager class handle this
+    def synchronise_task_in_current_group(self, task):
+        if self.has_active_task_group:
+            # get enclosing group context
+            self.logger.debug(f"task {self.id} registering task {task.id} in current group")
+            group_context = self.get_current_task_sync_group()
+            group_context.synchronise(task)
+
+    # TODO: consider having TaskRegistry or some special manager class handle this
+    def enter_task_sync_group(self, descendants=True):
+        self.logger.debug(f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})")
+        group_context = TaskSynchronisationContext(tasks=None, descendants=descendants)
+        self._task_sync_group_stack.append(group_context)
+
+    # TODO: consider having TaskRegistry or some special manager class handle this
+    def leave_task_sync_group(self):
+        assert self.has_active_task_group
+        group_context = self._task_sync_group_stack.pop()
+        self.logger.debug(f"task {self.id} left task sync group (levels={self.num_enclosing_task_sync_groups})")
+        return group_context
+
+    # TODO: consider having TaskRegistry or some special manager class handle this
+    def get_current_task_sync_group(self):
+        assert self.has_active_task_group
+        self.logger.debug(f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})")
+        group_context = self._task_sync_group_stack[-1]
+        return group_context
+
+
+_task_field_names: List[str] = [f.name for f in fields(Task)]
 
 
 class _NullTask(Task):
@@ -384,8 +271,6 @@ class TaskRegistry(Iterable[Task]):
     def __init__(self):
         self.log = get_module_logger()
         self._dict = dict()
-        self._task_attributes = list()
-        self._task_attribute_set = set()
 
     def __getitem__(self, uid: int) -> Task:
         assert isinstance(uid, int)
@@ -407,20 +292,17 @@ class TaskRegistry(Iterable[Task]):
     def __repr__(self):
         return f"{self.__class__.__name__}({len(self._dict.keys())} tasks: {list(self._dict.keys())})"
 
-    def register_task(self, task_data: TaskData) -> Task:
-        t = Task(task_data)
-        self.log.debug(f"registering task {t.id} (parent={t.parent_id if t.id>0 else None})")
-        if t.id in self._dict:
-            raise ValueError(f"task {t.id} was already registered in {self}")
-        self._dict[t.id] = t
+    def register_task(self, task: Task) -> Task:
+        self.log.debug(f"registering task {task.id} (parent={task.parent_id if task.id>0 else None})")
+        if task.id in self._dict:
+            raise ValueError(f"task {task.id} was already registered in {self}")
+        self._dict[task.id] = task
         # if the task's parent was recorded as NULL at runtime, t.parent_id is None
-        if t.id > 0 and t.parent_id is not None:
-            self[t.parent_id].append_child(t.id)
-        for name in t.keys():
-            if name not in self._task_attribute_set:
-                self._task_attribute_set.add(name)
-                self._task_attributes.append(name)
-        return t
+        if task.id > 0 and task.parent_id is not None:
+            parent_task = self[task.parent_id]
+            if parent_task is not NullTask:
+                parent_task.append_child(task.id)
+        return task
 
     def update_task(self, event) -> Task:
         """Update the task data"""
@@ -431,7 +313,7 @@ class TaskRegistry(Iterable[Task]):
         return list(self._generate_descendants_while(task_id, cond))
 
     def _generate_descendants_while(self, task_id, cond):
-        for child_id in self[task_id].children:
+        for child_id in self[task_id].iter_children():
             if cond is not None and cond(self[child_id]):
                 yield child_id
                 yield from self.descendants_while(child_id, cond)
@@ -442,13 +324,13 @@ class TaskRegistry(Iterable[Task]):
         task_tree.vs['name'] = list(task.id for task in self)
         task_tree.vs['task'] = list(self[id] for id in task_tree.vs['name'])
         for task in self:
-            for child in task.children:
+            for child in task.iter_children():
                 task_tree.add_edge(task.id, child)
         return task_tree
 
     @property
     def attributes(self):
-        return self._task_attributes
+        return _task_field_names
 
     @property
     def data(self):
@@ -463,7 +345,7 @@ class TaskRegistry(Iterable[Task]):
         if task.inclusive_duration is not None:
             return task.inclusive_duration
         inclusive_duration = task.exclusive_duration
-        for child in (self[id] for id in task.children):
+        for child in (self[taskid] for taskid in task.iter_children()):
             if child.inclusive_duration is None:
                 child.inclusive_duration = self.calculate_inclusive_duration(child)
             inclusive_duration += child.inclusive_duration
@@ -476,7 +358,7 @@ class TaskRegistry(Iterable[Task]):
 
     def calculate_num_descendants(self, task):
         descendants = task.num_children
-        for child in (self[id] for id in task.children):
+        for child in (self[child_id] for child_id in task.iter_children()):
             if child.num_descendants is None:
                 child.num_descendants = self.calculate_num_descendants(child)
             descendants += child.num_descendants
@@ -487,7 +369,7 @@ class TaskRegistry(Iterable[Task]):
         if task.start_ts is None:
             task.start_ts = time
         if location is not None:
-            task.start_location = location
+            task.set_start_location(location)
 
     def update_task_duration(self, prior_task_id: int, next_task_id: int, time: int) -> None:
         prior_task = self[prior_task_id]
@@ -503,8 +385,9 @@ class TaskRegistry(Iterable[Task]):
         completed_task = self[completed_task_id]
         if completed_task is not NullTask:
             completed_task.end_ts = time
+            completed_task.calculate_naive_duration()
         if location is not None:
-            completed_task.end_location = location
+            completed_task.set_end_location(location)
 
     def log_all_task_ts(self):
         self.log.debug("BEGIN LOGGING TASK TIMESTAMPS")
