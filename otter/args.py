@@ -14,7 +14,7 @@ def get_args():
     parser.add_argument('--loglevel', dest='loglevel', default="WARN", choices=["DEBUG", "INFO", "WARN", "ERROR"], help='logging level')
     parser.add_argument('--logdir', dest='logdir', default="otter-logs", help='logging directory')
     parser.add_argument('--profile', dest='profile', help='profiling output')
-    parser.add_argument('--project', dest='project', help='project type', choices=["SimpleProject", "DBProject"], default="SimpleProject")
+    parser.add_argument('--project', dest='project', help='project type', choices=["SimpleProject", "DBProject", "ReadTasksProject"], default="SimpleProject")
     parser.add_argument('--warn-deprecated', dest='warnings', help='Allow warnings about deprecated code', action="append_const", const=DeprecationWarning)
     parser.add_argument('--warn-user', dest='warnings', help='Allow user warnings', action="append_const", const=UserWarning)
     parser.add_argument('--warn-all', dest='warn_all', help='Turn on all warnings', action="store_true")
