@@ -6,7 +6,7 @@ from igraph import Graph
 from otter.definitions import EventModel, Attr, TaskStatus, EventType, RegionType, EdgeType, Endpoint, TaskType, TaskSyncType, SourceLocation
 from otter.core.chunks import Chunk
 from otter.core.events import Event, Location
-from otter.core.tasks import TaskRegistry, NullTask, TaskData
+from otter.core.tasks import TaskRegistry, NullTask, Task
 from otter.log import logger_getter
 from otter.utils.typing import Decorator
 from otter.utils import transpose_list_to_dict
@@ -24,6 +24,9 @@ get_module_logger = logger_getter("event_model")
 class EventModelProtocol(Protocol):
 
     def __init__(self, task_registry: TaskRegistry):
+        pass
+
+    def notify_task_registry(self, event: Event) -> None:
         pass
 
     def yield_chunks(self, events_iter: Iterable[Tuple[Location, Event]]) -> Iterable[Chunk]:
@@ -158,6 +161,26 @@ class BaseEventModel(ABC):
     def get_task_completed(self, event: Event) -> int:
         raise NotImplementedError()
 
+    def notify_task_registry(self, event: Event) -> None:
+
+        if self.is_task_register_event(event):
+            self.task_registry.register_task(self.get_task_data(event))
+
+        if self.is_update_task_start_ts_event(event):
+            task_entered = self.get_task_entered(event)
+            self.log.debug(f"notifying task start time: {task_entered} started at {event.time}")
+            self.task_registry.notify_task_start(task_entered, event.time, self.get_task_start_location(event))
+
+        if self.is_update_duration_event(event):
+            prior_task_id, next_task_id = self.get_tasks_switched(event)
+            self.log.debug(f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint} {event.event_type}")
+            # task_registry.update_task_duration(prior_task_id, next_task_id, event.time)
+
+        if self.is_task_complete_event(event):
+            completed_task_id = self.get_task_completed(event)
+            self.log.debug(f"event <{event}> notifying task {completed_task_id} of end_ts")
+            self.task_registry.notify_task_end(completed_task_id, event.time, self.get_task_end_location(event))
+
     def yield_chunks(self, events_iter: Iterable[Tuple[Location, Event]]) -> Iterable[Chunk]:
 
         log = self.log
@@ -183,20 +206,7 @@ class BaseEventModel(ABC):
             if self.is_task_register_event(event):
                 task_registry.register_task(self.get_task_data(event))
 
-            if self.is_update_task_start_ts_event(event):
-                task_entered = self.get_task_entered(event)
-                log.debug(f"notifying task start time: {task_entered} started at {event.time}")
-                task_registry.notify_task_start(task_entered, event.time, self.get_task_start_location(event))
-
-            if self.is_update_duration_event(event):
-                prior_task_id, next_task_id = self.get_tasks_switched(event)
-                log.debug(f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint} {event.event_type}")
-                # task_registry.update_task_duration(prior_task_id, next_task_id, event.time)
-
-            if self.is_task_complete_event(event):
-                completed_task_id = self.get_task_completed(event)
-                log.debug(f"event <{event}> notifying task {completed_task_id} of end_ts")
-                task_registry.notify_task_end(completed_task_id, event.time, self.get_task_end_location(event))
+            self.notify_task_registry(event)
 
         log.debug(f"exhausted {events_iter}")
         # task_registry.calculate_all_inclusive_duration()
@@ -212,7 +222,7 @@ class BaseEventModel(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_task_data(self, event: Event) -> TaskData:
+    def get_task_data(self, event: Event) -> Task:
         raise NotImplementedError()
 
     @abstractmethod
