@@ -11,7 +11,7 @@ from otter.core.events import (
     Event,
     Location
 )
-from otter.core.tasks import NullTask, Task, TaskData, TaskRegistry, TaskSynchronisationContext
+from otter.core.tasks import NullTask, Task, TaskRegistry, TaskSynchronisationContext
 from otter.log import logger_getter, DEBUG
 from otter.utils.typing import Decorator
 from otter.utils import SequenceLabeller, LoggingValidatingReduction, ReductionDict
@@ -180,21 +180,18 @@ class OMPEventModel(BaseEventModel):
             return event.encountering_task_id
 
     @classmethod
-    def get_task_data(cls, event: Event) -> TaskData:
+    def get_task_data(cls, event: Event) -> Task:
         # Only defined for RegisterTaskDataMixin classes
         # i.e. task-enter, task-create
         assert cls.is_task_register_event(event)
-        data = {
-            Attr.unique_id:       event.unique_id,
-            Attr.task_type:       event.task_type,
-            Attr.parent_task_id:  event.parent_task_id,
-            Attr.time:            event.time
-        }
-        if Attr.source_file_name in event and Attr.source_func_name in event and Attr.source_line_number in event:
-            data[Attr.source_file_name] = event.source_file_name
-            data[Attr.source_func_name] = event.source_func_name
-            data[Attr.source_line_number] = event.source_line_number
-        return data
+        return Task(
+            event.unique_id,
+            event.parent_task_id,
+            event.task_flavour,
+            event.task_label,
+            event.time,
+            SourceLocation(event.task_init_file, event.task_init_func, event.task_init_line)
+        )
 
     def get_task_start_location(self, event: Event) -> SourceLocation:
         raise NotImplementedError()
