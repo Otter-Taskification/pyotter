@@ -74,6 +74,7 @@ task_attribute_names = { # default to "UNDEFINED"
     "end_ts": "End Time",
     "exclusive_duration": "Exclusive Duration",
     "inclusive_duration": "Inclusive Duration",
+    "naive_duration": "Naive Duration",
     "num_children": "Child Tasks",
     "num_descendants": "Descendant Tasks",
     "start_ts": "Start Time",
@@ -83,10 +84,11 @@ task_attribute_names = { # default to "UNDEFINED"
     "source_func_name": "Source Function",
     "source_line_number": "Source Line No.",
 
-    "initialised_at": "Task Initialised",
-    "started_at": "Task Started",
-    "ended_at": "Task Ended",
-    "flavour": "Flavour"
+    "init_location": "Task Initialised",
+    "start_location": "Task Started",
+    "end_location": "Task Ended",
+    "task_flavour": "Flavour",
+    "task_label": "Label"
 }
 
 colormap_task_type = { # default to black
@@ -127,16 +129,10 @@ class StyleVertexShapeAsRegionType(graph_styling.BaseGraphStyle):
 class StyleVertexShapeAsRegionTypeAndColourAsTaskFlavour(graph_styling.BaseGraphStyle):
 
     def get_vertex_style(self, vertex) -> Tuple[graph_styling.VertexStyle, str]:
-        default_colour = "fuchsia"
-        task_flavour = vertex["task_flavour"]
-        if task_flavour is not None:
-            colour = colormap_task_flavour.get(task_flavour, default_colour)
-        else:
-            colour = colormap_region_type.get(vertex["vertex_color_key"], default_colour)
         return graph_styling.VertexStyle(
             "filled",
             shapemap_region_type.get(vertex["vertex_shape_key"], "circle"),
-            colour,
+            colormap_task_flavour.get(vertex["vertex_color_key"], "fuchsia"),
             vertex['vertex_label'] or " "
         )
 
