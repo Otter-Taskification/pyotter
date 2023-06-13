@@ -1,5 +1,6 @@
 from enum import Enum
 from typing import Union, NamedTuple
+from dataclasses import dataclass, asdict
 
 # TODO: suspect some Attr values are missing here e.g. requested_parallelism, next_task_id - is there a reason they aren't present?
 class Attr(str, Enum):
@@ -118,12 +119,29 @@ class EventModel(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 class SourceLocation(NamedTuple):
-    file: str
-    func: str
-    line: int
+    file: str = "?"
+    func: str = "?"
+    line: int = 0
 
     def __str__(self) -> str:
         return f"{self.file}:{self.line} in {self.func}"
+
+@dataclass(frozen=True)
+class TaskAttributes:
+    label: str
+    flavour: int
+    init_location: SourceLocation
+    start_location: SourceLocation
+    end_location: SourceLocation
+
+    def is_null(self) -> bool:
+        return self.label is None and self.flavour is None
+
+    def __str__(self) -> str:
+        return self.label
+
+    def asdict(self):
+        return {k: v for k, v in asdict(self).items()}
 
 NullTaskID = 18446744073709551615
 
