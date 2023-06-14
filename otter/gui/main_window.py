@@ -9,6 +9,7 @@ class MainWindow(qtw.QMainWindow):
         super().__init__(*args, **kwargs)
         self.ui = layout.main_window.Ui_OtterMainWindow()
         self.ui.setupUi(self)
+        self.setWindowTitle("Otter")
 
     def quit(self) -> None:
         raise SystemExit(0)
