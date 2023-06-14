@@ -14,6 +14,8 @@ class LoginWindow(qtw.QMainWindow):
         self.ui = ui.main_window.Ui_MainWindow()
         self.ui.setupUi(self)
         self.ui.button_login.clicked.connect(self.login)
+        self.ui.edit_pass.returnPressed.connect(self.login)
+        self.ui.edit_user.returnPressed.connect(self.login)
         self.ui.action_quit.triggered.connect(self.quit)
         self.manager = manager
 
