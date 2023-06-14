@@ -7,7 +7,7 @@ class App(qtw.QApplication):
 
     def __init__(self, argv: list[str]):
         super().__init__(argv)
-        self.window = MainWindow()
+        self.window = MainWindow(quit_action=self.quit)
 
     def run(self) -> int:
         self.window.show()

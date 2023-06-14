@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading layout file 'otter/gui/layout/main_window.layout'
+# Form implementation generated from reading ui file 'otter/gui/layout/static_ui_layouts/main_window.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.9
 #
@@ -15,12 +15,27 @@ class Ui_OtterMainWindow(object):
     def setupUi(self, OtterMainWindow):
         OtterMainWindow.setObjectName("OtterMainWindow")
         OtterMainWindow.setWindowModality(QtCore.Qt.ApplicationModal)
-        OtterMainWindow.resize(762, 479)
+        OtterMainWindow.setEnabled(True)
+        OtterMainWindow.resize(900, 600)
         self.centralwidget = QtWidgets.QWidget(OtterMainWindow)
         self.centralwidget.setObjectName("centralwidget")
         OtterMainWindow.setCentralWidget(self.centralwidget)
+        self.menuBar = QtWidgets.QMenuBar(OtterMainWindow)
+        self.menuBar.setGeometry(QtCore.QRect(0, 0, 900, 22))
+        self.menuBar.setObjectName("menuBar")
+        self.menuFile = QtWidgets.QMenu(self.menuBar)
+        self.menuFile.setObjectName("menuFile")
+        self.menuTools = QtWidgets.QMenu(self.menuBar)
+        self.menuTools.setObjectName("menuTools")
+        OtterMainWindow.setMenuBar(self.menuBar)
+        self.statusBar = QtWidgets.QStatusBar(OtterMainWindow)
+        self.statusBar.setObjectName("statusBar")
+        OtterMainWindow.setStatusBar(self.statusBar)
         self.action_quit = QtWidgets.QAction(OtterMainWindow)
         self.action_quit.setObjectName("action_quit")
+        self.menuFile.addAction(self.action_quit)
+        self.menuBar.addAction(self.menuFile.menuAction())
+        self.menuBar.addAction(self.menuTools.menuAction())
 
         self.retranslateUi(OtterMainWindow)
         QtCore.QMetaObject.connectSlotsByName(OtterMainWindow)
@@ -28,4 +43,7 @@ class Ui_OtterMainWindow(object):
     def retranslateUi(self, OtterMainWindow):
         _translate = QtCore.QCoreApplication.translate
         OtterMainWindow.setWindowTitle(_translate("OtterMainWindow", "MainWindow"))
+        self.menuFile.setTitle(_translate("OtterMainWindow", "File"))
+        self.menuTools.setTitle(_translate("OtterMainWindow", "Tools"))
         self.action_quit.setText(_translate("OtterMainWindow", "Quit"))
+        self.action_quit.setShortcut(_translate("OtterMainWindow", "Ctrl+Q"))
