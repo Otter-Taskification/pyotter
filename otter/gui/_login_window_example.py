@@ -2,7 +2,7 @@ from typing import Tuple
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtCore as qtc
 
-from . import ui
+from . import layout
 from ._login_manager_example import LoginManager
 
 
@@ -10,7 +10,7 @@ class LoginWindow(qtw.QMainWindow):
 
     def __init__(self, manager: LoginManager, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.ui = ui._login_window.Ui_MainWindow()
+        self.ui = layout._login_window.Ui_MainWindow()
         self.ui.setupUi(self)
         self.ui.button_login.clicked.connect(self.login)
         self.ui.edit_pass.returnPressed.connect(self.login)

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'otter/gui/ui/main_window.ui'
+# Form implementation generated from reading layout file 'otter/gui/layout/main_window.layout'
 #
 # Created by: PyQt5 UI code generator 5.15.9
 #
