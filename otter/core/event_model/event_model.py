@@ -203,8 +203,8 @@ class BaseEventModel(ABC):
             else: # event applies default chunk update logic
                 self.append_to_encountering_task_chunk(event)
 
-            if self.is_task_register_event(event):
-                task_registry.register_task(self.get_task_data(event))
+            # if self.is_task_register_event(event):
+            #     task_registry.register_task(self.get_task_data(event))
 
             self.notify_task_registry(event)
 

@@ -26,7 +26,7 @@ class TaskSynchronisationContext:
     """
 
     @on_init(logger=log.logger_getter("init_logger"))
-    def __init__(self, tasks=None, descendants=False):
+    def __init__(self, tasks=None, descendants: bool = False):
         self.logger = get_module_logger()
         self._tasks = list()
         self._descendants = descendants
@@ -50,7 +50,7 @@ class TaskSynchronisationContext:
             self.synchronise(task)
 
     @property
-    def synchronise_descendants(self):
+    def synchronise_descendants(self) -> bool:
         return self._descendants
 
     def __iter__(self):
