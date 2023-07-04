@@ -15,7 +15,6 @@ from . import utils
 from . import db
 from .reader import get_otf2_reader
 from .definitions import SourceLocation, TaskAttributes
-from .core.event_model import task_graph_chunk_get_contexts
 from .core.event_model.event_model import EventModel, get_event_model
 from .core.events import Event, Location
 from .core.tasks import TaskRegistry, Task, TaskSynchronisationContext
@@ -72,7 +71,7 @@ class Project(abc.ABC):
     def abspath(self, relname: AnyStr) -> AnyStr:
         return os.path.abspath(os.path.join(self.project_root, relname))
 
-    def process_trace(self) -> Project:
+    def process_trace(self, con: Optional[sqlite3.Connection] = None) -> Project:
         with get_otf2_reader(self.anchorfile) as reader:
             event_model_name: EventModel = reader.get_event_model_name()
             self.event_model = get_event_model(event_model_name, self.task_registry, gather_return_addresses=self.return_addresses)
@@ -242,7 +241,7 @@ class DBProject(Project):
 class ReadTasksProject(Project):
     """Simply read the tasks from a trace into a DB"""
 
-    def process_trace(self, by: Literal["task", "chunk"] = "task", con: Optional[sqlite3.Connection] = None) -> Project:
+    def process_trace(self, con: Optional[sqlite3.Connection] = None) -> Project:
         with get_otf2_reader(self.anchorfile) as reader:
             event_model_name: EventModel = reader.get_event_model_name()
             self.event_model = get_event_model(event_model_name, self.task_registry, gather_return_addresses=self.return_addresses)
@@ -250,40 +249,27 @@ class ReadTasksProject(Project):
             self.log.info(f"Using event model: {self.event_model}")
             self.log.info(f"reading tasks")
             attributes: Dict[str: OTF2Attribute] = {attr.name: attr for attr in reader.definitions.attributes}
-            if by == "task":
-                for _, event in reader.events:
-                    self.event_model.notify_task_registry(Event(event, attributes))
-            elif by == "chunk":
-                locations: Dict[OTF2Location: Location] = {location: Location(location) for location in
-                                                           reader.definitions.locations}
-                event_iter: Iterable[Tuple[Location, Event]] = ((locations[location], Event(event, attributes)) for
-                                                                location, event in reader.events)
-                context_id: Dict[TaskSynchronisationContext, int] = utils.CountingDict(count())
-                for chunk in self.event_model.yield_chunks(event_iter):
-                    contexts = task_graph_chunk_get_contexts(self.event_model, chunk)
-                    if contexts:
-                        if len(contexts) > 1:
-                            self.log.debug(f"  {chunk.task_id} has {len(contexts)} contexts")
-                        context_ids = list()
-                        synchronised_tasks = list()
-                        context_meta = list()
-                        for order, context in enumerate(contexts):
-                            cid = context_id[context]
-                            synchronised_tasks.extend((cid, task.id) for task in context)
-                            context_ids.append((chunk.task_id, cid, order))
-                            context_meta.append((cid, int(context.synchronise_descendants)))
-                            if context.synchronise_descendants:
-                                # get descendants from task_registry (or do this another way because it now starts to feel messy... do we have all the descendants by this stage?)
-                                ...
-                        # write synchronised_tasks and context_ids to db
-                        # write the definition of each context i.e. sync_descendants flag
-                        con.executemany(db.scripts.insert_synchronisation, synchronised_tasks)
-                        con.executemany(db.scripts.insert_chunk, context_ids)
-                        con.executemany(db.scripts.insert_context, context_meta)
-                    con.commit()
-
-            else:
-                raise ValueError(f"'by' must be 'task' or 'chunk'")
+            locations: Dict[OTF2Location: Location] = {location: Location(location) for location in
+                                                       reader.definitions.locations}
+            event_iter: Iterable[Tuple[Location, Event]] = ((locations[location], Event(event, attributes)) for
+                                                            location, event in reader.events)
+            context_id: Dict[TaskSynchronisationContext, int] = utils.CountingDict(count())
+            for chunk in self.event_model.yield_chunks(event_iter):
+                contexts = self.event_model.contexts_of(chunk)
+                context_ids = list()
+                synchronised_tasks = list()
+                context_meta = list()
+                for order, context in enumerate(contexts):
+                    cid = context_id[context]
+                    synchronised_tasks.extend((cid, task.id) for task in context)
+                    context_ids.append((chunk.task_id, cid, order))
+                    context_meta.append((cid, int(context.synchronise_descendants)))
+                # write synchronised_tasks and context_ids to db
+                # write the definition of each context i.e. sync_descendants flag
+                con.executemany(db.scripts.insert_synchronisation, synchronised_tasks)
+                con.executemany(db.scripts.insert_chunk, context_ids)
+                con.executemany(db.scripts.insert_context, context_meta)
+                con.commit()
         if self.debug:
             self.log.debug(f"task registry encountered the following task attributes:")
             for name in sorted(self.task_registry.attributes):
@@ -369,7 +355,7 @@ class ReadTasksProject(Project):
 
     def run(self) -> None:
         with closing_connection(self.tasks_db) as con:
-            self.process_trace(by="chunk", con=con)
+            self.process_trace(con=con)
         self.write_tasks_to_db()
         graph = self.build_parent_child_graph()
         self.write_graph_to_file(graph)

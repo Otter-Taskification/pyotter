@@ -137,6 +137,9 @@ class TaskGraphEventModel(BaseEventModel):
     def yield_chunks(self, events_iter: Iterable[Tuple[Location, Event]]) -> Iterable[Chunk]:
         yield from super().yield_chunks(self.yield_events_with_warning(events_iter))
 
+    def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
+        return super().contexts_of(chunk)
+
 
 @TaskGraphEventModel.update_chunks_on(event_type=EventType.task_switch)
 def update_chunks_task_switch(event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict) -> Optional[Chunk]:
@@ -242,33 +245,6 @@ def task_graph_chunk_to_graph(event_model: TaskGraphEventModel, chunk: Chunk) ->
         graph.delete_edges([0])
 
     return graph
-
-
-def task_graph_chunk_get_contexts(event_model: TaskGraphEventModel, chunk: Chunk) -> List[TaskSynchronisationContext]:
-    contexts = list()
-    for event in islice(chunk.events, 1, None):
-        encountering_task = event_model.task_registry[event.encountering_task_id]
-        if encountering_task is NullTask:
-            encountering_task = None
-        if event.region_type == RegionType.taskwait:
-            chunk.log.debug(f"encountered taskwait barrier: endpoint={event.endpoint}, descendants={event.sync_descendant_tasks == TaskSyncType.descendants}")
-            descendants = event.sync_descendant_tasks == TaskSyncType.descendants
-            barrier_context = TaskSynchronisationContext(tasks=None, descendants=descendants)
-            barrier_context.synchronise_from(encountering_task.task_barrier_cache)
-            for iterable in encountering_task.task_barrier_iterables_cache:
-                barrier_context.synchronise_lazy(iterable)
-            encountering_task.clear_task_barrier_cache()
-            encountering_task.clear_task_barrier_iterables_cache()
-            contexts.append(barrier_context)
-        if event_model.is_task_create_event(event):
-            created_task = event_model.task_registry[event.unique_id]
-            if encountering_task.has_active_task_group:
-                chunk.log.debug(f"registering new task in active task group: parent={encountering_task.id}, child={created_task.id}")
-                encountering_task.synchronise_task_in_current_group(created_task)
-            else:
-                chunk.log.debug(f"registering new task in task barrier cache: parent={encountering_task.id}, child={created_task.id}")
-                encountering_task.append_to_barrier_cache(created_task)
-    return contexts
 
 
 def reduce_by_task_cluster_id(event_model: TaskGraphEventModel, reductions: ReductionDict, graph: Graph) -> Graph:

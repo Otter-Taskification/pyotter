@@ -1,12 +1,13 @@
 from typing import Protocol, Dict, Iterable, Any, TypeVar, Type, Deque, Tuple, Optional, List, Callable
 from collections import defaultdict, deque
 from abc import ABC, abstractmethod
+from itertools import islice
 from loggingdecorators import on_init
 from igraph import Graph
 from otter.definitions import EventModel, Attr, TaskStatus, EventType, RegionType, EdgeType, Endpoint, TaskType, TaskSyncType, SourceLocation
 from otter.core.chunks import Chunk
 from otter.core.events import Event, Location
-from otter.core.tasks import TaskRegistry, NullTask, Task
+from otter.core.tasks import TaskRegistry, NullTask, Task, TaskSynchronisationContext
 from otter.log import logger_getter
 from otter.utils.typing import Decorator
 from otter.utils import transpose_list_to_dict
@@ -36,6 +37,9 @@ class EventModelProtocol(Protocol):
         pass
 
     def combine_graphs(self, graphs: Iterable[Graph]) -> Graph:
+        pass
+
+    def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
         pass
 
 
@@ -238,6 +242,32 @@ class BaseEventModel(ABC):
     @classmethod
     def unpack(cls, event_list: List[Event]) -> Dict:
         return transpose_list_to_dict([cls.get_augmented_event_attributes(event) for event in event_list])
+
+    def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
+        contexts = list()
+        for event in islice(chunk.events, 1, None):
+            encountering_task = self.task_registry[event.encountering_task_id]
+            if encountering_task is NullTask:
+                encountering_task = None
+            if event.region_type == RegionType.taskwait:
+                chunk.log.debug(f"encountered taskwait barrier: endpoint={event.endpoint}, descendants={event.sync_descendant_tasks == TaskSyncType.descendants}")
+                descendants = event.sync_descendant_tasks == TaskSyncType.descendants
+                barrier_context = TaskSynchronisationContext(tasks=None, descendants=descendants)
+                barrier_context.synchronise_from(encountering_task.task_barrier_cache)
+                for iterable in encountering_task.task_barrier_iterables_cache:
+                    barrier_context.synchronise_lazy(iterable)
+                encountering_task.clear_task_barrier_cache()
+                encountering_task.clear_task_barrier_iterables_cache()
+                contexts.append(barrier_context)
+            if self.is_task_create_event(event):
+                created_task = self.task_registry[event.unique_id]
+                if encountering_task.has_active_task_group:
+                    chunk.log.debug(f"registering new task in active task group: parent={encountering_task.id}, child={created_task.id}")
+                    encountering_task.synchronise_task_in_current_group(created_task)
+                else:
+                    chunk.log.debug(f"registering new task in task barrier cache: parent={encountering_task.id}, child={created_task.id}")
+                    encountering_task.append_to_barrier_cache(created_task)
+        return contexts
 
 
 def get_event_model(model_name: EventModel, task_registry: TaskRegistry, *args, **kwargs) -> EventModelProtocol:
