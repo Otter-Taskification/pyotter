@@ -1,4 +1,4 @@
-insert into sync_context values(
+insert into context values(
     ?, -- context_id
     ?  -- sync_descendants
 );

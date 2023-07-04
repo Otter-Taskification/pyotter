@@ -279,7 +279,7 @@ class ReadTasksProject(Project):
                         # write the definition of each context i.e. sync_descendants flag
                         con.executemany(db.scripts.insert_synchronisation, synchronised_tasks)
                         con.executemany(db.scripts.insert_chunk, context_ids)
-                        con.executemany(db.scripts.insert_sync_context, context_meta)
+                        con.executemany(db.scripts.insert_context, context_meta)
                     con.commit()
 
             else:
