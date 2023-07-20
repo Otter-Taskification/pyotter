@@ -4,27 +4,13 @@ This is the post-processing package for use with Otter - please see [the main Ot
 
 ## Getting Started
 
-### Prerequisites
-
-The following dependencies should be installed before installing pyotter:
-
-- [OTF2 v2.3](https://zenodo.org/record/4682684)
-- [`python-igraph` v0.9.1](https://pypi.org/project/python-igraph/0.9.1/)
-
 ### Installing pyotter
 
 To install pyotter from github:
 
 ```bash
-git clone https://github.com/Otter-Taskification/pyotter.git && cd pyotter
-git checkout dev
-pip install .
-```
-
-To install from PyPi:
-
-```
-pip install pyotter
+git clone -b dev https://github.com/Otter-Taskification/pyotter.git
+pip install ./pyotter
 ```
 
 ### Using pyotter
