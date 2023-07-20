@@ -20,8 +20,7 @@ dependencies = [
 license = {file = "LICENSE"}
 
 [project.scripts]
-otter = "otter.run:main"
-otter-other = "otter.run:other"
+# None yet...
 
 [tool.setuptools.packages.find]
 where = ["."]
