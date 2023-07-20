@@ -30,3 +30,8 @@ where = ["."]
 "otter.reporting.templates" = ["*.html"]
 "otter.log.config" = ["*.yaml"]
 "otter.db._scripts" = ["*.sql"]
+
+[tool.black]
+target-versions = ["py38", "py39", "py310", "py311"]
+include = '/otter'
+extend-exclude = '.sql$|.html$|.yaml$'
