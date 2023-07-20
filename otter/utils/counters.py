@@ -17,7 +17,9 @@ class SequenceLabeller:
     argument to determine a common label to use. Where it is False assign a unique label.
     """
 
-    def __init__(self, predicate: Callable, group_label: Union[Callable, str] = "event"):
+    def __init__(
+        self, predicate: Callable, group_label: Union[Callable, str] = "event"
+    ):
         if isinstance(group_label, str):
             self._group_label = lambda item: item[group_label]
         elif callable(group_label):
@@ -29,10 +31,12 @@ class SequenceLabeller:
     def label(self, sequence: Iterable) -> List[int]:
         is_true = list(map(self._predicate, sequence))
         count_items = len(sequence)
-        assert (count_items == len(is_true))
+        assert count_items == len(is_true)
         count_true = sum(is_true)
         count_not_true = count_items - count_true
         vertex_counter = count()
         get_label = CountingDict(counter=count(start=count_not_true))
-        return [get_label[self._group_label(item)] if item_true else next(vertex_counter) for item, item_true in
-                zip(sequence, is_true)]
+        return [
+            get_label[self._group_label(item)] if item_true else next(vertex_counter)
+            for item, item_true in zip(sequence, is_true)
+        ]

@@ -11,6 +11,7 @@ from ..definitions import NullTaskID, TaskType, SourceLocation
 get_module_logger = log.logger_getter("tasks")
 VoidLocation = SourceLocation()
 
+
 class TaskSynchronisationContext:
     """
     Represents a context, such as a taskgroup or taskwait barrier within which
@@ -160,7 +161,9 @@ class Task:
         context upon encountering a task synchronisation barrier
         """
         assert isinstance(task, Task)
-        self.logger.debug(f"add task to barrier cache: task {self.id} added task {task.id}")
+        self.logger.debug(
+            f"add task to barrier cache: task {self.id} added task {task.id}"
+        )
         self._task_barrier_cache.append(task)
 
     def append_to_barrier_iterables_cache(self, iterable):
@@ -168,10 +171,14 @@ class Task:
         """Add an iterable to the barrier iterables cache, ready to be passed to a synchronisation
         context upon encountering a task synchronisation barrier
         """
-        self.logger.debug(f"add iterable to iterables cache: task {self.id} added iterable")
+        self.logger.debug(
+            f"add iterable to iterables cache: task {self.id} added iterable"
+        )
         self._task_barrier_iterables_cache.append(iterable)
 
-    def synchronise_tasks_at_barrier(self, tasks=None, from_cache=False, descendants=False):
+    def synchronise_tasks_at_barrier(
+        self, tasks=None, from_cache=False, descendants=False
+    ):
         # TODO: consider having TaskRegistry manage barrier caches - why should a Task know about them?
         """At a task synchronisation barrier, add a set of tasks to a synchronisation
         context. The tasks may be from the internal cache, or supplied externally.
@@ -216,13 +223,17 @@ class Task:
     def synchronise_task_in_current_group(self, task):
         if self.has_active_task_group:
             # get enclosing group context
-            self.logger.debug(f"task {self.id} registering task {task.id} in current group")
+            self.logger.debug(
+                f"task {self.id} registering task {task.id} in current group"
+            )
             group_context = self.get_current_task_sync_group()
             group_context.synchronise(task)
 
     # TODO: consider having TaskRegistry or some special manager class handle this
     def enter_task_sync_group(self, descendants=True):
-        self.logger.debug(f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})")
+        self.logger.debug(
+            f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})"
+        )
         group_context = TaskSynchronisationContext(tasks=None, descendants=descendants)
         self._task_sync_group_stack.append(group_context)
 
@@ -230,13 +241,17 @@ class Task:
     def leave_task_sync_group(self):
         assert self.has_active_task_group
         group_context = self._task_sync_group_stack.pop()
-        self.logger.debug(f"task {self.id} left task sync group (levels={self.num_enclosing_task_sync_groups})")
+        self.logger.debug(
+            f"task {self.id} left task sync group (levels={self.num_enclosing_task_sync_groups})"
+        )
         return group_context
 
     # TODO: consider having TaskRegistry or some special manager class handle this
     def get_current_task_sync_group(self):
         assert self.has_active_task_group
-        self.logger.debug(f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})")
+        self.logger.debug(
+            f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})"
+        )
         group_context = self._task_sync_group_stack[-1]
         return group_context
 
@@ -245,7 +260,6 @@ _task_field_names: List[str] = [f.name for f in fields(Task)]
 
 
 class _NullTask(Task):
-
     _instance: Task = None
 
     def __new__(cls, *args, **kwargs):
@@ -293,7 +307,9 @@ class TaskRegistry(Iterable[Task]):
         return f"{self.__class__.__name__}({len(self._dict.keys())} tasks: {list(self._dict.keys())})"
 
     def register_task(self, task: Task) -> Task:
-        self.log.debug(f"registering task {task.id} (parent={task.parent_id if task.id>0 else None})")
+        self.log.debug(
+            f"registering task {task.id} (parent={task.parent_id if task.id>0 else None})"
+        )
         if task.id in self._dict:
             raise ValueError(f"task {task.id} was already registered in {self}")
         self._dict[task.id] = task
@@ -321,8 +337,8 @@ class TaskRegistry(Iterable[Task]):
     @lru_cache(maxsize=None)
     def task_tree(self):
         task_tree = ig.Graph(n=len(self), directed=True)
-        task_tree.vs['name'] = list(task.id for task in self)
-        task_tree.vs['task'] = list(self[id] for id in task_tree.vs['name'])
+        task_tree.vs["name"] = list(task.id for task in self)
+        task_tree.vs["task"] = list(self[id] for id in task_tree.vs["name"])
         for task in self:
             for child in task.iter_children():
                 task_tree.add_edge(task.id, child)
@@ -364,14 +380,18 @@ class TaskRegistry(Iterable[Task]):
             descendants += child.num_descendants
         return descendants
 
-    def notify_task_start(self, task_id: int, time: int, location: SourceLocation) -> None:
+    def notify_task_start(
+        self, task_id: int, time: int, location: SourceLocation
+    ) -> None:
         task = self[task_id]
         if task.start_ts is None:
             task.start_ts = time
         if location is not None:
             task.set_start_location(location)
 
-    def update_task_duration(self, prior_task_id: int, next_task_id: int, time: int) -> None:
+    def update_task_duration(
+        self, prior_task_id: int, next_task_id: int, time: int
+    ) -> None:
         prior_task = self[prior_task_id]
         if prior_task is not NullTask:
             # self.log.debug(f"got prior task: {prior_task}")
@@ -381,7 +401,9 @@ class TaskRegistry(Iterable[Task]):
             # self.log.debug(f"got next task: {next_task}")
             next_task.resumed_at(time)
 
-    def notify_task_end(self, completed_task_id: int, time: int, location: SourceLocation) -> None:
+    def notify_task_end(
+        self, completed_task_id: int, time: int, location: SourceLocation
+    ) -> None:
         completed_task = self[completed_task_id]
         if completed_task is not NullTask:
             completed_task.end_ts = time

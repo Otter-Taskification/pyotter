@@ -3,7 +3,6 @@ from .utils import renamekwargs
 
 
 class tag:
-
     def __init__(self, name, **kwargs):
         self._name = name
         self._kwargs = renamekwargs(kwargs)
@@ -47,8 +46,7 @@ class tag:
 
 
 class Doc:
-
-    def __init__(self, doctype: str="<!DOCTYPE html>", sep="\n"):
+    def __init__(self, doctype: str = "<!DOCTYPE html>", sep="\n"):
         self._content = [doctype]
         self._sep = sep
 

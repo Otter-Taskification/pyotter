@@ -9,7 +9,7 @@ except ImportError as err:
 
     def Reader_GetPropertyNames(*_):
         return list()
-    
+
     def Reader_GetProperty(self, property_name: str) -> str:
         raise AttributeError(f"property '{property_name}' not defined")
 
@@ -19,7 +19,10 @@ class OTF2Reader(Reader):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._properties: Dict[str, str] = {name: Reader_GetProperty(self.handle, name) for name in Reader_GetPropertyNames(self.handle)}
+        self._properties: Dict[str, str] = {
+            name: Reader_GetProperty(self.handle, name)
+            for name in Reader_GetPropertyNames(self.handle)
+        }
 
     @property
     def properties(self) -> Dict[Any, Any]:

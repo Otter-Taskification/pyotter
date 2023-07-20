@@ -5,6 +5,7 @@ from ..log import logger_getter
 
 get_module_logger = logger_getter("edges")
 
+
 def write_report(args, g, tasks):
     import os
     import csv
@@ -32,10 +33,14 @@ def write_report(args, g, tasks):
     # Save task data to csv
     with open(os.path.join(args.report, "data", "task_attributes.csv"), "w") as csvfile:
         writer = csv.DictWriter(csvfile, task_attributes)
-        writer.writerow({
-            key: styling.task_attribute_names.get(key, f"unknown task attribute {key=}")
-            for key in task_attributes
-        })
+        writer.writerow(
+            {
+                key: styling.task_attribute_names.get(
+                    key, f"unknown task attribute {key=}"
+                )
+                for key in task_attributes
+            }
+        )
         writer.writerows(tasks.data)
 
     return

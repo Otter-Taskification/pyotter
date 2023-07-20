@@ -2,6 +2,7 @@ from .. import log
 
 get_module_logger = log.logger_getter("report")
 
+
 def create_report_dirs(args):
     import os
 
@@ -48,7 +49,7 @@ def convert_to_svg(dot, svg):
         run(command, shell=True, check=True, stderr=PIPE, stdout=PIPE)
     except CalledProcessError as Error:
         get_module_logger().error(f"{Error}")
-        for line in filter(None, Error.stderr.decode('utf-8').split("\n")):
+        for line in filter(None, Error.stderr.decode("utf-8").split("\n")):
             get_module_logger().error(f"{line}")
 
 
@@ -70,20 +71,20 @@ def prepare_html(args, tasks):
         tasks.data,
         na_value="MISSING",
         attr={
-            'table': {'border': '1', 'class': 'data-table'},
-            'tr': {'style': 'text-align: center;'}
-        }
+            "table": {"border": "1", "class": "data-table"},
+            "tr": {"style": "text-align: center;"},
+        },
     )
 
     # Load template
-    html = resources.read_text(templates, 'report.html')
+    html = resources.read_text(templates, "report.html")
 
     # Insert data into template
     content = Template(html).safe_substitute(
         ANCHORFILE=args.anchorfile,
         GRAPH_SVG="img/graph.svg",
         TREE_SVG="img/tree.svg",
-        TASK_ATTRIBUTES_TABLE=task_table
+        TASK_ATTRIBUTES_TABLE=task_table,
     )
 
     return content

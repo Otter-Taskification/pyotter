@@ -19,11 +19,15 @@ get_module_logger = log.logger_getter("vertex.attr")
 
 V = TypeVar("V")
 
+
 class Reduction(Protocol[V]):
     """
     A callable which reduces an Iterable of Optional[V] to an Optional[V]
     """
-    def __call__(self, collection: Iterable[Optional[V]]) -> Optional[V]: ...
+
+    def __call__(self, collection: Iterable[Optional[V]]) -> Optional[V]:
+        ...
+
 
 class ReductionDict(dict):
     """
@@ -31,14 +35,22 @@ class ReductionDict(dict):
     """
 
     @on_init(logger=log.logger_getter("init_logger"))
-    def __init__(self, keys: Iterable[str], default_reduction: Reduction=None, logger=None, level=DEBUG):
+    def __init__(
+        self,
+        keys: Iterable[str],
+        default_reduction: Reduction = None,
+        logger=None,
+        level=DEBUG,
+    ):
         self.log = logger or log.get_logger(self.__class__.__name__)
         self.level = level
         reduction: Reduction = default_reduction or pass_first_arg
         super().__init__({key: reduction for key in keys})
 
     def __setitem__(self, key: str, value: Reduction):
-        self.log.log(self.level, f"set reduction '{value}' for string '{key}'", stacklevel=2)
+        self.log.log(
+            self.level, f"set reduction '{value}' for string '{key}'", stacklevel=2
+        )
         return super().__setitem__(key, value)
 
 
@@ -51,7 +63,12 @@ class LoggingValidatingReduction:
     """
 
     @on_init(logger=log.logger_getter("init_logger"))
-    def __init__(self, reduction: Reduction=None, accept: Union[Type, List[Type]]=None, msg="combining events"):
+    def __init__(
+        self,
+        reduction: Reduction = None,
+        accept: Union[Type, List[Type]] = None,
+        msg="combining events",
+    ):
         """
         Wraps a handler function to allow checking and logging of the arguments passed to it.
         Log invocations of the handler with an on_call decorator.
@@ -71,7 +88,6 @@ class LoggingValidatingReduction:
         self.reduction = call_decorator(self.reduction)
 
     def __call__(self, args: List[Optional[V]]) -> Optional[V]:
-
         """
         Called by igraph.Graph.contract_vertices when combining a vertex attribute
         Expects args to be a list of values to be combined
@@ -86,7 +102,9 @@ class LoggingValidatingReduction:
         args = list(flatten(args))
 
         # TODO: this assertion should really be a unit test of flatten when called with nested lists
-        assert isinstance(args, list) and all(not isinstance(item, list) for item in args) # flat list
+        assert isinstance(args, list) and all(
+            not isinstance(item, list) for item in args
+        )  # flat list
 
         if all(arg is None for arg in args):
             self.log.debug(f"all args were None", stacklevel=4)
@@ -102,7 +120,9 @@ class LoggingValidatingReduction:
             return [item] if events.is_event(item) else item
 
         # Each arg must be of the given type (or one of the given list of types) for this handler
-        A = isinstance(self.accept, Iterable) and all(isinstance(arg, tuple(self.accept)) for arg in args)
+        A = isinstance(self.accept, Iterable) and all(
+            isinstance(arg, tuple(self.accept)) for arg in args
+        )
         B = isinstance(self.accept, type) and are(all, args, self.accept)
         if not (A or B):
             raise TypeError(f"expected {self.accept}, got {set(map(type, args))}")
@@ -115,6 +135,7 @@ class LoggingValidatingReduction:
 
 
 ### Strategies for reducing lists of attribute values to one value
+
 
 # TODO: this function is poorly named. Maybe instances_of?
 # TODO: consider removing as only used once

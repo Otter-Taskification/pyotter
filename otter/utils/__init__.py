@@ -13,6 +13,7 @@ from igraph import Graph
 def dump_to_log_file(chunks, graphs, tasks, where=None):
     from os import path
     from ..reporting.report import save_graph_to_dot, convert_to_svg
+
     chunk_log = get_logger("chunks_debug")
     graph_log = get_logger("graphs_debug")
     task_log = get_logger("tasks_debug")
@@ -21,7 +22,6 @@ def dump_to_log_file(chunks, graphs, tasks, where=None):
     chunk_log.debug(f">>> BEGIN CHUNKS <<<")
 
     for k, (chunk, graph) in enumerate(zip(chunks, graphs)):
-
         # write chunk
         for line in chunk.to_text():
             chunk_log.debug(f"{line}")
@@ -58,8 +58,11 @@ def dump_to_log_file(chunks, graphs, tasks, where=None):
 def find_dot_or_die():
     # Check that the "dot" commandline utility is available
     import shutil
+
     if shutil.which("dot") is None:
-        print(f"Error: {__name__} couldn't find the graphviz command line utility \"dot\" (see https://graphviz.org/download/).")
+        print(
+            f'Error: {__name__} couldn\'t find the graphviz command line utility "dot" (see https://graphviz.org/download/).'
+        )
         print("Please install graphviz before continuing.")
         quit()
 
@@ -78,7 +81,7 @@ def interact(locals, g):
         readline.read_history_file(histfile)
         numlines = readline.get_current_history_length()
     except FileNotFoundError:
-        open(histfile, 'wb').close()
+        open(histfile, "wb").close()
         numlines = 0
 
     atexit.register(append_history, numlines, histfile)
@@ -100,6 +103,7 @@ Entering interactive mode...
 
 def append_history(lines, file):
     import readline
+
     newlines = readline.get_current_history_length()
     readline.set_history_length(1000)
     readline.append_history_file(newlines - lines, file)
@@ -107,13 +111,16 @@ def append_history(lines, file):
 
 def assert_vertex_event_list(graph: Graph) -> None:
     from ..core.events import Event
+
     for vertex in graph.vs:
-        event_list = vertex['event_list']
+        event_list = vertex["event_list"]
         assert isinstance(event_list, list)
         assert all(isinstance(item, Event) for item in event_list)
 
 
-def dump_graph_to_file(graph: Graph, filename: str = "graph.log", no_flatten: list=None) -> None:
+def dump_graph_to_file(
+    graph: Graph, filename: str = "graph.log", no_flatten: list = None
+) -> None:
     log = get_logger("main")
     log.info(f"writing graph to {filename}")
     with open(filename, "w") as f:
@@ -127,9 +134,11 @@ def dump_graph_to_file(graph: Graph, filename: str = "graph.log", no_flatten: li
                 f.write(f"  {name:>35} {n_levels:>6} levels (...)\n")
 
         try:
-            region_type_count = Counter(graph.vs['region_type'])
-            region_types = "\n".join([f"{region_type_count[k]:>6} {k}" for k in
-                                      region_type_count]) + f"\nTotal count: {sum(region_type_count.values())}"
+            region_type_count = Counter(graph.vs["region_type"])
+            region_types = (
+                "\n".join([f"{region_type_count[k]:>6} {k}" for k in region_type_count])
+                + f"\nTotal count: {sum(region_type_count.values())}"
+            )
         except KeyError as e:
             region_types = f"{e}"
 

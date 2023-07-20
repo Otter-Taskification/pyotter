@@ -42,11 +42,12 @@ class GraphStylingProtocol(Protocol):
 
 
 class BaseGraphStyle:
-
-    def __init__(self,
-            graph_font: FontStyle = FontStyle("Helvetica", "12", "black"),
-            vertex_font: FontStyle = FontStyle("Helvetica", "18", "black"),
-            edge_font: FontStyle = FontStyle("Helvetica", "18", "black")):
+    def __init__(
+        self,
+        graph_font: FontStyle = FontStyle("Helvetica", "12", "black"),
+        vertex_font: FontStyle = FontStyle("Helvetica", "18", "black"),
+        edge_font: FontStyle = FontStyle("Helvetica", "18", "black"),
+    ):
         self._graph_font = graph_font
         self._vertex_font = vertex_font
         self._edge_font = edge_font
@@ -73,7 +74,6 @@ class BaseGraphStyle:
 
 
 class DebugGraphStyle(BaseGraphStyle):
-
     def get_vertex_style(self, vertex) -> VertexStyle:
         endpoint = vertex["endpoint"]
         label = str(vertex["event"])
@@ -85,18 +85,23 @@ class DebugGraphStyle(BaseGraphStyle):
             return VertexStyle("filled", "box", "green", label)
 
     def get_edge_style(self, edge, source_vertex, target_vertex) -> EdgeStyle:
-        return EdgeStyle("black", f"{source_vertex['unique_id']} -> {target_vertex['unique_id']}", 1.0)
+        return EdgeStyle(
+            "black",
+            f"{source_vertex['unique_id']} -> {target_vertex['unique_id']}",
+            1.0,
+        )
 
 
 class VertexAsHTMLTableStyle(BaseGraphStyle):
-
     def __init__(self) -> None:
         super().__init__()
 
     def get_vertex_style(self, vertex) -> VertexStyle:
         """Make a HTML-like table from the event attributes"""
         endpoint = vertex["endpoint"]
-        attributes = vertex["_event.attributes"] # should be the dict of event attributes (task_graph: event.attributes)
+        attributes = vertex[
+            "_event.attributes"
+        ]  # should be the dict of event attributes (task_graph: event.attributes)
         if endpoint == Endpoint.enter:
             color = "lightblue"
         elif endpoint == Endpoint.leave:
@@ -107,7 +112,7 @@ class VertexAsHTMLTableStyle(BaseGraphStyle):
             color = "fuchsia"
 
         label_body = str(
-            make.graphviz_record_table(attributes, table_attr={'td': {'align': 'left'}})
+            make.graphviz_record_table(attributes, table_attr={"td": {"align": "left"}})
         )
         return VertexStyle("filled", "plaintext", color, f"<{label_body}>")
 

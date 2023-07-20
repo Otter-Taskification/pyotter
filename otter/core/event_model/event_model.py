@@ -1,10 +1,33 @@
-from typing import Protocol, Dict, Iterable, Any, TypeVar, Type, Deque, Tuple, Optional, List, Callable
+from typing import (
+    Protocol,
+    Dict,
+    Iterable,
+    Any,
+    TypeVar,
+    Type,
+    Deque,
+    Tuple,
+    Optional,
+    List,
+    Callable,
+)
 from collections import defaultdict, deque
 from abc import ABC, abstractmethod
 from itertools import islice
 from loggingdecorators import on_init
 from igraph import Graph
-from otter.definitions import EventModel, Attr, TaskStatus, EventType, RegionType, EdgeType, Endpoint, TaskType, TaskSyncType, SourceLocation
+from otter.definitions import (
+    EventModel,
+    Attr,
+    TaskStatus,
+    EventType,
+    RegionType,
+    EdgeType,
+    Endpoint,
+    TaskType,
+    TaskSyncType,
+    SourceLocation,
+)
 from otter.core.chunks import Chunk
 from otter.core.events import Event, Location
 from otter.core.tasks import TaskRegistry, NullTask, Task, TaskSynchronisationContext
@@ -17,20 +40,24 @@ EventList = List[Event]
 ChunkDict = Dict[Any, Chunk]
 ChunkStackDict = Dict[Any, Deque[Chunk]]
 ChunkUpdateHandlerKey = Tuple[Optional[RegionType], EventType]
-ChunkUpdateHandlerFn = Callable[[Event, Location, ChunkDict, ChunkStackDict, TaskRegistry], Optional[Chunk]]
+ChunkUpdateHandlerFn = Callable[
+    [Event, Location, ChunkDict, ChunkStackDict, TaskRegistry], Optional[Chunk]
+]
 
 get_module_logger = logger_getter("event_model")
 
+
 # Using a Protocol for better static analysis
 class EventModelProtocol(Protocol):
-
     def __init__(self, task_registry: TaskRegistry):
         pass
 
     def notify_task_registry(self, event: Event) -> None:
         pass
 
-    def yield_chunks(self, events_iter: Iterable[Tuple[Location, Event]]) -> Iterable[Chunk]:
+    def yield_chunks(
+        self, events_iter: Iterable[Tuple[Location, Event]]
+    ) -> Iterable[Chunk]:
         pass
 
     def chunk_to_graph(self, chunk: Chunk) -> Graph:
@@ -55,12 +82,12 @@ class EventModelFactory:
         def wrapper(model_class: EventModelProtocol):
             cls.event_models[model_name] = model_class
             return model_class
+
         return wrapper
 
 
 # Using ABC for a common __init__ between concrete models
 class BaseEventModel(ABC):
-
     def __init__(self, task_registry: TaskRegistry):
         self.log = logger_getter(self.__class__.__name__)()
         self.task_registry: TaskRegistry = task_registry
@@ -69,10 +96,14 @@ class BaseEventModel(ABC):
 
     def __init_subclass__(subclass):
         # Add to the subclass a dict for registering handlers to update chunks & return completed chunks
-        subclass.chunk_update_handlers: Dict[ChunkUpdateHandlerKey, ChunkUpdateHandlerFn] = dict()
+        subclass.chunk_update_handlers: Dict[
+            ChunkUpdateHandlerKey, ChunkUpdateHandlerFn
+        ] = dict()
 
     @classmethod
-    def update_chunks_on(cls, event_type: EventType, region_type: RegionType = None) -> Decorator[ChunkUpdateHandlerFn]:
+    def update_chunks_on(
+        cls, event_type: EventType, region_type: RegionType = None
+    ) -> Decorator[ChunkUpdateHandlerFn]:
         """
         Register a function which will be called to update the relevant chunks when a matching event is encountered.
         Some events use both region type and event type in the key, others use just the event type. Handlers are first
@@ -90,9 +121,10 @@ class BaseEventModel(ABC):
 
         def decorator(handler: ChunkUpdateHandlerFn) -> ChunkUpdateHandlerFn:
             key = cls.make_chunk_update_handlers_key(event_type, region_type)
-            assert(key not in cls.chunk_update_handlers)
+            assert key not in cls.chunk_update_handlers
             cls.chunk_update_handlers[key] = handler
             return handler
+
         return decorator
 
     @classmethod
@@ -106,14 +138,20 @@ class BaseEventModel(ABC):
         return handler
 
     @classmethod
-    def get_chunk_update_handlers_key(cls, event: Event, fallback: bool = False) -> ChunkUpdateHandlerKey:
+    def get_chunk_update_handlers_key(
+        cls, event: Event, fallback: bool = False
+    ) -> ChunkUpdateHandlerKey:
         if fallback or not (Attr.region_type in event):
             return cls.make_chunk_update_handlers_key(event.event_type)
         else:
-            return cls.make_chunk_update_handlers_key(event.event_type, event.region_type)
+            return cls.make_chunk_update_handlers_key(
+                event.event_type, event.region_type
+            )
 
     @staticmethod
-    def make_chunk_update_handlers_key(event_type: EventType, region_type: Optional[RegionType] = None) -> ChunkUpdateHandlerKey:
+    def make_chunk_update_handlers_key(
+        event_type: EventType, region_type: Optional[RegionType] = None
+    ) -> ChunkUpdateHandlerKey:
         return region_type, event_type
 
     def warn_for_incomplete_chunks(self, chunks: Iterable[Chunk]) -> None:
@@ -166,37 +204,51 @@ class BaseEventModel(ABC):
         raise NotImplementedError()
 
     def notify_task_registry(self, event: Event) -> None:
-
         if self.is_task_register_event(event):
             self.task_registry.register_task(self.get_task_data(event))
 
         if self.is_update_task_start_ts_event(event):
             task_entered = self.get_task_entered(event)
-            self.log.debug(f"notifying task start time: {task_entered} started at {event.time}")
-            self.task_registry.notify_task_start(task_entered, event.time, self.get_task_start_location(event))
+            self.log.debug(
+                f"notifying task start time: {task_entered} started at {event.time}"
+            )
+            self.task_registry.notify_task_start(
+                task_entered, event.time, self.get_task_start_location(event)
+            )
 
         if self.is_update_duration_event(event):
             prior_task_id, next_task_id = self.get_tasks_switched(event)
-            self.log.debug(f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint} {event.event_type}")
+            self.log.debug(
+                f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint} {event.event_type}"
+            )
             # task_registry.update_task_duration(prior_task_id, next_task_id, event.time)
 
         if self.is_task_complete_event(event):
             completed_task_id = self.get_task_completed(event)
-            self.log.debug(f"event <{event}> notifying task {completed_task_id} of end_ts")
-            self.task_registry.notify_task_end(completed_task_id, event.time, self.get_task_end_location(event))
+            self.log.debug(
+                f"event <{event}> notifying task {completed_task_id} of end_ts"
+            )
+            self.task_registry.notify_task_end(
+                completed_task_id, event.time, self.get_task_end_location(event)
+            )
 
-    def yield_chunks(self, events_iter: Iterable[Tuple[Location, Event]]) -> Iterable[Chunk]:
-
+    def yield_chunks(
+        self, events_iter: Iterable[Tuple[Location, Event]]
+    ) -> Iterable[Chunk]:
         log = self.log
         task_registry = self.task_registry
         log.debug(f"receiving events from {events_iter}")
 
         for k, (location, event) in enumerate(events_iter):
-            log.debug(f"got event {k} with vertex label {event.get('vertex_label')}: {event}")
+            log.debug(
+                f"got event {k} with vertex label {event.get('vertex_label')}: {event}"
+            )
 
             handler = self.get_update_chunk_handler(event)
             if self.event_completes_chunk(event):
-                completed_chunk = handler(event, location, self.chunk_dict, self.chunk_stack)
+                completed_chunk = handler(
+                    event, location, self.chunk_dict, self.chunk_stack
+                )
                 assert completed_chunk is not None
                 yield completed_chunk
             elif self.event_updates_chunk(event):
@@ -204,7 +256,7 @@ class BaseEventModel(ABC):
                 assert result is None
             elif self.event_skips_chunk_update(event):
                 pass
-            else: # event applies default chunk update logic
+            else:  # event applies default chunk update logic
                 self.append_to_encountering_task_chunk(event)
 
             # if self.is_task_register_event(event):
@@ -241,7 +293,9 @@ class BaseEventModel(ABC):
 
     @classmethod
     def unpack(cls, event_list: List[Event]) -> Dict:
-        return transpose_list_to_dict([cls.get_augmented_event_attributes(event) for event in event_list])
+        return transpose_list_to_dict(
+            [cls.get_augmented_event_attributes(event) for event in event_list]
+        )
 
     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
         contexts = list()
@@ -250,9 +304,13 @@ class BaseEventModel(ABC):
             if encountering_task is NullTask:
                 encountering_task = None
             if event.region_type == RegionType.taskwait:
-                chunk.log.debug(f"encountered taskwait barrier: endpoint={event.endpoint}, descendants={event.sync_descendant_tasks == TaskSyncType.descendants}")
+                chunk.log.debug(
+                    f"encountered taskwait barrier: endpoint={event.endpoint}, descendants={event.sync_descendant_tasks == TaskSyncType.descendants}"
+                )
                 descendants = event.sync_descendant_tasks == TaskSyncType.descendants
-                barrier_context = TaskSynchronisationContext(tasks=None, descendants=descendants)
+                barrier_context = TaskSynchronisationContext(
+                    tasks=None, descendants=descendants
+                )
                 barrier_context.synchronise_from(encountering_task.task_barrier_cache)
                 for iterable in encountering_task.task_barrier_iterables_cache:
                     barrier_context.synchronise_lazy(iterable)
@@ -262,13 +320,19 @@ class BaseEventModel(ABC):
             if self.is_task_create_event(event):
                 created_task = self.task_registry[event.unique_id]
                 if encountering_task.has_active_task_group:
-                    chunk.log.debug(f"registering new task in active task group: parent={encountering_task.id}, child={created_task.id}")
+                    chunk.log.debug(
+                        f"registering new task in active task group: parent={encountering_task.id}, child={created_task.id}"
+                    )
                     encountering_task.synchronise_task_in_current_group(created_task)
                 else:
-                    chunk.log.debug(f"registering new task in task barrier cache: parent={encountering_task.id}, child={created_task.id}")
+                    chunk.log.debug(
+                        f"registering new task in task barrier cache: parent={encountering_task.id}, child={created_task.id}"
+                    )
                     encountering_task.append_to_barrier_cache(created_task)
         return contexts
 
 
-def get_event_model(model_name: EventModel, task_registry: TaskRegistry, *args, **kwargs) -> EventModelProtocol:
+def get_event_model(
+    model_name: EventModel, task_registry: TaskRegistry, *args, **kwargs
+) -> EventModelProtocol:
     return EventModelFactory.get_model(model_name)(task_registry, *args, **kwargs)

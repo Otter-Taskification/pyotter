@@ -17,7 +17,6 @@ is_event_list = lambda args: isinstance(args, list) and all_events(args)
 
 
 class Location:
-
     # NOTE: Responsible for recording its traversal into & out of parallel regions
 
     @on_init(logger=log.logger_getter("init_logger"), level=log.DEBUG)
@@ -51,7 +50,9 @@ class Location:
 class Event:
     """A basic wrapper for OTF2 events"""
 
-    def __init__(self, otf2_event: OTF2Event, attribute_lookup: Dict[str, OTF2Attribute]) -> None:
+    def __init__(
+        self, otf2_event: OTF2Event, attribute_lookup: Dict[str, OTF2Attribute]
+    ) -> None:
         self._event = otf2_event
         self._attribute_lookup = attribute_lookup
 
@@ -84,8 +85,10 @@ class Event:
             return default
 
     def to_dict(self) -> Dict:
-        as_dict = {name: getattr(self, name) for name in self._attribute_lookup if name in self}
-        as_dict['time'] = self.time
+        as_dict = {
+            name: getattr(self, name) for name in self._attribute_lookup if name in self
+        }
+        as_dict["time"] = self.time
         return as_dict
 
     @property

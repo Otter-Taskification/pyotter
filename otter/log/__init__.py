@@ -43,17 +43,17 @@ def initialise(args):
     conf_text = resources.read_text(config, "standard.yaml")
     conf = yaml.safe_load(conf_text)
 
-    conf['root']['level'] = args.loglevel
+    conf["root"]["level"] = args.loglevel
 
-    for hconf in conf['handlers'].values():
-        if 'filename' in hconf:
-            hconf['filename'] = os.path.join(args.logdir, hconf['filename'])
+    for hconf in conf["handlers"].values():
+        if "filename" in hconf:
+            hconf["filename"] = os.path.join(args.logdir, hconf["filename"])
 
     logging_config.dictConfig(conf)
 
-    root_logger = logging.getLogger('otter')
-    init_logger = logging.getLogger(conf['otter']['init'])
-    initialise_logger = logging.getLogger(conf['otter']['initialise'])
+    root_logger = logging.getLogger("otter")
+    init_logger = logging.getLogger(conf["otter"]["init"])
+    initialise_logger = logging.getLogger(conf["otter"]["initialise"])
 
     _state_.set_logger("_root", root_logger)
     _state_.set_logger("_init_logger", init_logger)
@@ -66,7 +66,7 @@ def initialise(args):
 
     initialise_logger.debug(">>> BEGIN LOGGERS <<<")
     initialise_logger.debug("loggers:")
-    for log in chain([logging.getLogger()], map(logging.getLogger, conf['loggers'])):
+    for log in chain([logging.getLogger()], map(logging.getLogger, conf["loggers"])):
         for line in logger_lines(log):
             initialise_logger.debug(line)
     initialise_logger.debug(">>> END LOGGERS <<<")
@@ -87,6 +87,7 @@ def logger_getter(name):
         if not is_initialised():
             raise RuntimeError("logging is not initialised")
         return get_logger(name)
+
     return getter
 
 

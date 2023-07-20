@@ -1,18 +1,18 @@
 from .classes import tag
 from collections import defaultdict
 
+
 def wrap(name, content, **kwargs):
     with tag(name, **kwargs) as t:
         if content is not None:
             t.append(content)
     return t
 
-def table(keys: list, tidy_keys: dict, rows: list, na_value = None, **kwargs):
 
+def table(keys: list, tidy_keys: dict, rows: list, na_value=None, **kwargs):
     attr = defaultdict(lambda: dict(), kwargs.get("attr", dict()))
 
     with tag("table", **attr["table"]) as t:
-
         with t.add(tag("thead")) as thead:
             with thead.add(tag("tr", **attr["tr"])) as trow:
                 for key in keys:
@@ -28,6 +28,7 @@ def table(keys: list, tidy_keys: dict, rows: list, na_value = None, **kwargs):
                         trow.append(wrap("td", value))
 
     return t
+
 
 def graphviz_record_table(object_attr: dict, **kwargs):
     """A HTML-like table where each row represents one key-value pair of some object's attributes"""

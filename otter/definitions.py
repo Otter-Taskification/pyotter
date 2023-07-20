@@ -2,6 +2,7 @@ from enum import Enum
 from typing import Union, NamedTuple
 from dataclasses import dataclass, asdict
 
+
 # TODO: suspect some Attr values are missing here e.g. requested_parallelism, next_task_id - is there a reason they aren't present?
 class Attr(str, Enum):
     time = "time"
@@ -30,6 +31,7 @@ class Attr(str, Enum):
     task_init_file = "task_init_file"
     task_init_func = "task_init_func"
 
+
 class EventType(str, Enum):
     thread_begin = "thread_begin"
     thread_end = "thread_end"
@@ -48,6 +50,7 @@ class EventType(str, Enum):
     master_end = "master_end"
     phase_begin = "phase_begin"
     phase_end = "phase_end"
+
 
 class RegionType(str, Enum):
     parallel = "parallel"
@@ -77,6 +80,7 @@ class RegionType(str, Enum):
     SYNC = "sync"
     TASK = "task"
 
+
 class TaskStatus(str, Enum):
     complete = "complete"
     taskyield = "yield"
@@ -86,37 +90,45 @@ class TaskStatus(str, Enum):
     late_fulfil = "late_fulfil"
     switch = "switch"
 
+
 class TaskType(str, Enum):
     initial = "initial_task"
     implicit = "implicit_task"
     explicit = "explicit_task"
     target = "target_task"
 
+
 class Endpoint(str, Enum):
     enter = "enter"
     leave = "leave"
     discrete = "discrete"
+
 
 class EdgeType(str, Enum):
     execution_flow = "execution_flow"
     taskwait = "taskwait"
     taskgroup = "taskgroup"
 
+
 class TaskSyncType(int, Enum):
     children = 0
     descendants = 1
+
 
 class TaskEvent(str, Enum):
     CREATE = EventType.task_create.value
     SWITCH = EventType.task_switch.value
 
+
 class TraceAttr(str, Enum):
     event_model = "OTTER::EVENT_MODEL"
+
 
 class EventModel(str, Enum):
     OMP = "OMP"
     TASKGRAPH = "TASKGRAPH"
     UNKNOWN = "UNKNOWN"
+
 
 class SourceLocation(NamedTuple):
     file: str = "?"
@@ -125,6 +137,7 @@ class SourceLocation(NamedTuple):
 
     def __str__(self) -> str:
         return f"{self.file}:{self.line} in {self.func}"
+
 
 @dataclass(frozen=True)
 class TaskAttributes:
@@ -143,6 +156,17 @@ class TaskAttributes:
     def asdict(self):
         return {k: v for k, v in asdict(self).items()}
 
+
 NullTaskID = 18446744073709551615
 
-AttrValue = Union[EventType, RegionType, TaskStatus, TaskType, Endpoint, EdgeType, TaskSyncType, TaskEvent, EventModel]
+AttrValue = Union[
+    EventType,
+    RegionType,
+    TaskStatus,
+    TaskType,
+    Endpoint,
+    EdgeType,
+    TaskSyncType,
+    TaskEvent,
+    EventModel,
+]

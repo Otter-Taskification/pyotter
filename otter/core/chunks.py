@@ -6,6 +6,7 @@ import igraph as ig
 from loggingdecorators import on_init
 
 import otter
+
 # from .. import log
 from ..log import logger_getter, DEBUG
 from .. import definitions as defn
@@ -17,7 +18,6 @@ get_module_logger = logger_getter("chunks")
 
 
 class Chunk:
-
     @on_init(logger=logger_getter("init_logger"), level=DEBUG)
     def __init__(self, chunk_type: defn.RegionType, task_id: int):
         self.log = get_module_logger()
@@ -69,5 +69,7 @@ class Chunk:
         return self._type
 
     def append_event(self, event):
-        self.log.debug(f"{self.__class__.__name__}.append_event {event._base_repr} to chunk: {self._base_repr}")
+        self.log.debug(
+            f"{self.__class__.__name__}.append_event {event._base_repr} to chunk: {self._base_repr}"
+        )
         self._events.append(event)
