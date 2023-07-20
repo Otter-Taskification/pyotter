@@ -464,12 +464,20 @@ class ReadTasksProject(Project):
                     line = line.replace(escaped_quotation, '"')
                 df.write(line)
 
-    def run(self) -> None:
+    def create_db_from_trace(self: ReadTasksProject) -> ReadTasksProject:
         with closing_connection(self.tasks_db) as con:
             self.process_trace(con=con)
         self.write_tasks_to_db()
+        return self
+
+    def write_parent_child_graph(self: ReadTasksProject) -> ReadTasksProject:
         graph = self.build_parent_child_graph()
         self.write_graph_to_file(graph)
+        return self
+
+    def run(self) -> None:
+        self.create_db_from_trace()
+        self.write_parent_child_graph()
         self.quit()
 
     def quit(self) -> None:

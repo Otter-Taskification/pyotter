@@ -1,8 +1,7 @@
-def get_args():
+def get_args(argv: list[str] | None = None):
     import argparse
 
     parser = argparse.ArgumentParser(
-        prog="python3 -m otter",
         description="Convert an Otter OTF2 trace archive to its execution graph representation",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -64,7 +63,7 @@ def get_args():
     parser.add_argument(
         "--warn-all", dest="warn_all", help="Turn on all warnings", action="store_true"
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # if args.report is None:
     # parser.error("must specify the report output path with --report")
