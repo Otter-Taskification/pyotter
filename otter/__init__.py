@@ -6,6 +6,6 @@ from . import styling
 from . import reporting
 from . import args
 from . import project
-from .main import main
+from . import main
 
 utils.find_dot_or_die()

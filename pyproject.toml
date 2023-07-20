@@ -21,7 +21,7 @@ dependencies = [
 license = {file = "LICENSE"}
 
 [project.scripts]
-# None yet...
+otter = "otter.main:run"
 
 [tool.setuptools.packages.find]
 where = ["."]
