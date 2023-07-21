@@ -134,3 +134,8 @@ def dict_lines(d, spaces=0):
             yield from dict_lines(d[k], spaces=spaces + 1)
         else:
             yield f"{prefix}{k}: {d[k]}"
+
+
+def error(msg, *args):
+    log = get_logger("main")
+    log.error(msg, *args)
