@@ -8,6 +8,10 @@ formatters:
     datefmt: '%Y/%m/%d-%H:%M:%S'
     style: '{'
 
+  basic:
+    format: '[{levelname}]: {message}'
+    style: '{'
+
   simple:
     format: '{asctime} {name} [{levelname}]: {message}'
     datefmt: '%Y/%m/%d-%H:%M:%S'
@@ -24,6 +28,11 @@ handlers:
     level: INFO
     class: logging.StreamHandler
     formatter: simple
+
+  infoConsoleBasic:
+    level: INFO
+    class: logging.StreamHandler
+    formatter: basic
 
   debugConsole:
     level: DEBUG
@@ -86,7 +95,7 @@ loggers:
     handlers: [debugFile]
 
   otter.main:
-    handlers: [infoConsole]
+    handlers: [infoConsoleBasic]
     propagate: True
 
   otter.project:
