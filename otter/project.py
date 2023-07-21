@@ -26,7 +26,9 @@ def closing_connection(name: str) -> db.Connection:
 
 
 class Project(abc.ABC):
-    def __init__(self, anchorfile: AnyStr, debug: bool = False) -> None:
+    def __init__(
+        self, anchorfile: AnyStr, debug: bool = False, prepare_env: bool = True
+    ) -> None:
         self.debug = debug
         self.log = log.get_logger("project")
         self.project_root = os.path.dirname(anchorfile)
@@ -42,8 +44,16 @@ class Project(abc.ABC):
         self.chunks = list()
         if self.debug:
             self.log.debug(f"using project: {self}")
-        self._check_input_files()
-        self._prepare_environment()
+        try:
+            self._check_input_files()
+        except NotADirectoryError as err:
+            self.log.error("directory not found: %s", err)
+            raise SystemExit(1) from err
+        except FileNotFoundError as err:
+            self.log.error("no such file: %s", err)
+            raise SystemExit(1) from err
+        if prepare_env:
+            self._prepare_environment()
 
     def _check_input_files(self) -> None:
         if not os.path.isdir(self.abspath(self.aux_dir)):
@@ -235,6 +245,10 @@ class Project(abc.ABC):
 
             (tasks_inserted,) = con.execute(db.scripts.count_tasks).fetchone()
             self.log.info(f"wrote {tasks_inserted} tasks")
+
+    def connection(self) -> db.Connection:
+        """Return a connection to this project's tasks db for use in a with-block"""
+        return closing_connection(self.tasks_db)
 
     @abc.abstractmethod
     def run(self) -> Project:
@@ -503,19 +517,20 @@ class BuildGraphFromDB(Project):
         if self.debug:
             self.log.debug(f"using project: {self}")
         if not os.path.isfile(self.tasks_db):
-            raise FileNotFoundError(self.tasks_db)
+            log.error("no such file: %s", self.tasks_db)
+            raise SystemExit(1)
 
-    def build_root_control_flow_graph(self, con: db.Connection) -> ig.Graph:
+    def build_cfg(self, con: db.Connection, task: int) -> ig.Graph:
         graph = ig.Graph(directed=True)
-        children = list(row["child_id"] for row in con.children_of(0))
+        children = list(row["child_id"] for row in con.children_of(task))
         child_vertex = defaultdict(
             lambda: graph.add_vertex(shape="plain", style="filled")
         )
         head, tail = graph.add_vertex(shape="plain", style="filled"), graph.add_vertex(
             shape="plain", style="filled"
         )
-        head[Attr.unique_id] = 0
-        tail[Attr.unique_id] = 0
+        head[Attr.unique_id] = task
+        tail[Attr.unique_id] = task
         cur = head
         for child in children:
             vertex = child_vertex[child]
@@ -526,10 +541,10 @@ class BuildGraphFromDB(Project):
         graph.add_edge(cur, tail)
         return graph
 
-    def build_styled_root_control_flow_graph(self, con: db.Connection) -> ig.Graph:
+    def build_styled_cfg(self, con: db.Connection, task: int) -> ig.Graph:
         from . import reporting
 
-        graph = self.build_root_control_flow_graph(con)
+        graph = self.build_cfg(con, task)
 
         html_table_attributes = {"td": {"align": "left", "cellpadding": "6px"}}
 
@@ -612,7 +627,7 @@ class BuildGraphFromDB(Project):
             vertex["color"] = hex_colour
         return graph
 
-    def build_control_flow_graph(self, con: db.Connection, task: int) -> ig.Graph:
+    def _build_control_flow_graph(self, con: db.Connection, task: int) -> ig.Graph:
         graph = ig.Graph(directed=True)
         records = con.child_sync_points(task)
         sequences = defaultdict(list)
@@ -668,10 +683,10 @@ class BuildGraphFromDB(Project):
 
     def run(self) -> None:
         with closing_connection(self.tasks_db) as con:
-            root_graph = self.build_styled_root_control_flow_graph(con)
+            root_graph = self.build_styled_cfg(con, 0)
         self.write_graph_to_file(root_graph, filename="root_graph.dot")
         with closing_connection(self.tasks_db) as con:
             task = 0
             self.print_child_sync_points(con, task)
-            cfg = self.build_control_flow_graph(con, task)
+            cfg = self._build_control_flow_graph(con, task)
             self.write_graph_to_file(cfg, "cfg.dot")
