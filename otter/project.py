@@ -1,24 +1,25 @@
 from __future__ import annotations
-import os
+
 import abc
+import os
 import sqlite3
+import subprocess as sp
+from collections import defaultdict
+from contextlib import closing
+from itertools import count
+from typing import Any, AnyStr, Dict, Iterable, List, Literal, Optional, Set, Tuple
+
 import address_to_line as a2l
 import igraph as ig
-from contextlib import closing
-from collections import defaultdict
-from itertools import count
-from typing import AnyStr, Any, Set, Dict, Iterable, Tuple, Set, List, Literal, Optional
-from otf2.definitions import Attribute as OTF2Attribute
 from otf2 import LocationType as OTF2Location
-from . import log
-from . import utils
-from . import db
-from .definitions import Attr
-from .reader import get_otf2_reader
-from .definitions import SourceLocation, TaskAttributes
+from otf2.definitions import Attribute as OTF2Attribute
+
+from . import db, log, utils
 from .core.event_model.event_model import EventModel, get_event_model
 from .core.events import Event, Location
-from .core.tasks import TaskRegistry, Task, TaskSynchronisationContext
+from .core.tasks import Task, TaskRegistry, TaskSynchronisationContext
+from .definitions import Attr, SourceLocation, TaskAttributes
+from .reader import get_otf2_reader
 
 
 def closing_connection(name: str) -> db.Connection:
@@ -249,6 +250,18 @@ class Project(abc.ABC):
     def connection(self) -> db.Connection:
         """Return a connection to this project's tasks db for use in a with-block"""
         return closing_connection(self.tasks_db)
+
+    def convert_dot_to_svg(
+        self, dotfile: str, svgfile: str = ""
+    ) -> Tuple[int, str, str]:
+        dirname, dotname = os.path.split(dotfile)
+        name, _ = os.path.splitext(dotname)
+        if not svgfile:
+            svgfile = os.path.join(dirname, name + ".svg")
+        command = f"dot -Gpad=1 -Nfontsize=12 -Tsvg -o {svgfile} {dotfile}"
+        proc = sp.Popen(command, shell=True, stdout=sp.PIPE, stderr=sp.PIPE)
+        stdout, stderr = proc.communicate()
+        return proc.returncode, stdout.decode(), stderr.decode()
 
     @abc.abstractmethod
     def run(self) -> Project:

@@ -1,22 +1,24 @@
 """Access Otter via the command line"""
 
 import argparse
-from enum import StrEnum, auto
+import sys
+from enum import Enum
+
 import otter
 
 
-class Action(StrEnum):
+class Action(str, Enum):
     """Defines the available actions"""
 
-    UNPACK = auto()
-    SHOW = auto()
+    UNPACK = "unpack"
+    SHOW = "show"
 
 
-class GraphType(StrEnum):
+class GraphType(str, Enum):
     """Defines the graph types available to do_show()"""
 
-    CFG = auto()  # control-flow graph
-    HIER = auto()  # task hierarchy
+    CFG = "cfg"  # control-flow graph
+    HIER = "hier"  # task hierarchy
 
 
 description_action = {
@@ -140,6 +142,9 @@ def select_action() -> None:
             do_show_cfg(args.anchorfile, args.dotfile, args.task)
         elif args.show == GraphType.HIER:
             do_show_hierarchy(args.anchorfile, args.dotfile, args.loglevel == "DEBUG")
+    else:
+        print(f"unknown action: {args.action}")
+        parser.print_help()
 
 
 def do_unpack(anchorfile: str, debug: bool = False) -> None:
@@ -165,6 +170,10 @@ def do_show_cfg(anchorfile: str, dotfile: str, task: int, debug: bool = False) -
         cfg = project.build_styled_cfg(con, task)
     project.write_graph_to_file(cfg, filename=dotfile)
     project.log.info("cfg for task %d written to %s", task, dotfile)
+    result, _, stderr = project.convert_dot_to_svg(dotfile)
+    if result != 0:
+        for line in stderr:
+            print(line, file=sys.stderr)
 
 
 def do_show_hierarchy(anchorfile: str, dotfile: str, debug: bool = False) -> None:
