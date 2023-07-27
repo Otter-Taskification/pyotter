@@ -1,12 +1,20 @@
 import sqlite3
-from typing import Tuple, Iterable, Any
+from typing import Any, Iterable, Tuple
+
 from . import query
+
+
+class Row(sqlite3.Row):
+    def __repr__(self) -> str:
+        return "Row({})".format(
+            ", ".join([f"{key}={self[key]}" for key in self.keys()])
+        )
 
 
 class Connection(sqlite3.Connection):
     def __init__(self, db: str, **kwargs):
         super().__init__(db, **kwargs)
-        self.row_factory = sqlite3.Row
+        self.row_factory = Row
 
     def children_of(self, parent: int) -> Tuple[int]:
         cur = self.cursor()

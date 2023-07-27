@@ -22,7 +22,13 @@ left join chunk
 where task.id in (
     ?
 )
-order by task.id
+order by 1
+    -- when sequence is null, these are un-synchronised tasks, so sort them last
+    -- (since in our event model, a synchronisation captures all tasks so far, 
+    -- so any unsynchronised tasks can only appear after all synchronisation
+    -- points)
+    ,case when sequence is null then 1 else 0 end
     ,sequence
+    ,child_id
 ;
 """
