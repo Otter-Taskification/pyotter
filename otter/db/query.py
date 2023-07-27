@@ -1,21 +1,30 @@
-from sqlite3 import Cursor
-from typing import Tuple
+# from sqlite3 import Cursor
+# from typing import Tuple
 
-child_sync_points = """
+CHILD_SYNC_POINTS = """
 select rel.child_id
     ,sync.context_id
     ,ctx.sync_descendants
     ,chunk.sequence
     ,attr.task_label
 from task
+
+-- get the child tasks of task.id
 inner join task_relation as rel
     on task.id = rel.parent_id
+
+-- add the childrens' attributes
 left join task_attributes as attr
     on rel.child_id = attr.id
+
+-- add the synchronisation of each child
 left join synchronisation as sync
     on rel.child_id = sync.task_id
+
+-- add the context for each synchronisation
 left join context as ctx
     on sync.context_id = ctx.context_id
+
 left join chunk
     on task.id = chunk.encountering_task_id
     and sync.context_id = chunk.context_id
@@ -31,4 +40,25 @@ order by 1
     ,sequence
     ,child_id
 ;
+"""
+
+DISTINCT_SYNC_GROUPS = """
+select distinct chunk.sequence
+from task
+
+-- get the child tasks of task.id
+inner join task_relation as rel
+    on task.id = rel.parent_id
+
+-- add the synchronisation of each child
+left join synchronisation as sync
+    on rel.child_id = sync.task_id
+
+-- get the ordering of each chunk of tasks synchronised
+left join chunk
+    on task.id = chunk.encountering_task_id
+    and sync.context_id = chunk.context_id
+where task.id in (
+    ?
+)
 """
