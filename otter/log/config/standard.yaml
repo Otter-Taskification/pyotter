@@ -34,6 +34,11 @@ handlers:
     class: logging.StreamHandler
     formatter: basic
 
+  debugConsoleBasic:
+    level: DEBUG
+    class: logging.StreamHandler
+    formatter: basic
+
   debugConsole:
     level: DEBUG
     class: logging.StreamHandler
@@ -95,7 +100,7 @@ loggers:
     handlers: [debugFile]
 
   otter.main:
-    handlers: [infoConsoleBasic]
+    handlers: [debugConsoleBasic]
     propagate: True
 
   otter.project:
