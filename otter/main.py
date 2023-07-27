@@ -165,15 +165,22 @@ def do_show_cfg(anchorfile: str, dotfile: str, task: int, debug: bool = False) -
     if "{task}" in dotfile:
         dotfile = dotfile.format(task=task)
 
+    otter.log.info(" --> STEP: create project")
     project = otter.project.BuildGraphFromDB(anchorfile, debug=debug)
     with project.connection() as con:
-        cfg = project.build_styled_cfg(con, task)
+        otter.log.info(" --> STEP: build cfg (task=%d)", task)
+        cfg = project.build_control_flow_graph(con, task)
+        otter.log.info(" --> STEP: style cfg (task=%d)", task)
+        cfg = project.style_graph(con, cfg, key=otter.project.Attr.unique_id)
+    otter.log.info(" --> STEP: write cfg to file (dotfile=%s)", dotfile)
     project.write_graph_to_file(cfg, filename=dotfile)
-    project.log.info("cfg for task %d written to %s", task, dotfile)
-    result, _, stderr = project.convert_dot_to_svg(dotfile)
+    otter.log.info(" --> STEP: convert to svg")
+    result, _, stderr, svgfile = project.convert_dot_to_svg(dotfile)
     if result != 0:
         for line in stderr:
             print(line, file=sys.stderr)
+    else:
+        project.log.info("cfg for task %d written to %s", task, svgfile)
 
 
 def do_show_hierarchy(anchorfile: str, dotfile: str, debug: bool = False) -> None:

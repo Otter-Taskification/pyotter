@@ -253,7 +253,7 @@ class Project(abc.ABC):
 
     def convert_dot_to_svg(
         self, dotfile: str, svgfile: str = ""
-    ) -> Tuple[int, str, str]:
+    ) -> Tuple[int, str, str, str]:
         dirname, dotname = os.path.split(dotfile)
         name, _ = os.path.splitext(dotname)
         if not svgfile:
@@ -261,7 +261,7 @@ class Project(abc.ABC):
         command = f"dot -Gpad=1 -Nfontsize=12 -Tsvg -o {svgfile} {dotfile}"
         proc = sp.Popen(command, shell=True, stdout=sp.PIPE, stderr=sp.PIPE)
         stdout, stderr = proc.communicate()
-        return proc.returncode, stdout.decode(), stderr.decode()
+        return proc.returncode, stdout.decode(), stderr.decode(), svgfile
 
     @abc.abstractmethod
     def run(self) -> Project:
@@ -420,55 +420,9 @@ class ReadTasksProject(Project):
             )
             return f"<{label_body}>"
 
-        # distinctipy.get_colors(15, pastel_factor=0.7)
-        some_colours = [
-            (0.41789678359925886, 0.4478800973360014, 0.6603976790578713),
-            (0.5791295025850759, 0.9501035530193626, 0.4146731695259466),
-            (0.9873477590634498, 0.41764219864176216, 0.9232038676343455),
-            (0.41237294263760504, 0.964072612230516, 0.9807107771055183),
-            (0.9734820016268507, 0.6770783213352466, 0.42287950368121985),
-            (0.6993998367145301, 0.677687013392824, 0.9288022099506522),
-            (0.9899562965177089, 0.9957366159760942, 0.521178184203679),
-            (0.7975389054510595, 0.41283266748192166, 0.4629890235704576),
-            (0.43702644596770984, 0.759556176934646, 0.6749048125249932),
-            (0.6965871214404423, 0.9463828725945549, 0.7605229568037236),
-            (0.5834861331237369, 0.4219039575347027, 0.9770369349535316),
-            (0.5607295995085896, 0.6237116443413862, 0.42199815992837764),
-            (0.9882948135565736, 0.7435265893431469, 0.9605990173642993),
-            (0.9071707415444149, 0.5894615743307152, 0.7128698728178723),
-            (0.41403720757157997, 0.5896162315031304, 0.9210362508145612),
-            (0.4215567660131879, 0.9938437194754475, 0.6636627502476266),
-            (0.7639598076246374, 0.7713442915492512, 0.5556698714993118),
-            (0.6355678896897076, 0.5898098792616564, 0.685455897908628),
-            (0.9728576888043581, 0.8468985578080623, 0.7159697818623745),
-            (0.47285542519183504, 0.7751569384799412, 0.9320834162513205),
-            (0.800098097601043, 0.4150509814299012, 0.7281924315258136),
-            (0.5496771656026366, 0.41730631452034933, 0.4521858956509995),
-            (0.41678419641558745, 0.7803626090187631, 0.4272766394798354),
-            (0.8234105355146586, 0.8660148388889043, 0.9561085100428577),
-            (0.7855705031865389, 0.4943568361123591, 0.9988939092821855),
-            (0.9847904786571894, 0.4482606006412153, 0.562910494055332),
-            (0.6798235771065145, 0.9971233740851245, 0.9996569595834145),
-            (0.792809765578224, 0.5906601531245763, 0.4957483837416151),
-            (0.7694157231942473, 0.9524013653707905, 0.5176982404679867),
-            (0.9232053978283504, 0.8401250830830093, 0.44696208905160995),
-            (0.9236863054751214, 0.9993733677837177, 0.7888506268699739),
-            (0.8263908834333781, 0.7439675457620962, 0.7763040928845777),
-            (0.6177129866674549, 0.8183079354608641, 0.6825147487887169),
-            (0.9151439425415392, 0.5898222404445026, 0.9285484173213013),
-            (0.43136801207556663, 0.6020577045316525, 0.5727887822333112),
-            (0.5948650486879187, 0.43262190522867067, 0.7727896623510145),
-            (0.5238812485249263, 0.8919073829043799, 0.8070411720742222),
-            (0.9598639773176977, 0.7150237252118297, 0.6385838504280782),
-            (0.6096499184756766, 0.7652215789853251, 0.4453973667162779),
-            (0.41273971100526313, 0.9704394795215736, 0.476492239648635),
-        ]
-        colour_iter = iter(some_colours)
-        colour_picker = defaultdict(lambda: next(colour_iter))
-
         for task, vertex in vertices.items():
             vertex["label"] = as_html_table(task)
-            r, g, b = (int(x * 256) for x in colour_picker[task.label])
+            r, g, b = (int(x * 256) for x in reporting.colour_picker[task.label])
             hex_colour = f"#{r:02x}{g:02x}{b:02x}"
             vertex["color"] = hex_colour
         return graph
@@ -554,10 +508,13 @@ class BuildGraphFromDB(Project):
         graph.add_edge(cur, tail)
         return graph
 
-    def build_styled_cfg(self, con: db.Connection, task: int) -> ig.Graph:
+    def build_styled_cfg(
+        self, con: db.Connection, task: int, graph: Optional[ig.Graph] = None
+    ) -> ig.Graph:
         from . import reporting
 
-        graph = self.build_cfg(con, task)
+        if graph is None:
+            graph = self.build_cfg(con, task)
 
         html_table_attributes = {"td": {"align": "left", "cellpadding": "6px"}}
 
@@ -566,52 +523,6 @@ class BuildGraphFromDB(Project):
                 data, table_attr=html_table_attributes
             )
             return f"<{label_body}>"
-
-        # distinctipy.get_colors(15, pastel_factor=0.7)
-        some_colours = [
-            (0.41789678359925886, 0.4478800973360014, 0.6603976790578713),
-            (0.5791295025850759, 0.9501035530193626, 0.4146731695259466),
-            (0.9873477590634498, 0.41764219864176216, 0.9232038676343455),
-            (0.41237294263760504, 0.964072612230516, 0.9807107771055183),
-            (0.9734820016268507, 0.6770783213352466, 0.42287950368121985),
-            (0.6993998367145301, 0.677687013392824, 0.9288022099506522),
-            (0.9899562965177089, 0.9957366159760942, 0.521178184203679),
-            (0.7975389054510595, 0.41283266748192166, 0.4629890235704576),
-            (0.43702644596770984, 0.759556176934646, 0.6749048125249932),
-            (0.6965871214404423, 0.9463828725945549, 0.7605229568037236),
-            (0.5834861331237369, 0.4219039575347027, 0.9770369349535316),
-            (0.5607295995085896, 0.6237116443413862, 0.42199815992837764),
-            (0.9882948135565736, 0.7435265893431469, 0.9605990173642993),
-            (0.9071707415444149, 0.5894615743307152, 0.7128698728178723),
-            (0.41403720757157997, 0.5896162315031304, 0.9210362508145612),
-            (0.4215567660131879, 0.9938437194754475, 0.6636627502476266),
-            (0.7639598076246374, 0.7713442915492512, 0.5556698714993118),
-            (0.6355678896897076, 0.5898098792616564, 0.685455897908628),
-            (0.9728576888043581, 0.8468985578080623, 0.7159697818623745),
-            (0.47285542519183504, 0.7751569384799412, 0.9320834162513205),
-            (0.800098097601043, 0.4150509814299012, 0.7281924315258136),
-            (0.5496771656026366, 0.41730631452034933, 0.4521858956509995),
-            (0.41678419641558745, 0.7803626090187631, 0.4272766394798354),
-            (0.8234105355146586, 0.8660148388889043, 0.9561085100428577),
-            (0.7855705031865389, 0.4943568361123591, 0.9988939092821855),
-            (0.9847904786571894, 0.4482606006412153, 0.562910494055332),
-            (0.6798235771065145, 0.9971233740851245, 0.9996569595834145),
-            (0.792809765578224, 0.5906601531245763, 0.4957483837416151),
-            (0.7694157231942473, 0.9524013653707905, 0.5176982404679867),
-            (0.9232053978283504, 0.8401250830830093, 0.44696208905160995),
-            (0.9236863054751214, 0.9993733677837177, 0.7888506268699739),
-            (0.8263908834333781, 0.7439675457620962, 0.7763040928845777),
-            (0.6177129866674549, 0.8183079354608641, 0.6825147487887169),
-            (0.9151439425415392, 0.5898222404445026, 0.9285484173213013),
-            (0.43136801207556663, 0.6020577045316525, 0.5727887822333112),
-            (0.5948650486879187, 0.43262190522867067, 0.7727896623510145),
-            (0.5238812485249263, 0.8919073829043799, 0.8070411720742222),
-            (0.9598639773176977, 0.7150237252118297, 0.6385838504280782),
-            (0.6096499184756766, 0.7652215789853251, 0.4453973667162779),
-            (0.41273971100526313, 0.9704394795215736, 0.476492239648635),
-        ]
-        colour_iter = iter(some_colours)
-        colour_picker = defaultdict(lambda: next(colour_iter))
 
         tasks = tuple(
             set(filter(lambda x: x is not None, (v[Attr.unique_id] for v in graph.vs)))
@@ -635,39 +546,184 @@ class BuildGraphFromDB(Project):
                 ),
             }
             vertex["label"] = as_html_table(data)
-            r, g, b = (int(x * 256) for x in colour_picker[attr[Attr.task_label]])
+            r, g, b = (
+                int(x * 256) for x in reporting.colour_picker[attr[Attr.task_label]]
+            )
             hex_colour = f"#{r:02x}{g:02x}{b:02x}"
             vertex["color"] = hex_colour
         return graph
 
-    def _build_control_flow_graph(self, con: db.Connection, task: int) -> ig.Graph:
+    def build_control_flow_graph(self, con: db.Connection, task: int) -> ig.Graph:
         graph = ig.Graph(directed=True)
         records = con.child_sync_points(task)
+        vertex_dict = defaultdict(
+            lambda: graph.add_vertex(shape="plain", style="filled", _tasks=set())
+        )
+
+        # get the attributes of the relevant tasks
+        tasks = {row["child_id"] for row in records}
+        attributes = {row["id"]: row for row in con.attributes_of(tasks)}
+        log.debug("got attributes for %d tasks", len(tasks))
+
+        # list rows by the sequence each row belongs to
         sequences = defaultdict(list)
         for row in records:
             sequences[row["sequence"]].append(row)
-        head, tail = graph.add_vertex(shape="plain", style="filled"), graph.add_vertex(
-            shape="plain", style="filled"
-        )
+        log.debug("got %d sequences", len(sequences))
+
+        # create head & tail vertices
+        head = graph.add_vertex(shape="plain", style="filled")
+        tail = graph.add_vertex(shape="plain", style="filled")
         head[Attr.unique_id] = task
         tail[Attr.unique_id] = task
         cur = head
+
+        # for each group of tasks synchronised at a barrier
         for sequence, rows in sequences.items():
-            # TODO: 'sequence' can be NULL which means these rows represent tasks that aren't synchronised
-            barrier_vertex = graph.add_vertex(
-                shape="octagon", style="filled", color="red"
-            )
-            barrier_vertex["type"] = "barrier"
-            graph.add_edge(cur, barrier_vertex)
+            if log.is_enabled(log.DEBUG):
+                log.debug("sequence %s (%d tasks)", sequence, len(rows))
+
+            # each sequence is terminated by a barrier vertex
+            barrier_vertex = None
+            if sequence is not None:
+                barrier_vertex = graph.add_vertex(
+                    shape="octagon", style="filled", color="red"
+                )
+                barrier_vertex["type"] = "barrier"
+                graph.add_edge(cur, barrier_vertex)
+
+            # add vertices for the tasks synchronised at this barrier
             for row in rows:
+                log.debug("  %s", row)
+                task_id = row["child_id"]
                 task_vertex = graph.add_vertex(shape="plain", style="filled")
-                task_vertex[Attr.unique_id] = row["child_id"]
+                task_vertex[Attr.unique_id] = task_id
                 task_vertex["type"] = "task"
                 graph.add_edge(cur, task_vertex)
-                graph.add_edge(task_vertex, barrier_vertex)
-            cur = barrier_vertex
+                if barrier_vertex:
+                    graph.add_edge(task_vertex, barrier_vertex)
+                else:
+                    graph.add_edge(task_vertex, tail)
+
+            # update for next sequence
+            if barrier_vertex:
+                cur = barrier_vertex
+
+        # complete the graph
         graph.add_edge(cur, tail)
         graph.vs["label"] = graph.vs[Attr.unique_id]
+        return graph
+
+    def style_graph(self, con: db.Connection, graph: ig.Graph, key: str) -> ig.Graph:
+        from . import reporting
+
+        html_table_attributes = {"td": {"align": "left", "cellpadding": "6px"}}
+
+        def as_html_table(content: dict) -> str:
+            label_body = reporting.make.graphviz_record_table(
+                content, table_attr=html_table_attributes
+            )
+            return f"<{label_body}>"
+
+        if log.is_enabled(log.DEBUG):
+            log.debug("styling vertices using key: %s", key)
+            for v in graph.vs:
+                val = v[key]
+                if val is None:
+                    log.warning("key was None (vertex=%s)", v)
+        keys = graph.vs[key]
+        tasks = {k for k in keys if k is not None}
+        attributes = {row["id"]: row for row in con.attributes_of(tasks)}
+        for k, vertex in zip(keys, graph.vs):
+            if k is None:
+                continue
+            attr = attributes[k]
+            data = {
+                "id": k,
+                "label": attr["task_label"],
+                "flavour": attr["flavour"],
+                "init_location": SourceLocation(
+                    attr["init_file"], attr["init_func"], attr["init_line"]
+                ),
+                "start_location": SourceLocation(
+                    attr["start_file"], attr["start_func"], attr["start_line"]
+                ),
+                "end_location": SourceLocation(
+                    attr["end_file"], attr["end_func"], attr["end_line"]
+                ),
+            }
+            vertex["label"] = as_html_table(data)
+            r, g, b = (
+                int(x * 256) for x in reporting.colour_picker[attr[Attr.task_label]]
+            )
+            hex_colour = f"#{r:02x}{g:02x}{b:02x}"
+            vertex["color"] = hex_colour
+        return graph
+
+    def _style_simplified_graph(
+        self,
+        con: db.Connection,
+        graph: ig.Graph,
+        simplify_by: Optional[list[str]] = None,
+    ) -> ig.Graph:
+        from . import reporting
+
+        html_table_attributes = {"td": {"align": "left", "cellpadding": "6px"}}
+
+        def as_html_table(content: dict) -> str:
+            label_body = reporting.make.graphviz_record_table(
+                content, table_attr=html_table_attributes
+            )
+            return f"<{label_body}>"
+
+        simplify_by = simplify_by or []
+
+        for vertex in graph.vs:
+            if vertex["type"] == "group":
+                if len(vertex["_tasks"]) == 1:
+                    (k,) = vertex["_tasks"]
+                    log.debug("vertex group has 1 task: %s", vertex["_tasks"])
+                    (attr,) = con.attributes_of(vertex["_tasks"])
+                    log.debug("%s", attr)
+                    data = {
+                        "id": k,
+                        "label": attr["task_label"],
+                        "flavour": attr["flavour"],
+                        "init_location": SourceLocation(
+                            attr["init_file"], attr["init_func"], attr["init_line"]
+                        ),
+                        "start_location": SourceLocation(
+                            attr["start_file"], attr["start_func"], attr["start_line"]
+                        ),
+                        "end_location": SourceLocation(
+                            attr["end_file"], attr["end_func"], attr["end_line"]
+                        ),
+                    }
+                    r, g, b = (
+                        int(x * 256)
+                        for x in reporting.colour_picker[attr[Attr.task_label]]
+                    )
+                    hex_colour = f"#{r:02x}{g:02x}{b:02x}"
+                    vertex["label"] = as_html_table(data)
+                    vertex["color"] = hex_colour
+                else:
+                    vertex_key = vertex["_key"]
+                    data = {k: v for k, v in zip(vertex["_cols"], vertex["_key"])}
+                    log.debug("%s", data)
+                    vertex["label"] = as_html_table(data)
+
+        for name in graph.vs.attributes():
+            if name.startswith("_"):
+                log.debug("vertex attribute %s -> delete", name)
+                del graph.vs[name]
+            else:
+                log.debug("vertex attribute %s -> keep", name)
+                log.debug(
+                    "types: %s", ", ".join([str(type(item)) for item in graph.vs[name]])
+                )
+
+        print(graph.vs["label"])
+
         return graph
 
     def write_graph_to_file(self, graph: ig.Graph, filename: str = "graph.dot") -> None:
