@@ -555,21 +555,6 @@ class BuildGraphFromDB(Project):
 
     def build_control_flow_graph(self, con: db.Connection, task: int) -> ig.Graph:
         graph = ig.Graph(directed=True)
-        records = con.child_sync_points(task)
-        vertex_dict = defaultdict(
-            lambda: graph.add_vertex(shape="plain", style="filled", _tasks=set())
-        )
-
-        # get the attributes of the relevant tasks
-        tasks = {row["child_id"] for row in records}
-        attributes = {row["id"]: row for row in con.attributes_of(tasks)}
-        log.debug("got attributes for %d tasks", len(tasks))
-
-        # list rows by the sequence each row belongs to
-        sequences = defaultdict(list)
-        for row in records:
-            sequences[row["sequence"]].append(row)
-        log.debug("got %d sequences", len(sequences))
 
         # create head & tail vertices
         head = graph.add_vertex(shape="plain", style="filled")
@@ -579,9 +564,9 @@ class BuildGraphFromDB(Project):
         cur = head
 
         # for each group of tasks synchronised at a barrier
-        for sequence, rows in sequences.items():
+        for sequence, rows in con.sync_groups(task, debug=True):
             if log.is_enabled(log.DEBUG):
-                log.debug("sequence %s (%d tasks)", sequence, len(rows))
+                log.debug("sequence %s has %d tasks", sequence, len(rows))
 
             # each sequence is terminated by a barrier vertex
             barrier_vertex = None
