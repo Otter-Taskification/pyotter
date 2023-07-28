@@ -99,6 +99,21 @@ def prepare_parser():
         help="where to save the graph",
         default="cfg_{task}.dot",
     )
+    parser_show_cfg.add_argument(
+        "-s",
+        "--style",
+        dest="style",
+        help="apply styling to the graph",
+        action="store_true",
+        default=False,
+    )
+    parser_show_cfg.add_argument(
+        "--simple",
+        dest="simple",
+        help="create a simplified graph",
+        action="store_true",
+        default=False,
+    )
     add_common_arguments(parser_show_cfg)
 
     # parse the action "show hier"
@@ -135,13 +150,22 @@ def select_action() -> None:
         for arg, value in vars(args).items():
             log.info("  %s=%s", arg, value)
 
+    debug = args.loglevel == "DEBUG"
+
     if args.action == Action.UNPACK:
-        do_unpack(args.anchorfile, args.loglevel == "DEBUG")
+        do_unpack(args.anchorfile, debug=debug)
     elif args.action == Action.SHOW:
         if args.show == GraphType.CFG:
-            do_show_cfg(args.anchorfile, args.dotfile, args.task)
+            do_show_cfg(
+                args.anchorfile,
+                args.dotfile,
+                args.task,
+                args.style,
+                args.simple,
+                debug=debug,
+            )
         elif args.show == GraphType.HIER:
-            do_show_hierarchy(args.anchorfile, args.dotfile, args.loglevel == "DEBUG")
+            do_show_hierarchy(args.anchorfile, args.dotfile, debug=debug)
     else:
         print(f"unknown action: {args.action}")
         parser.print_help()
@@ -159,7 +183,14 @@ def do_unpack(anchorfile: str, debug: bool = False) -> None:
     project.quit()
 
 
-def do_show_cfg(anchorfile: str, dotfile: str, task: int, debug: bool = False) -> None:
+def do_show_cfg(
+    anchorfile: str,
+    dotfile: str,
+    task: int,
+    style: bool = False,
+    simple: bool = False,
+    debug: bool = False,
+) -> None:
     """Show the cfg of a given task"""
 
     if "{task}" in dotfile:
@@ -169,9 +200,24 @@ def do_show_cfg(anchorfile: str, dotfile: str, task: int, debug: bool = False) -
     project = otter.project.BuildGraphFromDB(anchorfile, debug=debug)
     with project.connection() as con:
         otter.log.info(" --> STEP: build cfg (task=%d)", task)
-        cfg = project.build_control_flow_graph(con, task)
-        otter.log.info(" --> STEP: style cfg (task=%d)", task)
-        cfg = project.style_graph(con, cfg, key=otter.project.Attr.unique_id)
+        if simple:
+            cfg = project.build_control_flow_graph_simplified(
+                con,
+                task,
+                keys=["flavour", "task_label", "init_file", "init_func", "init_line"],
+                debug=debug,
+            )
+        else:
+            cfg = project.build_control_flow_graph(con, task, debug=debug)
+        if debug:
+            otter.log.debug("cfg vertex attributes:")
+            for name in cfg.vs.attributes():
+                otter.log.debug(" -- %s", name)
+        if style:
+            otter.log.info(" --> STEP: style cfg (task=%d)", task)
+            cfg = project.style_graph(con, cfg, debug=debug)
+        else:
+            otter.log.info(" --> [ * SKIPPED * ] STEP: style cfg (task=%d)", task)
     otter.log.info(" --> STEP: write cfg to file (dotfile=%s)", dotfile)
     project.write_graph_to_file(cfg, filename=dotfile)
     otter.log.info(" --> STEP: convert to svg")

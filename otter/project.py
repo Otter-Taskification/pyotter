@@ -553,18 +553,108 @@ class BuildGraphFromDB(Project):
             vertex["color"] = hex_colour
         return graph
 
-    def build_control_flow_graph(self, con: db.Connection, task: int) -> ig.Graph:
+    def build_control_flow_graph_simplified(
+        self, con: db.Connection, task: int, keys: list[str], debug: bool = False
+    ) -> ig.Graph:
+        def debug_msg(msg, *args) -> None:
+            log.debug("[build_control_flow_graph_simplified] " + msg, *args)
+
+        if debug:
+            debug_msg("keys: %s", keys)
+
         graph = ig.Graph(directed=True)
 
+        (parent_attr_row,) = con.attributes_of((task,))
+        parent_attr = parent_attr_row.as_dict()
+        debug_msg("parent_attr=%s", parent_attr)
+
         # create head & tail vertices
-        head = graph.add_vertex(shape="plain", style="filled")
-        tail = graph.add_vertex(shape="plain", style="filled")
-        head[Attr.unique_id] = task
-        tail[Attr.unique_id] = task
+        head = graph.add_vertex(
+            shape="plain",
+            style="filled",
+            type="task",
+            attr=task,
+        )
+        tail = graph.add_vertex(
+            shape="plain",
+            style="filled",
+            type="task",
+            attr=task,
+        )
         cur = head
 
         # for each group of tasks synchronised at a barrier
-        for sequence, rows in con.sync_groups(task, debug=True):
+        for sequence, rows in con.sync_groups(task, debug=debug):
+            if debug:
+                debug_msg("sequence %s has %d tasks", sequence, len(rows))
+
+            # get the attributes for all tasks in this sequence
+            task_attribute_rows = con.attributes_of(row["child_id"] for row in rows)
+            if debug:
+                debug_msg("got task attributes:")
+                for row in task_attribute_rows:
+                    debug_msg("%s", row)
+
+            # each sequence is terminated by a barrier vertex
+            barrier_vertex = None
+            if sequence is not None:
+                barrier_vertex = graph.add_vertex(
+                    shape="octagon", style="filled", color="red", type="barrier"
+                )
+                graph.add_edge(cur, barrier_vertex)
+
+            # create a vertex for each sub-group of tasks in this sequence
+            group_vertices = {}
+            for attr, row in zip(task_attribute_rows, rows, strict=True):
+                group_attr = tuple(
+                    (key, attr[key]) for key in keys if key in attr.keys()
+                )
+                if group_attr not in group_vertices:
+                    group_vertex = graph.add_vertex(
+                        shape="plain",
+                        style="filled",
+                        type="group",
+                        attr=dict(group_attr),
+                        tasks={attr["id"]},
+                    )
+                    group_vertices[group_attr] = group_vertex
+                    graph.add_edge(cur, group_vertex)
+                    if barrier_vertex:
+                        graph.add_edge(group_vertex, barrier_vertex)
+                    else:
+                        graph.add_edge(group_vertex, tail)
+                else:
+                    group_vertices[group_attr]["tasks"].add(attr["id"])
+
+            for group_vertex in group_vertices.values():
+                group_vertex["attr"]["tasks"] = len(group_vertex["tasks"])
+
+            # update for next sequence
+            if barrier_vertex:
+                cur = barrier_vertex
+
+        # complete the graph
+        graph.add_edge(cur, tail)
+
+        if debug:
+            debug_msg("created %d vertices:", len(graph.vs))
+            for vertex in graph.vs:
+                debug_msg("%s", vertex)
+
+        return graph
+
+    def build_control_flow_graph(
+        self, con: db.Connection, task: int, debug: bool = False
+    ) -> ig.Graph:
+        graph = ig.Graph(directed=True)
+
+        # create head & tail vertices
+        head = graph.add_vertex(shape="plain", style="filled", attr=task)
+        tail = graph.add_vertex(shape="plain", style="filled", attr=task)
+        cur = head
+
+        # for each group of tasks synchronised at a barrier
+        for sequence, rows in con.sync_groups(task, debug=debug):
             if log.is_enabled(log.DEBUG):
                 log.debug("sequence %s has %d tasks", sequence, len(rows))
 
@@ -581,9 +671,9 @@ class BuildGraphFromDB(Project):
             for row in rows:
                 log.debug("  %s", row)
                 task_id = row["child_id"]
-                task_vertex = graph.add_vertex(shape="plain", style="filled")
-                task_vertex[Attr.unique_id] = task_id
-                task_vertex["type"] = "task"
+                task_vertex = graph.add_vertex(
+                    shape="plain", style="filled", attr=task_id, type="task"
+                )
                 graph.add_edge(cur, task_vertex)
                 if barrier_vertex:
                     graph.add_edge(task_vertex, barrier_vertex)
@@ -596,10 +686,25 @@ class BuildGraphFromDB(Project):
 
         # complete the graph
         graph.add_edge(cur, tail)
-        graph.vs["label"] = graph.vs[Attr.unique_id]
         return graph
 
-    def style_graph(self, con: db.Connection, graph: ig.Graph, key: str) -> ig.Graph:
+    def style_graph(
+        self,
+        con: db.Connection,
+        graph: ig.Graph,
+        key: str = "attr",
+        debug: bool = False,
+    ) -> ig.Graph:
+        """Apply styling to a graph, using the vertex attribute "key" to get
+        label data.
+
+        If vertex[key] is:
+
+        - int: interpret as a task ID and use the attributes of that task as the label data.
+        - dict: use as the label data.
+        - tuple: expect a tuple of key-value pairs to be used as the label data
+        - other: raise ValueError
+        """
         from . import reporting
 
         html_table_attributes = {"td": {"align": "left", "cellpadding": "6px"}}
@@ -610,39 +715,57 @@ class BuildGraphFromDB(Project):
             )
             return f"<{label_body}>"
 
-        if log.is_enabled(log.DEBUG):
+        if debug:
             log.debug("styling vertices using key: %s", key)
-            for v in graph.vs:
-                val = v[key]
-                if val is None:
-                    log.warning("key was None (vertex=%s)", v)
+            for vertex in graph.vs:
+                val = vertex[key]
+                if isinstance(val, int):
+                    log.debug("use task id %d as label key", val)
+                elif isinstance(val, dict):
+                    log.debug("use dict as label data: %s", val)
+                elif isinstance(val, tuple):
+                    log.debug("interpret as key-value pairs: %s", val)
+
         keys = graph.vs[key]
-        tasks = {k for k in keys if k is not None}
-        attributes = {row["id"]: row for row in con.attributes_of(tasks)}
+        task_attr = {
+            row["id"]: row
+            for row in con.attributes_of(n for n in keys if isinstance(n, int))
+        }
+
         for k, vertex in zip(keys, graph.vs):
             if k is None:
-                continue
-            attr = attributes[k]
-            data = {
-                "id": k,
-                "label": attr["task_label"],
-                "flavour": attr["flavour"],
-                "init_location": SourceLocation(
-                    attr["init_file"], attr["init_func"], attr["init_line"]
-                ),
-                "start_location": SourceLocation(
-                    attr["start_file"], attr["start_func"], attr["start_line"]
-                ),
-                "end_location": SourceLocation(
-                    attr["end_file"], attr["end_func"], attr["end_line"]
-                ),
-            }
-            vertex["label"] = as_html_table(data)
-            r, g, b = (
-                int(x * 256) for x in reporting.colour_picker[attr[Attr.task_label]]
-            )
-            hex_colour = f"#{r:02x}{g:02x}{b:02x}"
-            vertex["color"] = hex_colour
+                vertex["label"] = ""
+            elif isinstance(k, int):
+                attr = task_attr[k]
+                data = {
+                    "id": k,
+                    "label": attr["task_label"],
+                    "flavour": attr["flavour"],
+                    "init_location": SourceLocation(
+                        attr["init_file"], attr["init_func"], attr["init_line"]
+                    ),
+                    "start_location": SourceLocation(
+                        attr["start_file"], attr["start_func"], attr["start_line"]
+                    ),
+                    "end_location": SourceLocation(
+                        attr["end_file"], attr["end_func"], attr["end_line"]
+                    ),
+                }
+                vertex["label"] = as_html_table(data)
+                r, g, b = (
+                    int(x * 256) for x in reporting.colour_picker[attr[Attr.task_label]]
+                )
+                hex_colour = f"#{r:02x}{g:02x}{b:02x}"
+                vertex["color"] = hex_colour
+            elif isinstance(k, dict):
+                vertex["label"] = as_html_table(k)
+            elif isinstance(k, tuple):
+                vertex["label"] = as_html_table(dict(k))
+            else:
+                raise ValueError(
+                    f"expected int, dict, None or tuple of name-value pairs, got {k}"
+                )
+
         return graph
 
     def _style_simplified_graph(

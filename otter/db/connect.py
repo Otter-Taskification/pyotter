@@ -1,4 +1,5 @@
 import sqlite3
+from collections import defaultdict
 from typing import Any, Iterable, Tuple, Generator, Optional
 
 from .. import log
@@ -10,6 +11,9 @@ class Row(sqlite3.Row):
         return "Row({})".format(
             ", ".join([f"{key}={self[key]}" for key in self.keys()])
         )
+
+    def as_dict(self) -> dict:
+        return {key: self[key] for key in self.keys()}
 
 
 class Connection(sqlite3.Connection):
@@ -26,15 +30,21 @@ class Connection(sqlite3.Connection):
 
     def attributes_of(self, tasks: Iterable[int]) -> Tuple[Any]:
         cur = self.cursor()
+        tasks = tuple(tasks)
         placeholder = ",".join("?" for _ in tasks)
         q = f"select * from task_attributes where id in ({placeholder}) order by id\n"
-        cur.execute(q, tuple(tasks))
+        cur.execute(q, tasks)
         return tuple(cur.fetchall())
 
-    def child_sync_points(self, task: int) -> Tuple[Any]:
+    def child_sync_points(self, task: int, debug: bool = False) -> Tuple[Any]:
+        """Get the sequences of child tasks synchronised during a task."""
+
         cur = self.cursor()
         cur.execute(query.CHILD_SYNC_POINTS, (task,))
-        return tuple(cur.fetchall())
+        results = tuple(cur.fetchall())
+        if debug:
+            log.debug("child_sync_points: got %d results", len(results))
+        return results
 
     def sync_groups(
         self, task: int, debug: bool = False
@@ -45,32 +55,13 @@ class Connection(sqlite3.Connection):
         identifier and the rows representing the synchronised tasks.
         """
 
-        iter_sequence = iter(self.sequences(task))
-        records = self.child_sync_points(task)
-        if debug:
-            log.debug("%d records", len(records))
-        seq = next(iter_sequence, None)
-        rows = []
+        records = self.child_sync_points(task, debug=debug)
+        sequences = defaultdict(list)
         for row in records:
-            if row["sequence"] == seq:
-                rows.append(row)
-            else:
-                if debug:
-                    log.debug("  yield %d rows", len(rows))
-                yield seq, rows
-                rows = []
-                seq = next(iter_sequence, None)
-        if rows:
+            sequences[row["sequence"]].append(row)
+        for seq, rows in sequences.items():
             if debug:
-                log.debug("  final yield %d rows", len(rows))
+                log.debug(
+                    "sync_groups: sequence %s yielding %d records", seq, len(rows)
+                )
             yield seq, rows
-        assert next(iter_sequence, "empty") == "empty"
-
-    def sequences(self, task: int) -> Generator[Optional[int], None, None]:
-        result = self.cursor().execute(query.DISTINCT_SYNC_GROUPS, (task,))
-        while (row := result.fetchone()) is not None:
-            yield row["sequence"]
-
-    def count_sync_groups(self, task: int) -> int:
-        result = self.cursor().execute(query.DISTINCT_SYNC_GROUPS, (task,))
-        return len(result.fetchall())

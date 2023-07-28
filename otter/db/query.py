@@ -6,7 +6,6 @@ select rel.child_id
     ,sync.context_id
     ,ctx.sync_descendants
     ,chunk.sequence
-    ,attr.task_label
 from task
 
 -- get the child tasks of task.id
@@ -40,25 +39,4 @@ order by 1
     ,sequence
     ,child_id
 ;
-"""
-
-DISTINCT_SYNC_GROUPS = """
-select distinct chunk.sequence
-from task
-
--- get the child tasks of task.id
-inner join task_relation as rel
-    on task.id = rel.parent_id
-
--- add the synchronisation of each child
-left join synchronisation as sync
-    on rel.child_id = sync.task_id
-
--- get the ordering of each chunk of tasks synchronised
-left join chunk
-    on task.id = chunk.encountering_task_id
-    and sync.context_id = chunk.context_id
-where task.id in (
-    ?
-)
 """
