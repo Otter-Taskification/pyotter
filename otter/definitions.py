@@ -154,7 +154,7 @@ class TaskAttributes:
         return self.label
 
     def asdict(self):
-        return {k: v for k, v in asdict(self).items()}
+        return asdict(self)
 
 
 NullTaskID = 18446744073709551615

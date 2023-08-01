@@ -1,12 +1,12 @@
 from itertools import count
 from collections import defaultdict
-from typing import Union, List, Callable, Iterable
+from typing import Union, List, Callable, Iterable, Optional
 
 
 class CountingDict(defaultdict):
     """A defaultdict which uses ``next(counter)`` to uniquely number its keys"""
 
-    def __init__(self, counter: count = None):
+    def __init__(self, counter: Optional[count] = None):
         counter = counter or count()
         super().__init__(lambda: next(counter))
 

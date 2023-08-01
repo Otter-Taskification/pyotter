@@ -153,10 +153,10 @@ def select_action() -> None:
     debug = args.loglevel == "DEBUG"
 
     if args.action == Action.UNPACK:
-        do_unpack(args.anchorfile, debug=debug)
+        otter.project.unpack_trace(args.anchorfile, debug=debug)
     elif args.action == Action.SHOW:
         if args.show == GraphType.CFG:
-            do_show_cfg(
+            otter.project.show_control_flow_graph(
                 args.anchorfile,
                 args.dotfile,
                 args.task,
@@ -165,74 +165,9 @@ def select_action() -> None:
                 debug=debug,
             )
         elif args.show == GraphType.HIER:
-            do_show_hierarchy(args.anchorfile, args.dotfile, debug=debug)
+            otter.project.show_task_hierarchy(
+                args.anchorfile, args.dotfile, debug=debug
+            )
     else:
         print(f"unknown action: {args.action}")
         parser.print_help()
-
-
-def do_unpack(anchorfile: str, debug: bool = False) -> None:
-    """Unpack a trace into a db for querying"""
-
-    try:
-        project = otter.project.ReadTasksProject(anchorfile, debug=debug)
-    except NotADirectoryError as err:
-        otter.log.error("directory not found: %s", err)
-        raise SystemExit(1) from err
-    project.create_db_from_trace()
-    project.quit()
-
-
-def do_show_cfg(
-    anchorfile: str,
-    dotfile: str,
-    task: int,
-    style: bool = False,
-    simple: bool = False,
-    debug: bool = False,
-) -> None:
-    """Show the cfg of a given task"""
-
-    if "{task}" in dotfile:
-        dotfile = dotfile.format(task=task)
-
-    otter.log.info(" --> STEP: create project")
-    project = otter.project.BuildGraphFromDB(anchorfile, debug=debug)
-    with project.connection() as con:
-        otter.log.info(" --> STEP: build cfg (task=%d)", task)
-        if simple:
-            cfg = project.build_control_flow_graph_simplified(
-                con,
-                task,
-                keys=["flavour", "task_label", "init_file", "init_func", "init_line"],
-                debug=debug,
-            )
-        else:
-            cfg = project.build_control_flow_graph(con, task, debug=debug)
-        if debug:
-            otter.log.debug("cfg vertex attributes:")
-            for name in cfg.vs.attributes():
-                otter.log.debug(" -- %s", name)
-        if style:
-            otter.log.info(" --> STEP: style cfg (task=%d)", task)
-            cfg = project.style_graph(con, cfg, debug=debug)
-        else:
-            otter.log.info(" --> [ * SKIPPED * ] STEP: style cfg (task=%d)", task)
-    otter.log.info(" --> STEP: write cfg to file (dotfile=%s)", dotfile)
-    project.write_graph_to_file(cfg, filename=dotfile)
-    otter.log.info(" --> STEP: convert to svg")
-    result, _, stderr, svgfile = project.convert_dot_to_svg(dotfile)
-    if result != 0:
-        for line in stderr:
-            print(line, file=sys.stderr)
-    else:
-        project.log.info("cfg for task %d written to %s", task, svgfile)
-
-
-def do_show_hierarchy(anchorfile: str, dotfile: str, debug: bool = False) -> None:
-    """Show the task hierarchy of a trace"""
-
-    project = otter.project.ReadTasksProject(anchorfile, debug=debug, prepare_env=False)
-    hierarchy = project.build_parent_child_graph()
-    project.write_graph_to_file(hierarchy, filename=dotfile)
-    project.log.info("task hierarchy graph written to %s", dotfile)

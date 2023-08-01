@@ -1,7 +1,14 @@
+import os
+import subprocess as sp
+
+from typing import Optional, Tuple
 from collections import defaultdict
 
+from igraph import Graph
+
+from ..definitions import TaskAttributes
 from ..log import logger_getter
-from . import report
+from . import report, make
 from .classes import Doc
 from .make import table, wrap
 
@@ -92,5 +99,50 @@ some_colours = [
     (0.6096499184756766, 0.7652215789853251, 0.4453973667162779),
     (0.41273971100526313, 0.9704394795215736, 0.476492239648635),
 ]
-colour_iter = iter(some_colours)
-colour_picker = defaultdict(lambda: next(colour_iter))
+
+
+def colour_picker():
+    colour_iter = iter(some_colours)
+    return defaultdict(lambda: next(colour_iter))
+
+
+def as_html_table(content: dict, table_attr: Optional[dict] = None) -> str:
+    """Convert a task's attributes into a formatted html-like graphviz table"""
+    if table_attr is None:
+        table_attr = {"td": {"align": "left", "cellpadding": "6px"}}
+    label_body = make.graphviz_record_table(content, table_attr=table_attr)
+    return f"<{label_body}>"
+
+
+def write_graph_to_file(graph: Graph, filename: str = "graph.dot") -> None:
+    """Write a graph to a .dot file, fixing escaped characters in html-like labels"""
+
+    graph.write_dot(filename)
+    with open(filename, mode="r", encoding="utf-8") as df:
+        original = df.readlines()
+    with open(filename, mode="w", encoding="utf-8") as df:
+        escape_in, escape_out = '"<<', '>>"'
+        escaped_quotation = '\\"'
+        for line in original:
+            # Workaround - remove escaping quotations around HTML-like labels added by igraph.Graph.write_dot()
+            if escape_in in line:
+                line = line.replace(escape_in, "<<")
+            if escape_out in line:
+                line = line.replace(escape_out, ">>")
+            # Workaround - unescape quotation marks for labels
+            if "label=" in line and escaped_quotation in line:
+                line = line.replace(escaped_quotation, '"')
+            df.write(line)
+
+
+def convert_dot_to_svg(dotfile: str, svgfile: str = "") -> Tuple[int, str, str, str]:
+    """Invoke dot to convert .dot to .svg"""
+
+    dirname, dotname = os.path.split(dotfile)
+    name, _ = os.path.splitext(dotname)
+    if not svgfile:
+        svgfile = os.path.join(dirname, name + ".svg")
+    command = f"dot -Gpad=1 -Nfontsize=12 -Tsvg -o {svgfile} {dotfile}"
+    with sp.Popen(command, shell=True, stdout=sp.PIPE, stderr=sp.PIPE) as proc:
+        stdout, stderr = proc.communicate()
+    return proc.returncode, stdout.decode(), stderr.decode(), svgfile
