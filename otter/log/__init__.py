@@ -1,7 +1,24 @@
+from __future__ import annotations
+
 import logging
+from enum import Enum
 from logging import DEBUG, ERROR, INFO, WARN
 
 import colorama as _color
+
+
+class Level(int, Enum):
+    """Define debugging levels"""
+
+    DEBUG = logging.DEBUG
+    INFO = logging.INFO
+    WARN = logging.WARN
+    ERROR = logging.ERROR
+
+
+def as_level(name: str) -> Level:
+    """Get the level corresponding to the name of a logging level"""
+    return getattr(Level, name.upper())
 
 
 class _state_:
@@ -47,7 +64,7 @@ def initialise(args):
     conf_text = resources.read_text(config, "standard.yaml")
     conf = yaml.safe_load(conf_text)
 
-    conf["root"]["level"] = args.loglevel
+    conf["root"]["level"] = as_level(args.loglevel)
 
     for hconf in conf["handlers"].values():
         if "filename" in hconf:
@@ -152,7 +169,7 @@ def warning(msg, *args):
 
 def info(msg, *args):
     log = get_logger("main")
-    log.info(_color.Fore.WHITE + msg + _color.Style.RESET_ALL, *args)
+    log.info(msg, *args)
 
 
 def debug(msg, *args):

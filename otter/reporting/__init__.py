@@ -1,14 +1,13 @@
 import os
 import subprocess as sp
-
-from typing import Optional, Tuple
 from collections import defaultdict
+from typing import Literal, Optional, Tuple
 
 from igraph import Graph
 
 from ..definitions import TaskAttributes
 from ..log import logger_getter
-from . import report, make
+from . import make, report
 from .classes import Doc
 from .make import table, wrap
 
@@ -135,14 +134,18 @@ def write_graph_to_file(graph: Graph, filename: str = "graph.dot") -> None:
             df.write(line)
 
 
-def convert_dot_to_svg(dotfile: str, svgfile: str = "") -> Tuple[int, str, str, str]:
+def convert_dot_to_svg(
+    dotfile: str, svgfile: str = "", rankdir: Literal["LR", "TB"] = "TB"
+) -> Tuple[int, str, str, str]:
     """Invoke dot to convert .dot to .svg"""
 
     dirname, dotname = os.path.split(dotfile)
     name, _ = os.path.splitext(dotname)
     if not svgfile:
         svgfile = os.path.join(dirname, name + ".svg")
-    command = f"dot -Gpad=1 -Nfontsize=12 -Tsvg -o {svgfile} {dotfile}"
+    command = (
+        f"dot -Grankdir={rankdir} -Gpad=1 -Nfontsize=12 -Tsvg -o {svgfile} {dotfile}"
+    )
     with sp.Popen(command, shell=True, stdout=sp.PIPE, stderr=sp.PIPE) as proc:
         stdout, stderr = proc.communicate()
     return proc.returncode, stdout.decode(), stderr.decode(), svgfile

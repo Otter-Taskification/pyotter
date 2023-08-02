@@ -1,9 +1,9 @@
 import sqlite3
 from collections import defaultdict
-from typing import Any, Iterable, Tuple, Generator, Optional, List
+from typing import Any, Generator, Iterable, List, Optional, Tuple
 
-from ..definitions import TaskAttributes, SourceLocation
 from .. import log
+from ..definitions import SourceLocation, TaskAttributes
 from . import query, scripts
 
 
@@ -25,7 +25,25 @@ class Connection(sqlite3.Connection):
 
     def __init__(self, db: str, **kwargs):
         super().__init__(db, **kwargs)
+        self.db = db
         self.row_factory = Row
+
+    def print_summary(self) -> None:
+        """Print summary information about the connected tasks database"""
+
+        print(f"=== Summary of {self.db} ===")
+
+        row_format = "{0:<8s} {1:20s} ({2} rows)"
+
+        rows = self.execute(
+            "select name, type from sqlite_schema where type in ('table', 'view')"
+        ).fetchall()
+
+        for row in rows:
+            query_count_rows = f"select count(*) as rows from {row['name']}"
+            log.debug(query_count_rows)
+            count = self.execute(query_count_rows).fetchone()
+            print(row_format.format(row["type"], row["name"], count["rows"]))
 
     def children_of(self, parent: int) -> Tuple[int]:
         cur = self.cursor()
@@ -68,8 +86,10 @@ class Connection(sqlite3.Connection):
 
         cur = self.cursor()
         cur.row_factory = row_factory
-        results = cur.execute(scripts.count_children_by_parent_attributes)
-        return results.fetchall()
+        cur.execute(scripts.count_children_by_parent_attributes)
+        results = cur.fetchall()
+        log.debug("got %d rows", len(results))
+        return results
 
     def child_sync_points(self, task: int, debug: bool = False) -> Tuple[Any]:
         """Get the sequences of child tasks synchronised during a task."""

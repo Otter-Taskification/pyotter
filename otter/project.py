@@ -1,21 +1,24 @@
 from __future__ import annotations
-import sys
+
 import os
 
 # TODO: sqlite3 should be internal to otter.db
 import sqlite3
+import sys
 from collections import defaultdict
 from contextlib import closing
 from itertools import count
-from typing import Any, AnyStr, List, Dict, Iterable, Set, Tuple
+from typing import Any, AnyStr, Dict, Iterable, List, Set, Tuple
+
 import igraph as ig
 from otf2 import LocationType as OTF2Location
 from otf2.definitions import Attribute as OTF2Attribute
-from . import db, log, utils, reporting
+
+from . import db, log, reporting, utils
+from .core.chunks import Chunk
 from .core.event_model.event_model import EventModel, get_event_model
 from .core.events import Event, Location
 from .core.tasks import TaskRegistry, TaskSynchronisationContext
-from .core.chunks import Chunk
 from .definitions import Attr, SourceLocation, TaskAttributes
 from .reader import get_otf2_reader
 
@@ -24,46 +27,40 @@ class Project:
     """Prepare to use an anchorfile as input"""
 
     def __init__(self, anchorfile: str, debug: bool = False) -> None:
+        self.log = log.get_logger("main")
+
         self.debug = debug
-        self.log = log.get_logger("project")
-        self.project_root: str = os.path.dirname(anchorfile)
-        self.anchorfile = anchorfile
+        if self.debug:
+            log.debug("using project: %s", self)
+
+        self.anchorfile = os.path.abspath(anchorfile)
+        if not os.path.isfile(self.anchorfile):
+            log.error("no such file: %s", self.anchorfile)
+            raise SystemExit(1)
+
+        self.project_root: str = os.path.dirname(self.anchorfile)
         self.aux_dir = "aux"
-        self.debug_dir = "debug_output"
         self.maps_file = self.abspath(os.path.join(self.aux_dir, "maps"))
+
+        if not os.path.isdir(self.abspath(self.aux_dir)):
+            log.error("directory not found: %s", self.abspath(self.aux_dir))
+            raise SystemExit(1)
+        if not os.path.isfile(self.maps_file):
+            log.error("no such file: %s", self.maps_file)
+            raise SystemExit(1)
+
+        self.debug_dir = "debug_output"
         self.source_location_db = self.abspath(os.path.join(self.aux_dir, "srcloc.db"))
         self.tasks_db = self.abspath(os.path.join(self.aux_dir, "tasks.db"))
         self.return_addresses: Set[int] = set()
         self.event_model = None
         self.task_registry = TaskRegistry()
         self.chunks: list[Chunk] = []
-        if self.debug:
-            self.log.debug("using project: %s", self)
-        aux_dir = self.abspath(self.aux_dir)
-        if not os.path.isdir(aux_dir):
-            self.log.error("directory not found: %s", aux_dir)
-            raise SystemExit(1)
-        if not os.path.isfile(self.maps_file):
-            self.log.error("no such file: %s", self.maps_file)
-            raise SystemExit(1)
-        self.log.info("Found maps file: %s", self.maps_file)
 
-    def prepare_environment(self) -> None:
-        """Prepare the environment - create any folders, databases, etc required by the project"""
-
-        debug_dir = self.abspath(self.debug_dir)
-        self.log.info("preparing environment")
-        if self.debug:
-            if not os.path.exists(debug_dir):
-                os.mkdir(debug_dir)
-        if os.path.exists(self.tasks_db):
-            self.log.warning("overwriting tasks database %s", self.tasks_db)
-            os.remove(self.tasks_db)
-        else:
-            self.log.info("creating tasks database %s", self.tasks_db)
-        with closing(sqlite3.connect(self.tasks_db)) as con:
-            con.executescript(db.scripts.create_tasks)
-            con.executescript(db.scripts.create_views)
+        log.info("project root:  %s", self.project_root)
+        log.info("anchorfile:    %s", self.anchorfile)
+        log.info("maps file:     %s", self.maps_file)
+        log.info("tasks:         %s", self.tasks_db)
 
     def abspath(self, relname: str) -> AnyStr:
         """Get the absolute path of an internal folder"""
@@ -73,6 +70,33 @@ class Project:
         """Return a connection to this project's tasks db for use in a with-block"""
 
         return closing(db.Connection(self.tasks_db))
+
+    def quit(self) -> None:
+        "quit the project"
+
+        log.info("done - quitting")
+        raise SystemExit(0)
+
+
+class UnpackTraceProject(Project):
+    """Unpack a trace"""
+
+    def prepare_environment(self) -> None:
+        """Prepare the environment - create any folders, databases, etc required by the project"""
+
+        debug_dir = self.abspath(self.debug_dir)
+        log.info("preparing environment")
+        if self.debug:
+            if not os.path.exists(debug_dir):
+                os.mkdir(debug_dir)
+        if os.path.exists(self.tasks_db):
+            log.warning("overwriting tasks database %s", self.tasks_db)
+            os.remove(self.tasks_db)
+        else:
+            log.info("creating tasks database %s", self.tasks_db)
+        with closing(sqlite3.connect(self.tasks_db)) as con:
+            con.executescript(db.scripts.create_tasks)
+            con.executescript(db.scripts.create_views)
 
     def process_trace(self, con: sqlite3.Connection) -> Project:
         """Read a trace and create a database of tasks and their synchronisation constraints"""
@@ -84,9 +108,9 @@ class Project:
                 self.task_registry,
                 gather_return_addresses=self.return_addresses,
             )
-            self.log.info("found event model name: %s", event_model_name)
-            self.log.info("using event model: %s", self.event_model)
-            self.log.info("reading tasks")
+            log.info("found event model name: %s", event_model_name)
+            log.info("using event model: %s", self.event_model)
+            log.info("reading tasks")
             attributes: Dict[str, OTF2Attribute] = {
                 attr.name: attr for attr in reader.definitions.attributes
             }
@@ -118,16 +142,70 @@ class Project:
                 con.executemany(db.scripts.insert_context, context_meta)
                 con.commit()
         if self.debug:
-            self.log.debug("task registry encountered the following task attributes:")
+            log.debug("task registry encountered the following task attributes:")
             for name in sorted(self.task_registry.attributes):
-                self.log.debug(" -- %s", name)
+                log.debug(" -- %s", name)
         return self
 
-    def quit(self) -> None:
-        "quit the project"
+    def write_tasks_to_db(self, con: sqlite3.Connection) -> None:
+        """Write a trace's tasks to a db"""
 
-        self.log.info("done - quitting")
-        raise SystemExit(0)
+        log.info("Writing tasks to %s", self.tasks_db)
+
+        # Create unique labels for distinct source locations
+        source_location_id: Dict[SourceLocation, int] = utils.CountingDict(count())
+        string_id: Dict[str, int] = utils.CountingDict(count())
+
+        # Write the tasks and their source locations
+        for tasks in utils.batched(self.task_registry, 1000):
+            task_data = (
+                (
+                    task.id,
+                    str(task.start_ts),
+                    str(task.end_ts),
+                    task.naive_duration,
+                    source_location_id[task.init_location],
+                    source_location_id[task.start_location],
+                    source_location_id[task.end_location],
+                    task.task_flavour,
+                    string_id[task.task_label],
+                )
+                for task in tasks
+            )
+            con.executemany(db.scripts.insert_tasks, task_data)
+
+        con.commit()
+
+        # Write the definitions of the source locations, mapping their IDs to string IDs
+        source_location_definitions = (
+            (
+                locid,
+                string_id[location.file],
+                string_id[location.func],
+                location.line,
+            )
+            for (location, locid) in source_location_id.items()
+        )
+        con.executemany(db.scripts.define_source_locations, source_location_definitions)
+
+        # Write the string definitions mapping ID to the string value
+        string_definitions = (
+            (string_key, string) for (string, string_key) in string_id.items()
+        )
+        con.executemany(db.scripts.define_strings, string_definitions)
+
+        # Write the task parent-child relationships
+        all_relations = (
+            (task.id, child_id)
+            for task in iter(self.task_registry)
+            for child_id in task.iter_children()
+        )
+        for relations in utils.batched(all_relations, 1000):
+            con.executemany(db.scripts.insert_task_relations, relations)
+        con.commit()
+
+        (tasks_inserted,) = con.execute(db.scripts.count_tasks).fetchone()
+        log.info("wrote %s tasks", tasks_inserted)
 
 
 class BuildGraphFromDB(Project):
@@ -358,14 +436,12 @@ class BuildGraphFromDB(Project):
 def unpack_trace(anchorfile: str, debug: bool = False) -> None:
     """unpack a trace into a database for querying"""
 
-    try:
-        project = Project(anchorfile, debug=debug)
-    except NotADirectoryError as err:
-        log.error("directory not found: %s", err)
-        raise SystemExit(1) from err
+    project = UnpackTraceProject(anchorfile, debug=debug)
     project.prepare_environment()
     with project.connection() as con:
         project.process_trace(con)
+        project.write_tasks_to_db(con)
+        con.print_summary()
     project.quit()
 
 
@@ -373,13 +449,21 @@ def show_task_hierarchy(anchorfile: str, dotfile: str, debug: bool = False) -> N
     """Show the task hierarchy of a trace"""
 
     project = BuildGraphFromDB(anchorfile, debug=debug)
+    log.debug("project=%s", project)
 
     graph = ig.Graph(directed=True)
     vertices: dict[TaskAttributes, ig.Vertex] = defaultdict(
         lambda: graph.add_vertex(shape="plain", style="filled")
     )
+
     with project.connection() as con:
+        log.debug("fetching data")
         rows = con.parent_child_attributes()
+
+    if len(rows) == 0:
+        log.error("no task hierarchy data was returned")
+        raise SystemExit(1)
+
     for parent, child, total in rows:
         if not child.is_null():
             graph.add_edge(vertices[parent], vertices[child], label=total)
@@ -391,7 +475,16 @@ def show_task_hierarchy(anchorfile: str, dotfile: str, debug: bool = False) -> N
         vertex["color"] = f"#{r:02x}{g:02x}{b:02x}"
 
     reporting.write_graph_to_file(graph, filename=dotfile)
-    project.log.info("task hierarchy graph written to %s", dotfile)
+
+    result, _, stderr, svgfile = reporting.convert_dot_to_svg(
+        dotfile=dotfile, rankdir="LR"
+    )
+    if result != 0:
+        for line in stderr:
+            print(line, file=sys.stderr)
+    else:
+        os.unlink(dotfile)
+        print(f"task hierarchy graph written to {svgfile}")
     project.quit()
 
 
@@ -439,3 +532,12 @@ def show_control_flow_graph(
             print(line, file=sys.stderr)
     else:
         project.log.info("cfg for task %d written to %s", task, svgfile)
+
+
+def summarise_tasks_db(anchorfile: str, debug: bool = False) -> None:
+    """Print summary information about a tasks database"""
+
+    project = BuildGraphFromDB(anchorfile, debug=debug)
+
+    with project.connection() as con:
+        con.print_summary()

@@ -1,121 +1,205 @@
-def get_args(argv: list[str] | None = None):
-    import argparse
+"""Handle argument parsing"""
 
-    parser = argparse.ArgumentParser(
-        description="Convert an Otter OTF2 trace archive to its execution graph representation",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+import argparse
+from enum import Enum
 
-    parser.add_argument("anchorfile", help="OTF2 anchor file")
-    parser.add_argument(
-        "-r",
-        "--report",
-        dest="report",
-        help="directory where report output should be saved. If the specified folder already exists, will fail unless --force also specified.",
-    )
-    parser.add_argument(
-        "-f",
-        "--force",
-        dest="force",
-        action="store_true",
-        default=False,
-        help="overwrite the report directory if it already exists",
-    )
-    parser.add_argument(
-        "-i",
-        "--interact",
-        action="store_true",
-        dest="interact",
-        help="drop to an interactive shell upon completion",
-    )
+
+class Action(str, Enum):
+    """Defines the available actions"""
+
+    UNPACK = "unpack"
+    SHOW = "show"
+    SUMMARY = "summary"
+
+
+class GraphType(str, Enum):
+    """Defines the graph types available to do_show()"""
+
+    CFG = "cfg"  # control-flow graph
+    HIER = "hier"  # task hierarchy
+
+
+class LoggingLevel(str, Enum):
+    """Logging levels"""
+
+    DEBUG = "debug"
+    INFO = "info"
+    WARN = "warn"
+    ERROR = "error"
+
+    @classmethod
+    @property
+    def levels(cls) -> list[str]:
+        return [level.value for level in cls]
+
+
+description_action = {
+    Action.UNPACK: "unpack an Otter OTF2 trace and prepare it for querying by other Otter actions",
+    Action.SHOW: "visualise a chosen task's graph or the task hierarchy",
+    Action.SUMMARY: "print some summary information about the tasks database",
+}
+
+
+description_show = {
+    GraphType.CFG: "show the control-flow graph of a chosen task",
+    GraphType.HIER: "show the task hierarchy",
+}
+
+
+def add_common_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add common arguments to a parser"""
+
     parser.add_argument(
         "--loglevel",
         dest="loglevel",
-        default="WARN",
-        choices=["DEBUG", "INFO", "WARN", "ERROR"],
-        help="logging level",
+        default=LoggingLevel.WARN.value,
+        choices=LoggingLevel.levels,
+        help=f"logging level ({', '.join(LoggingLevel.levels)})",
+        metavar="level",
     )
-    parser.add_argument(
-        "--logdir", dest="logdir", default="otter-logs", help="logging directory"
-    )
-    parser.add_argument("--profile", dest="profile", help="profiling output")
-    parser.add_argument(
-        "--project",
-        dest="project",
-        help="project type",
-        choices=["SimpleProject", "DBProject", "ReadTasksProject", "BuildGraphFromDB"],
-        default="SimpleProject",
-    )
-    parser.add_argument(
-        "--warn-deprecated",
-        dest="warnings",
-        help="Allow warnings about deprecated code",
-        action="append_const",
-        const=DeprecationWarning,
-    )
-    parser.add_argument(
-        "--warn-user",
-        dest="warnings",
-        help="Allow user warnings",
-        action="append_const",
-        const=UserWarning,
-    )
-    parser.add_argument(
-        "--warn-all", dest="warn_all", help="Turn on all warnings", action="store_true"
-    )
-    args = parser.parse_args(argv)
 
-    # if args.report is None:
-    # parser.error("must specify the report output path with --report")
-    # args.report = "otter-report"
+    parser.add_argument(
+        "--logdir",
+        dest="logdir",
+        default="otter-logs",
+        help="logging directory",
+        metavar="dir",
+    )
 
-    try:
-        check_args(args)
-    except FileNotFoundError as E:
-        print(f"File not found: {E}")
-        quit()
-    except FileExistsError as E:
-        print(f"File already exists: {E}")
-        quit()
+    parser.add_argument(
+        "--profile",
+        dest="profile",
+        metavar="file",
+        help="profiling output file",
+    )
 
+    parser.add_argument(
+        "-v",
+        "--version",
+        dest="version",
+        action="store_true",
+        help="print version information and exit",
+    )
+
+    parser.add_argument(
+        "--print-args",
+        dest="print_args",
+        action="store_true",
+        help="print arguments passed to Otter",
+    )
+
+
+def prepare_parser():
+    """Prepare argument parser for otter.main.select_action()"""
+
+    formatter_class = argparse.ArgumentDefaultsHelpFormatter
+    parser = argparse.ArgumentParser(formatter_class=formatter_class)
+
+    # subparsers for each action (unpack, show, ...)
+    subparse_action = parser.add_subparsers(
+        dest="action", metavar="action", required=False
+    )
+    add_common_arguments(parser)
+
+    # parse the unpack action
+    parse_action_unpack = subparse_action.add_parser(
+        Action.UNPACK.value,
+        help=description_action[Action.UNPACK],
+        description=description_action[Action.UNPACK],
+        formatter_class=formatter_class,
+    )
+    parse_action_unpack.add_argument(
+        "anchorfile", help="the Otter OTF2 anchorfile to use"
+    )
+    add_common_arguments(parse_action_unpack)
+
+    parse_action_summary = subparse_action.add_parser(
+        Action.SUMMARY.value,
+        help=description_action[Action.SUMMARY],
+        description=description_action[Action.SUMMARY],
+        formatter_class=formatter_class,
+    )
+    parse_action_summary.add_argument(
+        "anchorfile", help="the Otter OTF2 anchorfile to use"
+    )
+    add_common_arguments(parse_action_summary)
+
+    # parse the show action
+    parse_action_show = subparse_action.add_parser(
+        Action.SHOW.value,
+        help=description_action[Action.SHOW],
+        description=description_action[Action.SHOW],
+        formatter_class=formatter_class,
+    )
+
+    # subparsers for each graph type to show (cfg, hier, ...)
+    subparse_action_show = parse_action_show.add_subparsers(dest="show")
+
+    # parse the action "show cfg"
+    parser_show_cfg = subparse_action_show.add_parser(
+        GraphType.CFG.value,
+        help=description_show[GraphType.CFG],
+        description=description_show[GraphType.CFG],
+        formatter_class=formatter_class,
+    )
+    parser_show_cfg.add_argument("task", help="task ID", type=int)
+    parser_show_cfg.add_argument(
+        "-o",
+        "--out",
+        dest="dotfile",
+        metavar="dotfile",
+        help="where to save the graph",
+        default="cfg_{task}.dot",
+    )
+    parser_show_cfg.add_argument(
+        "-s",
+        "--style",
+        dest="style",
+        help="apply styling to the graph",
+        action="store_true",
+        default=False,
+    )
+    parser_show_cfg.add_argument(
+        "--simple",
+        dest="simple",
+        help="create a simplified graph",
+        action="store_true",
+        default=False,
+    )
+    parser_show_cfg.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
+    add_common_arguments(parser_show_cfg)
+
+    # parse the action "show hier"
+    parser_show_hier = subparse_action_show.add_parser(
+        GraphType.HIER.value,
+        help=description_show[GraphType.HIER],
+        description=description_show[GraphType.HIER],
+        formatter_class=formatter_class,
+    )
+    parser_show_hier.add_argument(
+        "-o",
+        "--out",
+        dest="dotfile",
+        metavar="dotfile",
+        help="where to save the graph",
+        default="hier.dot",
+    )
+    parser_show_hier.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
+    add_common_arguments(parser_show_hier)
+
+    return parser
+
+
+def parse():
+    """Parse args for otter.main.select_action()"""
+
+    parser = prepare_parser()
+    args = parser.parse_args()
     return args
 
 
-def check_args(args):
-    import os
+def print_help() -> None:
+    """Print help for otter.main.select_action()"""
 
-    if args.warn_all:
-        args.warnings = [cls for cls in Warning.__subclasses__()]
-    elif args.warnings is None:
-        args.warnings = list()
-
-    # Anchorfile must exist
-    if not os.path.isfile(args.anchorfile):
-        raise FileNotFoundError(args.anchorfile)
-    args.anchorfile = os.path.abspath(args.anchorfile)
-
-    if args.report is not None:
-        # Ensure report path is normalised
-        if not os.path.isabs(args.report):
-            args.report = os.path.join(os.getcwd(), args.report)
-        args.report = os.path.normpath(args.report)
-
-        # Report parent directory must exist
-        parent = os.path.dirname(args.report)
-        if not os.path.isdir(parent):
-            raise FileNotFoundError(os.path.dirname(args.report))
-
-        # Report path must not exist, unless overridden with --force
-        if os.path.isdir(args.report) and not args.force:
-            raise FileExistsError(f"{args.report}")
-
-    # log dir must be normalised
-    if not os.path.isabs(args.logdir):
-        args.logdir = os.path.join(os.getcwd(), args.logdir)
-    args.logdir = os.path.normpath(args.logdir)
-
-    # log dir must exist
-    if not os.path.isdir(args.logdir):
-        os.mkdir(args.logdir)
-
-    return
+    parser = prepare_parser()
+    parser.print_help()
