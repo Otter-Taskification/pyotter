@@ -5,54 +5,10 @@ from typing import Literal, Optional, Tuple
 
 from igraph import Graph
 
-from ..definitions import TaskAttributes
 from ..log import logger_getter
-from . import make, report
-from .classes import Doc
-from .make import table, wrap
+from .make import graphviz_record_table
 
 get_module_logger = logger_getter("edges")
-
-
-def write_report(args, g, tasks):
-    import csv
-    import os
-
-    from .. import styling
-
-    task_tree = tasks.task_tree()
-    task_attributes = tasks.attributes
-
-    report.create_report_dirs(args)
-
-    # Save graphs
-    for obj, name in [(g, "graph"), (task_tree, "tree")]:
-        dot = os.path.join(args.report, "data", f"{name}.dot")
-        svg = os.path.join(args.report, "img", f"{name}.svg")
-        report.save_graph_to_dot(obj, dot)
-        report.convert_to_svg(dot, svg)
-
-    # Write HTML report
-    html = report.prepare_html(args, tasks)
-    html_file = os.path.join(args.report, "report.html")
-    get_module_logger().info(f"writing report: {html_file}")
-    with open(html_file, "w") as f:
-        f.write(html)
-
-    # Save task data to csv
-    with open(os.path.join(args.report, "data", "task_attributes.csv"), "w") as csvfile:
-        writer = csv.DictWriter(csvfile, task_attributes)
-        writer.writerow(
-            {
-                key: styling.task_attribute_names.get(
-                    key, f"unknown task attribute {key=}"
-                )
-                for key in task_attributes
-            }
-        )
-        writer.writerows(tasks.data)
-
-    return
 
 
 # distinctipy.get_colors(15, pastel_factor=0.7)
@@ -107,9 +63,10 @@ def colour_picker():
 
 def as_html_table(content: dict, table_attr: Optional[dict] = None) -> str:
     """Convert a task's attributes into a formatted html-like graphviz table"""
+
     if table_attr is None:
         table_attr = {"td": {"align": "left", "cellpadding": "6px"}}
-    label_body = make.graphviz_record_table(content, table_attr=table_attr)
+    label_body = graphviz_record_table(content, table_attr=table_attr)
     return f"<{label_body}>"
 
 

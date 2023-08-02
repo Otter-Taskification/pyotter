@@ -1,39 +1,34 @@
+from abc import ABC, abstractmethod
+from collections import defaultdict, deque
+from itertools import islice
 from typing import (
-    Protocol,
+    Any,
+    Callable,
+    Deque,
     Dict,
     Iterable,
-    Any,
-    TypeVar,
-    Type,
-    Deque,
-    Tuple,
-    Optional,
     List,
-    Callable,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
 )
-from collections import defaultdict, deque
-from abc import ABC, abstractmethod
-from itertools import islice
-from loggingdecorators import on_init
+
 from igraph import Graph
-from otter.definitions import (
-    EventModel,
-    Attr,
-    TaskStatus,
-    EventType,
-    RegionType,
-    EdgeType,
-    Endpoint,
-    TaskType,
-    TaskSyncType,
-    SourceLocation,
-)
+
 from otter.core.chunks import Chunk
 from otter.core.events import Event, Location
-from otter.core.tasks import TaskRegistry, NullTask, Task, TaskSynchronisationContext
+from otter.core.tasks import NullTask, Task, TaskRegistry, TaskSynchronisationContext
+from otter.definitions import (
+    Attr,
+    EventModel,
+    EventType,
+    RegionType,
+    SourceLocation,
+    TaskSyncType,
+)
 from otter.log import logger_getter
 from otter.utils.typing import Decorator
-from otter.utils import transpose_list_to_dict
 
 # Type hint aliases
 EventList = List[Event]
@@ -58,12 +53,6 @@ class EventModelProtocol(Protocol):
     def yield_chunks(
         self, events_iter: Iterable[Tuple[Location, Event]]
     ) -> Iterable[Chunk]:
-        pass
-
-    def chunk_to_graph(self, chunk: Chunk) -> Graph:
-        pass
-
-    def combine_graphs(self, graphs: Iterable[Graph]) -> Graph:
         pass
 
     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
@@ -153,12 +142,6 @@ class BaseEventModel(ABC):
         event_type: EventType, region_type: Optional[RegionType] = None
     ) -> ChunkUpdateHandlerKey:
         return region_type, event_type
-
-    def warn_for_incomplete_chunks(self, chunks: Iterable[Chunk]) -> None:
-        chunks_stored = set(self.chunk_dict.values())
-        chunks_returned = set(chunks)
-        for incomplete in chunks_stored - chunks_returned:
-            warn(f"Chunk was never returned:\n{incomplete}", category=UserWarning)
 
     @abstractmethod
     def event_completes_chunk(self, event: Event) -> bool:
@@ -272,11 +255,6 @@ class BaseEventModel(ABC):
     def append_to_encountering_task_chunk(self, event: Event) -> None:
         self.chunk_dict[event.encountering_task_id].append_event(event)
 
-    @staticmethod
-    @abstractmethod
-    def get_augmented_event_attributes(event: Event) -> Dict:
-        raise NotImplementedError()
-
     @abstractmethod
     def get_task_data(self, event: Event) -> Task:
         raise NotImplementedError()
@@ -290,12 +268,6 @@ class BaseEventModel(ABC):
     def get_task_end_location(self, event: Event) -> SourceLocation:
         """For an event which represents the end of a task, get the source location of this event"""
         raise NotImplementedError()
-
-    @classmethod
-    def unpack(cls, event_list: List[Event]) -> Dict:
-        return transpose_list_to_dict(
-            [cls.get_augmented_event_attributes(event) for event in event_list]
-        )
 
     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
         contexts = list()

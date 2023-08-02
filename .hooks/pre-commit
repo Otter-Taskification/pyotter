@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 
 printf "running %s\n" "$0"
-to_format=$(git diff --name-only --cached | cut -f 2 | grep ".py$")
+to_format=$(git diff --name-only --cached --diff-filter=ACMRTUXB | cut -f 2 | grep ".py$")
 [[ -z "${to_format}" ]] && echo "nothing to format" && exit 0
 black ${to_format} || exit $?
 git add ${to_format} || exit $?

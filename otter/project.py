@@ -14,13 +14,14 @@ import igraph as ig
 from otf2 import LocationType as OTF2Location
 from otf2.definitions import Attribute as OTF2Attribute
 
-from . import db, log, reporting, utils
+from . import db, log, reporting
 from .core.chunks import Chunk
 from .core.event_model.event_model import EventModel, get_event_model
 from .core.events import Event, Location
 from .core.tasks import TaskRegistry, TaskSynchronisationContext
 from .definitions import Attr, SourceLocation, TaskAttributes
 from .reader import get_otf2_reader
+from .utils import CountingDict, batched
 
 
 class Project:
@@ -122,9 +123,7 @@ class UnpackTraceProject(Project):
                 (locations[location], Event(event, attributes))
                 for location, event in reader.events
             )
-            context_id: Dict[TaskSynchronisationContext, int] = utils.CountingDict(
-                count()
-            )
+            context_id: Dict[TaskSynchronisationContext, int] = CountingDict(count())
             for chunk in self.event_model.yield_chunks(event_iter):
                 contexts = self.event_model.contexts_of(chunk)
                 context_ids = []
@@ -153,11 +152,11 @@ class UnpackTraceProject(Project):
         log.info("Writing tasks to %s", self.tasks_db)
 
         # Create unique labels for distinct source locations
-        source_location_id: Dict[SourceLocation, int] = utils.CountingDict(count())
-        string_id: Dict[str, int] = utils.CountingDict(count())
+        source_location_id: Dict[SourceLocation, int] = CountingDict(count())
+        string_id: Dict[str, int] = CountingDict(count())
 
         # Write the tasks and their source locations
-        for tasks in utils.batched(self.task_registry, 1000):
+        for tasks in batched(self.task_registry, 1000):
             task_data = (
                 (
                     task.id,
@@ -200,7 +199,7 @@ class UnpackTraceProject(Project):
             for task in iter(self.task_registry)
             for child_id in task.iter_children()
         )
-        for relations in utils.batched(all_relations, 1000):
+        for relations in batched(all_relations, 1000):
             con.executemany(db.scripts.insert_task_relations, relations)
         con.commit()
 

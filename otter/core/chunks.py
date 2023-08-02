@@ -1,18 +1,11 @@
-from collections import defaultdict, deque
-from functools import cached_property
-from typing import List, Iterable, Deque, Optional
-from itertools import islice
-import igraph as ig
+from collections import deque
+from typing import Deque, Iterable, Optional
+
 from loggingdecorators import on_init
 
-import otter
-
-# from .. import log
-from ..log import logger_getter, DEBUG
 from .. import definitions as defn
-from .tasks import TaskRegistry, TaskSynchronisationContext, NullTask
-from .events import is_event, Event
-from ..utils.decorators import warn_deprecated
+from ..log import DEBUG, logger_getter
+from .events import Event
 
 get_module_logger = logger_getter("chunks")
 

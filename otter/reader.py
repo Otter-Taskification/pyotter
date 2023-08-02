@@ -1,14 +1,16 @@
 from contextlib import closing
-from typing import Dict, Any, Union
+from typing import Any, Dict
+
 from otf2.reader import Reader
-from otter.definitions import TraceAttr, EventModel
+
+from otter.definitions import EventModel, TraceAttr
 
 try:
-    from _otf2 import Reader_GetPropertyNames, Reader_GetProperty
+    from _otf2 import Reader_GetProperty, Reader_GetPropertyNames
 except ImportError as err:
 
     def Reader_GetPropertyNames(*_):
-        return list()
+        return []
 
     def Reader_GetProperty(self, property_name: str) -> str:
         raise AttributeError(f"property '{property_name}' not defined")
@@ -35,9 +37,6 @@ class OTF2Reader(Reader):
         return EventModel(self.get_property(TraceAttr.event_model))
 
 
-ClosingOTF2Reader = closing[OTF2Reader]
-
-
-def get_otf2_reader(*args, **kwargs) -> ClosingOTF2Reader:
+def get_otf2_reader(*args, **kwargs) -> closing[OTF2Reader]:
     # allows _OTF2Reader to be used in a with-block
     return closing(OTF2Reader(*args, **kwargs))

@@ -1,41 +1,65 @@
-from .classes import tag
 from collections import defaultdict
+from contextlib import contextmanager
+
+from .utils import renamekwargs
+
+
+class Tag:
+    def __init__(self, name, **kwargs):
+        self._name = name
+        self._kwargs = renamekwargs(kwargs)
+        self._content: list[str] = []
+
+    def __enter__(self):
+        args = list()
+        for key, value in self._kwargs.items():
+            if isinstance(value, str):
+                value = f'"{value}"'
+            args.append(f"{key}={value}")
+        args = " ".join(args)
+        self._content = [f"<{self._name}", f" {args}" if args else "", ">"]
+        self._content = ["".join(self._content)]
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._content.append(f"</{self._name}>")
+        return self
+
+    def __repr__(self):
+        return "".join(str(item) for item in self._content)
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __iter__(self):
+        return iter(self._content)
+
+    def append(self, content):
+        self._content.append(content)
+
+    def extend(self, content):
+        self._content.extend(content)
+
+    @contextmanager
+    def add(self, t):
+        with t:
+            yield t
+        self.extend(t)
 
 
 def wrap(name, content, **kwargs):
-    with tag(name, **kwargs) as t:
+    with Tag(name, **kwargs) as tag:
         if content is not None:
-            t.append(content)
-    return t
-
-
-def table(keys: list, tidy_keys: dict, rows: list, na_value=None, **kwargs):
-    attr = defaultdict(lambda: dict(), kwargs.get("attr", dict()))
-
-    with tag("table", **attr["table"]) as t:
-        with t.add(tag("thead")) as thead:
-            with thead.add(tag("tr", **attr["tr"])) as trow:
-                for key in keys:
-                    trow.append(wrap("th", tidy_keys.get(key, f"UNKNOWN COLUMN {key}")))
-
-        with t.add(tag("tbody")) as tbody:
-            for row in rows:
-                with tbody.add(tag("tr")) as trow:
-                    for key in keys:
-                        value = row.get(key, f"NO VALUE FOR KEY {key}")
-                        if value is None and na_value is not None:
-                            value = na_value
-                        trow.append(wrap("td", value))
-
-    return t
+            tag.append(content)
+    return tag
 
 
 def graphviz_record_table(object_attr: dict, **kwargs):
     """A HTML-like table where each row represents one key-value pair of some object's attributes"""
     table_attr = defaultdict(lambda: dict(), kwargs.get("table_attr", dict()))
-    with tag("table", **table_attr["table"]) as t:
+    with Tag("table", **table_attr["table"]) as t:
         for key, value in object_attr.items():
-            with t.add(tag("tr", **table_attr["tr"])) as tr:
+            with t.add(Tag("tr", **table_attr["tr"])) as tr:
                 tr.append(wrap("td", wrap("b", key), **table_attr["td"]))
                 tr.append(wrap("td", value, **table_attr["td"]))
     return t

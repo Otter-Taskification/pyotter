@@ -1,19 +1,16 @@
 from collections import deque
 from typing import Dict
+
 from loggingdecorators import on_init
-from .. import log
-from .. import definitions as defn
-from ..definitions import Attr
-from otf2.definitions import Attribute as OTF2Attribute
 from otf2 import LocationType as OTF2Location
+from otf2.definitions import Attribute as OTF2Attribute
 from otf2.events import _Event as OTF2Event
 
-get_module_logger = log.logger_getter("events")
+from .. import definitions as defn
+from .. import log
+from ..definitions import Attr
 
-is_event = lambda item: isinstance(item, Event)
-all_events = lambda args: all(map(is_event, args))
-any_events = lambda args: any(map(is_event, args))
-is_event_list = lambda args: isinstance(args, list) and all_events(args)
+get_module_logger = log.logger_getter("events")
 
 
 class Location:
