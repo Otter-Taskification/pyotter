@@ -20,4 +20,4 @@ def _find_dot_or_die():
 
 _find_dot_or_die()
 
-from . import args, core, log, main, project, reader, reporting, utils
+from . import args, core, log, main, profile, project, reader, reporting, utils

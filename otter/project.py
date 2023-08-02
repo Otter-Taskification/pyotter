@@ -72,12 +72,6 @@ class Project:
 
         return closing(db.Connection(self.tasks_db))
 
-    def quit(self) -> None:
-        "quit the project"
-
-        log.info("done - quitting")
-        raise SystemExit(0)
-
 
 class UnpackTraceProject(Project):
     """Unpack a trace"""
@@ -441,7 +435,6 @@ def unpack_trace(anchorfile: str, debug: bool = False) -> None:
         project.process_trace(con)
         project.write_tasks_to_db(con)
         con.print_summary()
-    project.quit()
 
 
 def show_task_hierarchy(anchorfile: str, dotfile: str, debug: bool = False) -> None:
@@ -484,7 +477,6 @@ def show_task_hierarchy(anchorfile: str, dotfile: str, debug: bool = False) -> N
     else:
         os.unlink(dotfile)
         print(f"task hierarchy graph written to {svgfile}")
-    project.quit()
 
 
 def show_control_flow_graph(

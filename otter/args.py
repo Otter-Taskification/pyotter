@@ -93,7 +93,7 @@ def prepare_parser():
     """Prepare argument parser for otter.main.select_action()"""
 
     formatter_class = argparse.ArgumentDefaultsHelpFormatter
-    parser = argparse.ArgumentParser(formatter_class=formatter_class)
+    parser = argparse.ArgumentParser(formatter_class=formatter_class, prog="otter")
 
     # subparsers for each action (unpack, show, ...)
     subparse_action = parser.add_subparsers(
