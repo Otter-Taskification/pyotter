@@ -1,7 +1,4 @@
-try:
-    from importlib import metadata
-except ImportError:
-    import importlib_metadata as metadata
+from importlib import metadata  # since 3.8
 
 __version__ = metadata.version("otter")
 
