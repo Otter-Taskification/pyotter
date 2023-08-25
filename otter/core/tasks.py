@@ -1,12 +1,16 @@
+from __future__ import annotations
+
+from collections import deque
+from dataclasses import asdict, dataclass, field, fields
 from functools import lru_cache
 from itertools import chain
-from collections import deque
-from typing import Iterable, Deque, List
-from dataclasses import dataclass, field, fields, asdict
+from typing import Deque, Iterable, List
+
 import igraph as ig
 from loggingdecorators import on_init
+
 from .. import log
-from ..definitions import NullTaskID, TaskType, SourceLocation
+from ..definitions import NullTaskID, SourceLocation, TaskType
 
 get_module_logger = log.logger_getter("tasks")
 VoidLocation = SourceLocation()
@@ -83,7 +87,7 @@ class Task:
     exclusive_duration: int = field(init=False, default=None)
     naive_duration: int = field(init=False, default=None)
 
-    @on_init(logger=log.logger_getter("init_logger"))
+    # @on_init(logger=log.logger_getter("init_logger"))
     def __post_init__(self):
         self.logger = get_module_logger()
         self._children: Deque[int] = deque()

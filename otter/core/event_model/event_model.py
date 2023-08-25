@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from itertools import islice
@@ -11,10 +13,7 @@ from typing import (
     Optional,
     Protocol,
     Tuple,
-    Type,
 )
-
-from igraph import Graph
 
 from otter.core.chunks import Chunk
 from otter.core.events import Event, Location
@@ -45,25 +44,25 @@ get_module_logger = logger_getter("event_model")
 # Using a Protocol for better static analysis
 class EventModelProtocol(Protocol):
     def __init__(self, task_registry: TaskRegistry):
-        pass
+        ...
 
     def notify_task_registry(self, event: Event) -> None:
-        pass
+        ...
 
     def yield_chunks(
         self, events_iter: Iterable[Tuple[Location, Event]]
     ) -> Iterable[Chunk]:
-        pass
+        ...
 
     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
-        pass
+        ...
 
 
 class EventModelFactory:
-    event_models: Dict[EventModel, EventModelProtocol] = dict()
+    event_models: Dict[EventModel, EventModelProtocol] = {}
 
     @classmethod
-    def get_model(cls, model_name: EventModel) -> Type[EventModelProtocol]:
+    def get_model(cls, model_name: EventModel) -> EventModelProtocol:
         return cls.event_models[model_name]
 
     @classmethod
@@ -83,11 +82,11 @@ class BaseEventModel(ABC):
         self.chunk_dict: Dict[Any, Chunk] = dict()
         self.chunk_stack: Dict[Any, Deque[Chunk]] = defaultdict(deque)
 
-    def __init_subclass__(subclass):
+    def __init_subclass__(cls):
         # Add to the subclass a dict for registering handlers to update chunks & return completed chunks
-        subclass.chunk_update_handlers: Dict[
+        cls.chunk_update_handlers: Dict[
             ChunkUpdateHandlerKey, ChunkUpdateHandlerFn
-        ] = dict()
+        ] = {}
 
     @classmethod
     def update_chunks_on(
@@ -130,7 +129,7 @@ class BaseEventModel(ABC):
     def get_chunk_update_handlers_key(
         cls, event: Event, fallback: bool = False
     ) -> ChunkUpdateHandlerKey:
-        if fallback or not (Attr.region_type in event):
+        if fallback or not (event.get(Attr.region_type) is None):
             return cls.make_chunk_update_handlers_key(event.event_type)
         else:
             return cls.make_chunk_update_handlers_key(
@@ -186,6 +185,11 @@ class BaseEventModel(ABC):
     def get_task_completed(self, event: Event) -> int:
         raise NotImplementedError()
 
+    @staticmethod
+    @abstractmethod
+    def get_task_entered(event: Event) -> int:
+        raise NotImplementedError()
+
     def notify_task_registry(self, event: Event) -> None:
         if self.is_task_register_event(event):
             self.task_registry.register_task(self.get_task_data(event))
@@ -193,7 +197,7 @@ class BaseEventModel(ABC):
         if self.is_update_task_start_ts_event(event):
             task_entered = self.get_task_entered(event)
             self.log.debug(
-                f"notifying task start time: {task_entered} started at {event.time}"
+                "notifying task start time: %d started at %d", task_entered, event.time
             )
             self.task_registry.notify_task_start(
                 task_entered, event.time, self.get_task_start_location(event)
@@ -202,14 +206,19 @@ class BaseEventModel(ABC):
         if self.is_update_duration_event(event):
             prior_task_id, next_task_id = self.get_tasks_switched(event)
             self.log.debug(
-                f"update duration: prior_task={prior_task_id} next_task={next_task_id} {event.time} {event.endpoint} {event.event_type}"
+                "update duration: prior_task=%d next_task=%d %d %s %s",
+                prior_task_id,
+                next_task_id,
+                event.time,
+                event.endpoint,
+                event.event_type,
             )
             # task_registry.update_task_duration(prior_task_id, next_task_id, event.time)
 
         if self.is_task_complete_event(event):
             completed_task_id = self.get_task_completed(event)
             self.log.debug(
-                f"event <{event}> notifying task {completed_task_id} of end_ts"
+                "event %s notifying task %d of end_ts", event, completed_task_id
             )
             self.task_registry.notify_task_end(
                 completed_task_id, event.time, self.get_task_end_location(event)
@@ -224,7 +233,9 @@ class BaseEventModel(ABC):
 
         for k, (location, event) in enumerate(events_iter):
             log.debug(
-                f"got event {k} with vertex label {event.get('vertex_label')}: {event}"
+                "got event %d: %s",
+                k,
+                event,
             )
 
             handler = self.get_update_chunk_handler(event)
@@ -247,7 +258,7 @@ class BaseEventModel(ABC):
 
             self.notify_task_registry(event)
 
-        log.debug(f"exhausted {events_iter}")
+        log.debug(f"exhausted all events")
         # task_registry.calculate_all_inclusive_duration()
         task_registry.calculate_all_num_descendants()
         task_registry.log_all_task_ts()

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections import defaultdict
 from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 

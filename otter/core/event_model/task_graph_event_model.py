@@ -1,11 +1,12 @@
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from __future__ import annotations
+
+from typing import Iterable, List, Optional, Set, Tuple
 from warnings import warn
 
 from otter.core.chunks import Chunk
 from otter.core.events import Event, Location
 from otter.core.tasks import Task, TaskRegistry, TaskSynchronisationContext
 from otter.definitions import (
-    Attr,
     Endpoint,
     EventModel,
     EventType,
@@ -84,7 +85,7 @@ class TaskGraphEventModel(BaseEventModel):
         return event.unique_id
 
     @staticmethod
-    def get_task_entered(event: Event) -> id:
+    def get_task_entered(event: Event) -> int:
         return event.unique_id
 
     def get_task_data(self, event: Event) -> Task:
@@ -143,7 +144,13 @@ def update_chunks_task_switch(
     event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict
 ) -> Optional[Chunk]:
     log = get_module_logger()
-    log.debug(f"{event} {event.event_type=} {event.region_type=} {event.endpoint=}")
+    log.debug(
+        "%s event_type=%s region_type=%s endpoint=%s",
+        event,
+        event.event_type,
+        event.region_type,
+        event.endpoint,
+    )
     enclosing_key = event.parent_task_id
     key = event.unique_id
     if event.endpoint == Endpoint.enter:

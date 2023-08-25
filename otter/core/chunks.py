@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections import deque
 from typing import Deque, Iterable, Optional
 
@@ -11,7 +13,7 @@ get_module_logger = logger_getter("chunks")
 
 
 class Chunk:
-    @on_init(logger=logger_getter("init_logger"), level=DEBUG)
+    # @on_init(logger=logger_getter("init_logger"), level=DEBUG)
     def __init__(self, chunk_type: defn.RegionType, task_id: int):
         self.log = get_module_logger()
         self._events: Deque[Event] = deque()
@@ -63,6 +65,8 @@ class Chunk:
 
     def append_event(self, event):
         self.log.debug(
-            f"{self.__class__.__name__}.append_event {event._base_repr} to chunk: {self._base_repr}"
+            "append event %s to chunk: %s",
+            event,
+            self._base_repr,
         )
         self._events.append(event)
