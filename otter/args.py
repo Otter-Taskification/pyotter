@@ -1,5 +1,7 @@
 """Handle argument parsing"""
 
+from __future__ import annotations
+
 import argparse
 from enum import Enum
 
@@ -19,20 +21,6 @@ class GraphType(str, Enum):
     HIER = "hier"  # task hierarchy
 
 
-class LoggingLevel(str, Enum):
-    """Logging levels"""
-
-    DEBUG = "debug"
-    INFO = "info"
-    WARN = "warn"
-    ERROR = "error"
-
-    @classmethod
-    @property
-    def levels(cls) -> list[str]:
-        return [level.value for level in cls]
-
-
 description_action = {
     Action.UNPACK: "unpack an Otter OTF2 trace and prepare it for querying by other Otter actions",
     Action.SHOW: "visualise a chosen task's graph or the task hierarchy",
@@ -49,12 +37,14 @@ description_show = {
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add common arguments to a parser"""
 
+    logging_levels = ["debug", "info", "warn", "error"]
+
     parser.add_argument(
         "--loglevel",
         dest="loglevel",
-        default=LoggingLevel.WARN.value,
-        choices=LoggingLevel.levels,
-        help=f"logging level ({', '.join(LoggingLevel.levels)})",
+        default="warn",
+        choices=logging_levels,
+        help=f"logging level ({', '.join(logging_levels)})",
         metavar="level",
     )
 
