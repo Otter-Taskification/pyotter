@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import sqlite3
 from collections import defaultdict
 from typing import Any, Generator, Iterable, List, Optional, Tuple
 
 from .. import log
-from ..definitions import SourceLocation, TaskAttributes
-from . import query, scripts
+from ..definitions import TaskAttributes
+from . import scripts
 
 
 class Row(sqlite3.Row):
@@ -54,39 +56,31 @@ class Connection(sqlite3.Connection):
 
     def attributes_of(self, tasks: Iterable[int]) -> Tuple[Any]:
         # TODO: consider returning Tuple[TaskAttributes] instead
-        cur = self.cursor()
         tasks = tuple(tasks)
         placeholder = ",".join("?" for _ in tasks)
-        q = f"select * from task_attributes where id in ({placeholder}) order by id\n"
-        cur.execute(q, tasks)
+        query_str = (
+            f"select * from task_attributes where id in ({placeholder}) order by id\n"
+        )
+        cur = self.execute(query_str, tasks)
         return tuple(cur.fetchall())
+
+    @staticmethod
+    def _parent_child_attributes_row_factory(
+        _, values: tuple[Any]
+    ) -> Tuple[TaskAttributes, TaskAttributes, int]:
+        parent_attr, child_attr = values[0:11], values[11:22]
+        parent = TaskAttributes(*parent_attr)
+        child = TaskAttributes(*child_attr)
+        total = values[22]
+        return parent, child, total
 
     def parent_child_attributes(
         self,
     ) -> List[Tuple[TaskAttributes, TaskAttributes, int]]:
         """Return tuples of task attributes for each parent-child link and the number of such links"""
 
-        def row_factory(_, values) -> Tuple[TaskAttributes, TaskAttributes, int]:
-            parent = TaskAttributes(
-                values[0],
-                values[1],
-                SourceLocation(file=values[2], line=values[3], func=values[4]),
-                SourceLocation(file=values[5], line=values[6], func=values[7]),
-                SourceLocation(file=values[8], line=values[9], func=values[10]),
-            )
-            child = TaskAttributes(
-                values[11],
-                values[12],
-                SourceLocation(file=values[13], line=values[14], func=values[15]),
-                SourceLocation(file=values[16], line=values[17], func=values[18]),
-                SourceLocation(file=values[19], line=values[20], func=values[21]),
-            )
-            total = values[22]
-            return parent, child, total
-
-        cur = self.cursor()
-        cur.row_factory = row_factory
-        cur.execute(scripts.count_children_by_parent_attributes)
+        self.row_factory = self._parent_child_attributes_row_factory
+        cur = self.execute(scripts.count_children_by_parent_attributes)
         results = cur.fetchall()
         log.debug("got %d rows", len(results))
         return results
@@ -95,7 +89,7 @@ class Connection(sqlite3.Connection):
         """Get the sequences of child tasks synchronised during a task."""
 
         cur = self.cursor()
-        cur.execute(query.CHILD_SYNC_POINTS, (task,))
+        cur.execute(scripts.get_child_sync_points, (task,))
         results = tuple(cur.fetchall())
         if debug:
             log.debug("child_sync_points: got %d results", len(results))

@@ -1,9 +1,10 @@
+from __future__ import annotations
+
+from dataclasses import InitVar, asdict, dataclass, field
 from enum import Enum
-from typing import Union, NamedTuple
-from dataclasses import dataclass, asdict
+from typing import NamedTuple, Union
 
 
-# TODO: suspect some Attr values are missing here e.g. requested_parallelism, next_task_id - is there a reason they aren't present?
 class Attr(str, Enum):
     time = "time"
     event_type = "event_type"
@@ -30,6 +31,8 @@ class Attr(str, Enum):
     task_init_line = "task_init_line"
     task_init_file = "task_init_file"
     task_init_func = "task_init_func"
+    caller_return_address = "caller_return_address"
+    sync_descendant_tasks = "sync_descendant_tasks"
 
 
 class EventType(str, Enum):
@@ -143,9 +146,44 @@ class SourceLocation(NamedTuple):
 class TaskAttributes:
     label: str
     flavour: int
-    init_location: SourceLocation
-    start_location: SourceLocation
-    end_location: SourceLocation
+
+    init_file: InitVar[str]
+    init_func: InitVar[str]
+    init_line: InitVar[int]
+
+    start_file: InitVar[str]
+    start_func: InitVar[str]
+    start_line: InitVar[int]
+
+    end_file: InitVar[str]
+    end_func: InitVar[str]
+    end_line: InitVar[int]
+
+    init_location: SourceLocation = field(init=False)
+    start_location: SourceLocation = field(init=False)
+    end_location: SourceLocation = field(init=False)
+
+    def __post_init__(
+        self,
+        init_file: str,
+        init_func: str,
+        init_line: int,
+        start_file: str,
+        start_func: str,
+        start_line: int,
+        end_file: str,
+        end_func: str,
+        end_line: int,
+    ) -> None:
+        super().__setattr__(
+            "init_location", SourceLocation(init_file, init_func, init_line)
+        )
+        super().__setattr__(
+            "start_location", SourceLocation(start_file, start_func, start_line)
+        )
+        super().__setattr__(
+            "end_location", SourceLocation(end_file, end_func, end_line)
+        )
 
     def is_null(self) -> bool:
         return self.label is None and self.flavour is None
@@ -158,15 +196,3 @@ class TaskAttributes:
 
 
 NullTaskID = 18446744073709551615
-
-AttrValue = Union[
-    EventType,
-    RegionType,
-    TaskStatus,
-    TaskType,
-    Endpoint,
-    EdgeType,
-    TaskSyncType,
-    TaskEvent,
-    EventModel,
-]

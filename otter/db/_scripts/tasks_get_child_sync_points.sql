@@ -1,7 +1,3 @@
-# from sqlite3 import Cursor
-# from typing import Tuple
-
-CHILD_SYNC_POINTS = """
 select rel.child_id
     ,sync.context_id
     ,ctx.sync_descendants
@@ -39,4 +35,3 @@ order by 1
     ,sequence
     ,child_id
 ;
-"""
