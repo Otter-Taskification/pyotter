@@ -49,7 +49,6 @@ class _state_:
 
 def initialise(args):
     import os
-    from itertools import chain
     from logging import config as logging_config
 
     import yaml
@@ -60,6 +59,9 @@ def initialise(args):
         import importlib.resources as resources
     except ImportError:
         import importlib_resources as resources
+
+    if not os.path.isdir(args.logdir):
+        os.mkdir(args.logdir)
 
     conf_text = resources.read_text(config, "standard.yaml")
     conf = yaml.safe_load(conf_text)
