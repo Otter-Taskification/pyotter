@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import logging
 from enum import Enum
-from logging import DEBUG, ERROR, INFO, WARN
+from logging import DEBUG, ERROR, INFO, WARN, Logger, getLogger
+from typing import Optional
 
 import colorama as _color
 
@@ -10,10 +10,10 @@ import colorama as _color
 class Level(int, Enum):
     """Define debugging levels"""
 
-    DEBUG = logging.DEBUG
-    INFO = logging.INFO
-    WARN = logging.WARN
-    ERROR = logging.ERROR
+    DEBUG = DEBUG
+    INFO = INFO
+    WARN = WARN
+    ERROR = ERROR
 
 
 def as_level(name: str) -> Level:
@@ -72,9 +72,9 @@ def initialise(args):
 
     logging_config.dictConfig(conf)
 
-    root_logger = logging.getLogger("otter")
-    init_logger = logging.getLogger(conf["otter"]["init"])
-    initialise_logger = logging.getLogger(conf["otter"]["initialise"])
+    root_logger = getLogger("otter")
+    init_logger = getLogger(conf["otter"]["init"])
+    initialise_logger = getLogger(conf["otter"]["initialise"])
 
     _state_.set_logger("_root", root_logger)
     _state_.set_logger("_init_logger", init_logger)
@@ -87,16 +87,16 @@ def initialise(args):
 
     initialise_logger.debug(">>> BEGIN LOGGERS <<<")
     initialise_logger.debug("loggers:")
-    for log in chain([logging.getLogger()], map(logging.getLogger, conf["loggers"])):
+    for log in (getLogger(), *map(getLogger, conf["loggers"])):
         for line in logger_lines(log):
             initialise_logger.debug(line)
     initialise_logger.debug(">>> END LOGGERS <<<")
 
     _state_.initialise()
 
-    initialise_logger.info(f"logging was initialised:")
-    initialise_logger.info(f"  {args.loglevel=}")
-    initialise_logger.info(f"  {args.logdir=}")
+    initialise_logger.info("logging was initialised:")
+    initialise_logger.info("  args.loglevel={}", args.loglevel)
+    initialise_logger.info("  args.logdir={}", args.logdir)
 
 
 def is_initialised():
@@ -114,7 +114,7 @@ def logger_getter(name):
 
 def get_logger(name: str):
     """
-    Provides a wrapper around logging.getLogger to ensure that all loggers not defined in the config file are children
+    Provides a wrapper around getLogger to ensure that all loggers not defined in the config file are children
     of the "otter" logger.
 
     If 'name' is an attribute of the Logging class, return this attribute if it is a logger. Otherwise, get a reference
@@ -131,7 +131,7 @@ def get_logger(name: str):
         logger = _state_.get_logger(name)
     except AttributeError:
         root_name = _state_.get_logger("_root").name
-        logger = logging.getLogger(f"{root_name}.{name}")
+        logger = getLogger(f"{root_name}.{name}")
     finally:
         log.debug(f"got logger for {name=}:", stacklevel=2)
         for line in logger_lines(logger):
@@ -181,17 +181,29 @@ def is_enabled(level):
     return get_logger("main").isEnabledFor(level)
 
 
-def is_debug_enabled():
-    return get_logger("main").isEnabledFor(DEBUG)
+def is_debug_enabled(logger: Optional[Logger] = None):
+    "Check whether logging is enabled at this level"
+
+    logger = logger or get_logger("main")
+    return logger.isEnabledFor(DEBUG)
 
 
-def is_info_enabled():
-    return get_logger("main").isEnabledFor(INFO)
+def is_info_enabled(logger: Optional[Logger] = None):
+    "Check whether logging is enabled at this level"
+
+    logger = logger or get_logger("main")
+    return logger.isEnabledFor(INFO)
 
 
-def is_warn_enabled():
-    return get_logger("main").isEnabledFor(WARN)
+def is_warn_enabled(logger: Optional[Logger] = None):
+    "Check whether logging is enabled at this level"
+
+    logger = logger or get_logger("main")
+    return logger.isEnabledFor(WARN)
 
 
-def is_error_enabled():
-    return get_logger("main").isEnabledFor(ERROR)
+def is_error_enabled(logger: Optional[Logger] = None):
+    "Check whether logging is enabled at this level"
+
+    logger = logger or get_logger("main")
+    return logger.isEnabledFor(ERROR)
