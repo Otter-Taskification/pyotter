@@ -5,7 +5,7 @@ from collections import defaultdict
 from typing import Any, Generator, Iterable, List, Optional, Tuple
 
 from .. import log
-from ..definitions import TaskAttributes
+from ..definitions import TaskAttributes, SourceLocation
 from . import scripts
 
 
@@ -74,6 +74,10 @@ class Connection(sqlite3.Connection):
         total = values[22]
         return parent, child, total
 
+    @staticmethod
+    def _source_location_row_factory(_, values: tuple[Any]) -> SourceLocation:
+        return SourceLocation(*values)
+
     def parent_child_attributes(
         self,
     ) -> List[Tuple[TaskAttributes, TaskAttributes, int]]:
@@ -114,3 +118,12 @@ class Connection(sqlite3.Connection):
                     "sync_groups: sequence %s yielding %d records", seq, len(rows)
                 )
             yield seq, rows
+
+    def source_locations(self):
+        """Get all the source locations defined in the trace"""
+
+        self.row_factory = self._source_location_row_factory
+        cur = self.execute("select * from source_location")
+        results: List[SourceLocation] = cur.fetchall()
+        log.debug("got %d source locations", len(results))
+        return results

@@ -44,7 +44,10 @@ def select_action() -> None:
                     args.anchorfile, args.dotfile, debug=debug
                 )
         elif args.action == Action.SUMMARY:
-            otter.project.summarise_tasks_db(args.anchorfile, debug=debug)
+            if args.source:
+                otter.project.summarise_source_location(args.anchorfile, debug=debug)
+            else:
+                otter.project.summarise_tasks_db(args.anchorfile, debug=debug)
         else:
             print(f"unknown action: {args.action}")
             otter.args.print_help()

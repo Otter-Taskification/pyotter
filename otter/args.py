@@ -110,6 +110,11 @@ def prepare_parser():
         formatter_class=formatter_class,
     )
     parse_action_summary.add_argument(
+        "--source",
+        action="store_true",
+        help="list the source locations recorded in the trace",
+    )
+    parse_action_summary.add_argument(
         "anchorfile", help="the Otter OTF2 anchorfile to use"
     )
     add_common_arguments(parse_action_summary)
@@ -176,18 +181,6 @@ def prepare_parser():
     )
     parser_show_hier.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
     add_common_arguments(parser_show_hier)
-
-    show_source_help = (
-        "print information about the source locations recorded in the trace"
-    )
-    parse_show_source = subparse_action_show.add_parser(
-        "source",
-        help=show_source_help,
-        description=show_source_help,
-        formatter_class=formatter_class,
-    )
-    parser_show_hier.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
-    add_common_arguments(parse_show_source)
 
     return parser
 

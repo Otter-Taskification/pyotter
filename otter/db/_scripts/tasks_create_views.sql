@@ -107,3 +107,15 @@ create view if not exists task_attributes as
     left join task_end_location as end_loc
         on task.id = end_loc.id
 ;
+
+-- A readable view of all source locations
+create view if not exists source_location as
+    select file_name.text
+        ,func_name.text
+        ,line
+    from source
+    left join string as file_name
+        on source.file_id = file_name.id
+    left join string as func_name
+        on source.func_id = func_name.id
+;

@@ -532,3 +532,15 @@ def summarise_tasks_db(anchorfile: str, debug: bool = False) -> None:
 
     with project.connection() as con:
         con.print_summary()
+
+
+def summarise_source_location(anchorfile: str, debug: bool = False) -> None:
+    """Print source locations in the trace"""
+
+    project = BuildGraphFromDB(anchorfile, debug=debug)
+
+    with project.connection() as con:
+        source_locations = con.source_locations()
+
+    for location in source_locations:
+        print(f"{location.file}:{location.func}:{location.line}")
