@@ -115,6 +115,11 @@ def prepare_parser():
         help="list the source locations recorded in the trace",
     )
     parse_action_summary.add_argument(
+        "--tasks",
+        action="store_true",
+        help="list the tasks recorded in the trace",
+    )
+    parse_action_summary.add_argument(
         "anchorfile", help="the Otter OTF2 anchorfile to use"
     )
     add_common_arguments(parse_action_summary)

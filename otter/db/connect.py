@@ -66,13 +66,21 @@ class Connection(sqlite3.Connection):
 
     @staticmethod
     def _parent_child_attributes_row_factory(
-        _, values: tuple[Any]
+        _, values: Tuple[Any, ...]
     ) -> Tuple[TaskAttributes, TaskAttributes, int]:
         parent_attr, child_attr = values[0:11], values[11:22]
         parent = TaskAttributes(*parent_attr)
         child = TaskAttributes(*child_attr)
         total = values[22]
         return parent, child, total
+
+    @staticmethod
+    def _task_count_by_attributes_row_factory(
+        _, values: Tuple[Any, ...]
+    ) -> Tuple[TaskAttributes, int]:
+        task_attr = (values[0], 0, *values[1:10])
+        count: int = values[10]
+        return TaskAttributes(*task_attr), count
 
     @staticmethod
     def _source_location_row_factory(_, values: tuple[Any]) -> SourceLocation:
@@ -126,4 +134,13 @@ class Connection(sqlite3.Connection):
         cur = self.execute("select * from source_location")
         results: List[SourceLocation] = cur.fetchall()
         log.debug("got %d source locations", len(results))
+        return results
+
+    def task_types(self) -> List[Tuple[TaskAttributes, int]]:
+        """Return task attributes for each distinct set of task attributes and the number of such records"""
+
+        self.row_factory = self._task_count_by_attributes_row_factory
+        cur = self.execute(scripts.count_tasks_by_attributes)
+        results = cur.fetchall()
+        log.debug("got %d task definitions", len(results))
         return results

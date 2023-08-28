@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 # TODO: sqlite3 should be internal to otter.db
+import json
 import sqlite3
 import sys
 from collections import defaultdict
@@ -544,3 +545,24 @@ def summarise_source_location(anchorfile: str, debug: bool = False) -> None:
 
     for location in source_locations:
         print(f"{location.file}:{location.func}:{location.line}")
+
+
+def summarise_task_types(anchorfile: str, debug: bool = False) -> None:
+    """Print all task definitions in the trace"""
+
+    project = BuildGraphFromDB(anchorfile, debug=debug)
+
+    with project.connection() as con:
+        task_types = con.task_types()
+
+    task_dicts = []
+    for task, num_tasks in task_types:
+        task_data = {
+            "label": task.label,
+            "init_location": str(task.init_location),
+            "start_location": str(task.start_location),
+            "end_location": str(task.end_location),
+        }
+        task_dicts.append({"count": num_tasks, "data": task_data})
+
+    print(json.dumps(task_dicts, indent=2))
