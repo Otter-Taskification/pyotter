@@ -50,24 +50,24 @@ all tasks to be ignored.
 
 Accepted key-value pairs are:
 
-    label=<regex>
+    label=<label>
     init=<file>[:<line> | :<func>]
     start=<file>[:<line> | :<func>]
     end=<file>[:<line> | :<func>]
 
 Where:
 
-    <regex> is a regular expression
+    <label> is the label of a task to match
     <file> is a source file recorded in the trace
     <line> is a line nuber
     <func> is the name of a function recorded in the trace
 
 Example:
 
-A rule to exclude all tasks initialised at line 25 in src/main.cpp with a label
-matching the regular expression:
+a rule excluding all tasks initialised at line 25 in src/main.cpp with the given
+label:
 
-    --exclude label="task [0-9]+$" init=src/main.cpp:25
+    -e label="init step" init=src/main.cpp:25
 """
 }
 
