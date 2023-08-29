@@ -50,6 +50,10 @@ def select_action() -> None:
                 otter.project.summarise_task_types(args.anchorfile, debug=debug)
             else:
                 otter.project.summarise_tasks_db(args.anchorfile, debug=debug)
+        elif args.action == Action.FILTER:
+            otter.project.print_filter_to_stdout(
+                bool(args.include), args.include or args.exclude
+            )
         else:
             print(f"unknown action: {args.action}")
             otter.args.print_help()

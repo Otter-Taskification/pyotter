@@ -12,6 +12,7 @@ class Action(str, Enum):
     UNPACK = "unpack"
     SHOW = "show"
     SUMMARY = "summary"
+    FILTER = "filter"
 
 
 class GraphType(str, Enum):
@@ -22,9 +23,52 @@ class GraphType(str, Enum):
 
 
 description_action = {
-    Action.UNPACK: "unpack an Otter OTF2 trace and prepare it for querying by other Otter actions",
-    Action.SHOW: "visualise a chosen task's graph or the task hierarchy",
-    Action.SUMMARY: "print some summary information about the tasks database",
+    Action.UNPACK: "Unpack an Otter OTF2 trace and prepare it for querying by other Otter actions.",
+    Action.SHOW: "Visualise a chosen task's graph or the task hierarchy.",
+    Action.SUMMARY: "Print some summary information about the tasks database.",
+    Action.FILTER: "Define a filter file based on the tasks recorded in a trace.",
+}
+
+extra_description_action = {
+    Action.FILTER: """
+
+Filter files contain one or more rules used by Otter to filter tasks at runtime.
+
+A filter file is used to either include or exclude matching tasks at rumtime i.e.
+the --include and --exclude options are mutually exclusive. Given a filter file
+created with --include (or --exclude), Otter will record (or ignore) only those
+tasks which match at least one of the rules in the filter file.
+
+A rule is defined by the logical intersection of one or more key-value pairs. A
+task satisfies a rule if it matches all the rule's key-value pairs.
+
+Each occurrence of --include/--exclude defines a single rule in the filter file.
+
+NOTE: tasks which satisfy a rule in a filter file do not propogate this to their
+descendants i.e. to ignore a set of related tasks, define rules which will cover
+all tasks to be ignored.
+
+Accepted key-value pairs are:
+
+    label=<regex>
+    init=<file>[:<line> | :<func>]
+    start=<file>[:<line> | :<func>]
+    end=<file>[:<line> | :<func>]
+
+Where:
+
+    <regex> is a regular expression
+    <file> is a source file recorded in the trace
+    <line> is a line nuber
+    <func> is the name of a function recorded in the trace
+
+Example:
+
+A rule to exclude all tasks initialised at line 25 in src/main.cpp with a label
+matching the regular expression:
+
+    --exclude label="task [0-9]+$" init=src/main.cpp:25
+"""
 }
 
 
@@ -32,6 +76,27 @@ description_show = {
     GraphType.CFG: "show the control-flow graph of a chosen task",
     GraphType.HIER: "show the task hierarchy",
 }
+
+filter_keys = ["label", "init", "start", "end"]
+
+
+def validate_filter_rule_pair(pair: str) -> str:
+    """Validate a key-value pair for a filter rule"""
+
+    if "=" not in pair:
+        raise argparse.ArgumentTypeError(f'expected "=" in "{pair}"')
+
+    # split at the first occurrence of "="
+    split_at = pair.find("=")
+
+    key = pair[0:split_at]
+
+    if key not in filter_keys:
+        raise argparse.ArgumentTypeError(
+            f'invalid key "{key}" (must be one of {", ".join(filter_keys)})'
+        )
+
+    return pair
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -103,6 +168,7 @@ def prepare_parser():
     )
     add_common_arguments(parse_action_unpack)
 
+    # parse the unpack action
     parse_action_summary = subparse_action.add_parser(
         Action.SUMMARY.value,
         help=description_action[Action.SUMMARY],
@@ -186,6 +252,35 @@ def prepare_parser():
     )
     parser_show_hier.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
     add_common_arguments(parser_show_hier)
+
+    # parse the filter action
+    parse_action_filter = subparse_action.add_parser(
+        Action.FILTER.value,
+        help=description_action[Action.FILTER],
+        description=description_action[Action.FILTER]
+        + extra_description_action[Action.FILTER],
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    filter_group = parse_action_filter.add_mutually_exclusive_group(required=True)
+    filter_group.add_argument(
+        "-e",
+        "--exclude",
+        help="exclude tasks defined by a set of key-value pairs",
+        type=validate_filter_rule_pair,
+        action="append",
+        metavar="key=value",
+        nargs="+",
+    )
+    filter_group.add_argument(
+        "-i",
+        "--include",
+        help="include tasks defined by a set of key-value pairs",
+        type=validate_filter_rule_pair,
+        action="append",
+        metavar="key=value",
+        nargs="+",
+    )
+    add_common_arguments(parse_action_filter)
 
     return parser
 
