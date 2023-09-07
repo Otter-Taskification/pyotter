@@ -143,6 +143,12 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         help="print arguments passed to Otter",
     )
 
+    parser.add_argument(
+        "--pdb",
+        action="store_true",
+        help="enter interactive post-mortem with pdb if an exception is raised",
+    )
+
 
 def prepare_parser():
     """Prepare argument parser for otter.main.select_action()"""

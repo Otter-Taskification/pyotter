@@ -11,6 +11,11 @@ def select_action() -> None:
 
     args = otter.args.parse()
 
+    with otter.utils.post_mortem(args.pdb):
+        _select_action(args)
+
+
+def _select_action(args) -> None:
     if args.version:
         print(otter.__version__)
         raise SystemExit(0)
