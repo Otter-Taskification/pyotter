@@ -122,13 +122,21 @@ class TaskGraphEventModel(BaseEventModel):
             if address not in self._return_addresses:
                 self._return_addresses.add(address)
 
+    def filter_event(self, event: Event) -> bool:
+        """Return True if an event should be processed when yielding chunks"""
+        if event.is_buffer_flush_event():
+            self.log.warning("buffer flush event encountered - skipped (%s)", event)
+            return False
+        return True
+
     def yield_events_with_warning(
         self, events_iter: Iterable[Tuple[Location, Event]]
     ) -> Iterable[Tuple[Location, Event]]:
         for location, event in events_iter:
-            self.pre_yield_event_callback(event)
-            yield location, event
-            self.post_yield_event_callback(event)
+            if self.filter_event(event):
+                self.pre_yield_event_callback(event)
+                yield location, event
+                self.post_yield_event_callback(event)
 
     def yield_chunks(
         self, events_iter: Iterable[Tuple[Location, Event]]
