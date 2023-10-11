@@ -296,7 +296,7 @@ class BaseEventModel(ABC):
                 #! store this context
                 contexts.append(barrier_context)
 
-            if self.is_task_create_event(event):
+            elif self.is_task_create_event(event):
                 # If the current event records a task-create, ensure the created
                 # task is available for any later taskwait barriers that may be
                 # encountered later on in the task
