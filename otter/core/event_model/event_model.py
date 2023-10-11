@@ -7,15 +7,10 @@ from typing import Any, Deque, Dict, Iterable, List, Optional, Protocol, Tuple
 
 from otter.core.chunks import Chunk, ChunkManger
 from otter.core.events import Event, Location
-from otter.core.tasks import NullTask, Task, TaskRegistry, TaskSynchronisationContext
-from otter.definitions import (
-    Attr,
-    EventModel,
-    EventType,
-    RegionType,
-    SourceLocation,
-    TaskSyncType,
-)
+from otter.core.tasks import (NullTask, Task, TaskRegistry,
+                              TaskSynchronisationContext)
+from otter.definitions import (Attr, EventModel, EventType, RegionType,
+                               SourceLocation, TaskSyncType)
 from otter.log import logger_getter
 from otter.utils.typing import Decorator
 
@@ -260,26 +255,49 @@ class BaseEventModel(ABC):
         raise NotImplementedError()
 
     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
-        contexts = list()
+        contexts: List[TaskSynchronisationContext] = []
         for event in islice(chunk.events, 1, None):
+
+            #! get the task corresponding to the event
             encountering_task = self.task_registry[event.encountering_task_id]
+
             if encountering_task is NullTask:
                 encountering_task = None
+
+            #! #BUG: this check should take place inside a method like self.is_task_sync_event
             if event.region_type == RegionType.taskwait:
+                # If the event represents the task encountering a taskwait
+                # barrier, record that the currently cached set of tasks are
+                # synchronised at this barrier, then clear those tasks from the
+                # caches
                 chunk.log.debug(
                     f"encountered taskwait barrier: endpoint={event.endpoint}, descendants={event.sync_descendant_tasks == TaskSyncType.descendants}"
                 )
                 descendants = event.sync_descendant_tasks == TaskSyncType.descendants
+
+                #! create a new context
                 barrier_context = TaskSynchronisationContext(
                     tasks=None, descendants=descendants
                 )
+
+                #! copy contents of List[Task] from task -> context
                 barrier_context.synchronise_from(encountering_task.task_barrier_cache)
+
                 for iterable in encountering_task.task_barrier_iterables_cache:
+                    #! lazily copy contents of an iterable -> context by storing a reference to the iterable
                     barrier_context.synchronise_lazy(iterable)
+                
+                #! clear caches
                 encountering_task.clear_task_barrier_cache()
                 encountering_task.clear_task_barrier_iterables_cache()
+
+                #! store this context
                 contexts.append(barrier_context)
+            
             if self.is_task_create_event(event):
+                # If the current event records a task-create, ensure the created
+                # task is available for any later taskwait barriers that may be
+                # encountered later on in the task
                 created_task = self.task_registry[event.unique_id]
                 if encountering_task.has_active_task_group:
                     chunk.log.debug(

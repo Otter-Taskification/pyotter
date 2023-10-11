@@ -170,6 +170,7 @@ class Task:
         )
         self._task_barrier_cache.append(task)
 
+    # TODO: this method appears to be defunct as it isn't called anywhere!
     def append_to_barrier_iterables_cache(self, iterable):
         # TODO: consider having TaskRegistry manage barrier caches - why should a Task know about them?
         """Add an iterable to the barrier iterables cache, ready to be passed to a synchronisation
@@ -215,11 +216,13 @@ class Task:
 
     # TODO: consider having TaskRegistry or some special manager class handle this
     @property
+    #! #FIXME: this method can only return False as self.num_enclosing_task_sync_groups is always 0
     def has_active_task_group(self):
         return self.num_enclosing_task_sync_groups > 0
 
     # TODO: consider having TaskRegistry or some special manager class handle this
     @property
+    #! #FIXME: this method can only return 0 as self.enter_task_sync_group is never called!
     def num_enclosing_task_sync_groups(self):
         return len(self._task_sync_group_stack)
 
@@ -234,6 +237,7 @@ class Task:
             group_context.synchronise(task)
 
     # TODO: consider having TaskRegistry or some special manager class handle this
+    #! #FIXME: this method is not called anywhere!
     def enter_task_sync_group(self, descendants=True):
         self.logger.debug(
             f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})"
@@ -242,6 +246,7 @@ class Task:
         self._task_sync_group_stack.append(group_context)
 
     # TODO: consider having TaskRegistry or some special manager class handle this
+    #! #FIXME: this method is not called anywhere!
     def leave_task_sync_group(self):
         assert self.has_active_task_group
         group_context = self._task_sync_group_stack.pop()
@@ -251,6 +256,7 @@ class Task:
         return group_context
 
     # TODO: consider having TaskRegistry or some special manager class handle this
+    #! #FIXME: this method is only called in self.synchronise_task_in_current_group
     def get_current_task_sync_group(self):
         assert self.has_active_task_group
         self.logger.debug(

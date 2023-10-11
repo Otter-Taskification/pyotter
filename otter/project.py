@@ -125,6 +125,8 @@ class UnpackTraceProject(Project):
 
             # TODO: yield_chunks is the memory-intensive operation that needs to be refactored
             for chunk in self.event_model.yield_chunks(event_iter):
+                
+                #! get the task-sync contexts by iterating over the events in the chunk
                 contexts = self.event_model.contexts_of(chunk)
                 context_ids = []
                 synchronised_tasks = []
