@@ -18,6 +18,9 @@ except ImportError as err:
         raise AttributeError(f"property '{property_name}' not defined")
 
 
+from _otf2 import EvtReader_Seek
+
+
 class OTF2Reader(Reader):
     """Extends the otf2 reader with access to trace properties"""
 
