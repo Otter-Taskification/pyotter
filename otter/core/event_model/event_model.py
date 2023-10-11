@@ -262,7 +262,7 @@ class BaseEventModel(ABC):
             encountering_task = self.task_registry[event.encountering_task_id]
 
             if encountering_task is NullTask:
-                encountering_task = None
+                raise RuntimeError("unexpected NullTask")
 
             #! #BUG: this check should take place inside a method like self.is_task_sync_event
             if event.region_type == RegionType.taskwait:
@@ -282,14 +282,9 @@ class BaseEventModel(ABC):
 
                 #! copy contents of List[Task] from task -> context
                 barrier_context.synchronise_from(encountering_task.task_barrier_cache)
-
-                for iterable in encountering_task.task_barrier_iterables_cache:
-                    #! lazily copy contents of an iterable -> context by storing a reference to the iterable
-                    barrier_context.synchronise_lazy(iterable)
                 
                 #! clear caches
                 encountering_task.clear_task_barrier_cache()
-                encountering_task.clear_task_barrier_iterables_cache()
 
                 #! store this context
                 contexts.append(barrier_context)
@@ -299,16 +294,10 @@ class BaseEventModel(ABC):
                 # task is available for any later taskwait barriers that may be
                 # encountered later on in the task
                 created_task = self.task_registry[event.unique_id]
-                if encountering_task.has_active_task_group:
-                    chunk.log.debug(
-                        f"registering new task in active task group: parent={encountering_task.id}, child={created_task.id}"
-                    )
-                    encountering_task.synchronise_task_in_current_group(created_task)
-                else:
-                    chunk.log.debug(
-                        f"registering new task in task barrier cache: parent={encountering_task.id}, child={created_task.id}"
-                    )
-                    encountering_task.append_to_barrier_cache(created_task)
+                chunk.log.debug(
+                    f"registering new task in task barrier cache: parent={encountering_task.id}, child={created_task.id}"
+                )
+                encountering_task.append_to_barrier_cache(created_task)
         return contexts
 
 

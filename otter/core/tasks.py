@@ -94,14 +94,8 @@ class Task:
 
         self._num_descendants: int = None
 
-        # Stack of TaskSynchronisationContext to manage nested contexts
-        self._task_sync_group_stack: Deque[TaskSynchronisationContext] = deque()
-
         # Stores child tasks created when parsing a chunk into its graph representation
         self._task_barrier_cache: List[Task] = list()
-
-        # Stores iterables of child tasks created when parsing a chunk into its graph representation
-        self._task_barrier_iterables_cache = list()
 
     def set_start_location(self, location: SourceLocation) -> None:
         if self.start_location is not VoidLocation:
@@ -159,7 +153,7 @@ class Task:
     def is_explicit(self) -> bool:
         return self.task_type == TaskType.explicit
 
-    def append_to_barrier_cache(self, task):
+    def append_to_barrier_cache(self, task: Task):
         # TODO: consider having TaskRegistry manage barrier caches - why should a Task know about them?
         """Add a task to the barrier cache, ready to be passed to a synchronisation
         context upon encountering a task synchronisation barrier
@@ -170,32 +164,6 @@ class Task:
         )
         self._task_barrier_cache.append(task)
 
-    # TODO: this method appears to be defunct as it isn't called anywhere!
-    def append_to_barrier_iterables_cache(self, iterable):
-        # TODO: consider having TaskRegistry manage barrier caches - why should a Task know about them?
-        """Add an iterable to the barrier iterables cache, ready to be passed to a synchronisation
-        context upon encountering a task synchronisation barrier
-        """
-        self.logger.debug(
-            f"add iterable to iterables cache: task {self.id} added iterable"
-        )
-        self._task_barrier_iterables_cache.append(iterable)
-
-    def synchronise_tasks_at_barrier(
-        self, tasks=None, from_cache=False, descendants=False
-    ):
-        # TODO: consider having TaskRegistry manage barrier caches - why should a Task know about them?
-        """At a task synchronisation barrier, add a set of tasks to a synchronisation
-        context. The tasks may be from the internal cache, or supplied externally.
-        """
-        tasks = self._task_barrier_cache if from_cache else tasks
-        assert tasks is not None
-        self.logger.debug(f"task {self.id} registering tasks synchronised at barrier")
-        barrier_context = TaskSynchronisationContext(tasks, descendants=descendants)
-        if from_cache:
-            self.clear_task_barrier_cache()
-        return barrier_context
-
     # TODO: consider having TaskRegistry or some special manager class handle this
     @property
     def task_barrier_cache(self):
@@ -204,66 +172,6 @@ class Task:
     # TODO: consider having TaskRegistry or some special manager class handle this
     def clear_task_barrier_cache(self):
         self._task_barrier_cache.clear()
-
-    # TODO: consider having TaskRegistry or some special manager class handle this
-    @property
-    def task_barrier_iterables_cache(self):
-        return self._task_barrier_iterables_cache
-
-    # TODO: consider having TaskRegistry or some special manager class handle this
-    def clear_task_barrier_iterables_cache(self):
-        self._task_barrier_iterables_cache.clear()
-
-    # TODO: consider having TaskRegistry or some special manager class handle this
-    @property
-    #! #FIXME: this method can only return False as self.num_enclosing_task_sync_groups is always 0
-    def has_active_task_group(self):
-        return self.num_enclosing_task_sync_groups > 0
-
-    # TODO: consider having TaskRegistry or some special manager class handle this
-    @property
-    #! #FIXME: this method can only return 0 as self.enter_task_sync_group is never called!
-    def num_enclosing_task_sync_groups(self):
-        return len(self._task_sync_group_stack)
-
-    # TODO: consider having TaskRegistry or some special manager class handle this
-    def synchronise_task_in_current_group(self, task):
-        if self.has_active_task_group:
-            # get enclosing group context
-            self.logger.debug(
-                f"task {self.id} registering task {task.id} in current group"
-            )
-            group_context = self.get_current_task_sync_group()
-            group_context.synchronise(task)
-
-    # TODO: consider having TaskRegistry or some special manager class handle this
-    #! #FIXME: this method is not called anywhere!
-    def enter_task_sync_group(self, descendants=True):
-        self.logger.debug(
-            f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})"
-        )
-        group_context = TaskSynchronisationContext(tasks=None, descendants=descendants)
-        self._task_sync_group_stack.append(group_context)
-
-    # TODO: consider having TaskRegistry or some special manager class handle this
-    #! #FIXME: this method is not called anywhere!
-    def leave_task_sync_group(self):
-        assert self.has_active_task_group
-        group_context = self._task_sync_group_stack.pop()
-        self.logger.debug(
-            f"task {self.id} left task sync group (levels={self.num_enclosing_task_sync_groups})"
-        )
-        return group_context
-
-    # TODO: consider having TaskRegistry or some special manager class handle this
-    #! #FIXME: this method is only called in self.synchronise_task_in_current_group
-    def get_current_task_sync_group(self):
-        assert self.has_active_task_group
-        self.logger.debug(
-            f"task {self.id} entering task sync group (levels={self.num_enclosing_task_sync_groups})"
-        )
-        group_context = self._task_sync_group_stack[-1]
-        return group_context
 
 
 _task_field_names: List[str] = [f.name for f in fields(Task)]
