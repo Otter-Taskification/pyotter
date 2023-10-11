@@ -97,8 +97,8 @@ def initialise(args):
     _state_.initialise()
 
     initialise_logger.info("logging was initialised:")
-    initialise_logger.info("  args.loglevel={}", args.loglevel)
-    initialise_logger.info("  args.logdir={}", args.logdir)
+    initialise_logger.info("  args.loglevel=%s", args.loglevel)
+    initialise_logger.info("  args.logdir=%s", args.logdir)
 
 
 def is_initialised():

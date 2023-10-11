@@ -3,19 +3,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from itertools import islice
-from typing import (
-    Any,
-    Callable,
-    Deque,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Protocol,
-    Tuple,
-)
+from typing import Any, Deque, Dict, Iterable, List, Optional, Protocol, Tuple
 
-from otter.core.chunks import Chunk
+from otter.core.chunks import Chunk, ChunkManger
 from otter.core.events import Event, Location
 from otter.core.tasks import NullTask, Task, TaskRegistry, TaskSynchronisationContext
 from otter.definitions import (
@@ -31,56 +21,45 @@ from otter.utils.typing import Decorator
 
 # Type hint aliases
 EventList = List[Event]
-ChunkDict = Dict[Any, Chunk]
 ChunkStackDict = Dict[Any, Deque[Chunk]]
 ChunkUpdateHandlerKey = Tuple[Optional[RegionType], EventType]
-ChunkUpdateHandlerFn = Callable[
-    [Event, Location, ChunkDict, ChunkStackDict, TaskRegistry], Optional[Chunk]
-]
 
 get_module_logger = logger_getter("event_model")
 
 
+class ChunkUpdateHandlerFn(Protocol):
+    def __call__(
+        self,
+        event: Event,
+        location: Location,
+        chunk_manager: ChunkManger,
+    ) -> Optional[Chunk]:
+        ...
+
+
 # Using a Protocol for better static analysis
-class EventModelProtocol(Protocol):
-    def __init__(self, task_registry: TaskRegistry):
-        ...
+# class EventModelProtocol(Protocol):
+#     def __init__(self, task_registry: TaskRegistry, chunk_manager: ChunkManger):
+#         ...
 
-    def notify_task_registry(self, event: Event) -> None:
-        ...
+#     def notify_task_registry(self, event: Event) -> None:
+#         ...
 
-    def yield_chunks(
-        self, events_iter: Iterable[Tuple[Location, Event]]
-    ) -> Iterable[Chunk]:
-        ...
+#     def yield_chunks(
+#         self, events_iter: Iterable[Tuple[Location, Event]]
+#     ) -> Iterable[Chunk]:
+#         ...
 
-    def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
-        ...
-
-
-class EventModelFactory:
-    event_models: Dict[EventModel, EventModelProtocol] = {}
-
-    @classmethod
-    def get_model(cls, model_name: EventModel) -> EventModelProtocol:
-        return cls.event_models[model_name]
-
-    @classmethod
-    def register(cls, model_name: EventModel):
-        def wrapper(model_class: EventModelProtocol):
-            cls.event_models[model_name] = model_class
-            return model_class
-
-        return wrapper
+#     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
+#         ...
 
 
 # Using ABC for a common __init__ between concrete models
 class BaseEventModel(ABC):
-    def __init__(self, task_registry: TaskRegistry):
+    def __init__(self, task_registry: TaskRegistry, chunk_manager: ChunkManger):
         self.log = logger_getter(self.__class__.__name__)()
         self.task_registry: TaskRegistry = task_registry
-        self.chunk_dict: Dict[Any, Chunk] = dict()
-        self.chunk_stack: Dict[Any, Deque[Chunk]] = defaultdict(deque)
+        self.chunk_manager = chunk_manager
 
     def __init_subclass__(cls):
         # Add to the subclass a dict for registering handlers to update chunks & return completed chunks
@@ -240,13 +219,13 @@ class BaseEventModel(ABC):
 
             handler = self.get_update_chunk_handler(event)
             if self.event_completes_chunk(event):
-                completed_chunk = handler(
-                    event, location, self.chunk_dict, self.chunk_stack
-                )
+                assert handler is not None
+                completed_chunk = handler(event, location, self.chunk_manager)
                 assert completed_chunk is not None
                 yield completed_chunk
             elif self.event_updates_chunk(event):
-                result = handler(event, location, self.chunk_dict, self.chunk_stack)
+                assert handler is not None
+                result = handler(event, location, self.chunk_manager)
                 assert result is None
             elif self.event_skips_chunk_update(event):
                 pass
@@ -264,7 +243,7 @@ class BaseEventModel(ABC):
         task_registry.log_all_task_ts()
 
     def append_to_encountering_task_chunk(self, event: Event) -> None:
-        self.chunk_dict[event.encountering_task_id].append_event(event)
+        self.chunk_manager.append_to_chunk(event.encountering_task_id, event)
 
     @abstractmethod
     def get_task_data(self, event: Event) -> Task:
@@ -315,7 +294,31 @@ class BaseEventModel(ABC):
         return contexts
 
 
+class EventModelFactory:
+    event_models: Dict[EventModel, type[BaseEventModel]] = {}
+
+    @classmethod
+    def get_model_class(cls, model_name: EventModel) -> type[BaseEventModel]:
+        """Get the class representing a particular event model"""
+        return cls.event_models[model_name]
+
+    @classmethod
+    def register(cls, model_name: EventModel):
+        """Create a decorator which registers that a class represents the given event model"""
+
+        def wrapper(model_class: type[BaseEventModel]):
+            cls.event_models[model_name] = model_class
+            return model_class
+
+        return wrapper
+
+
 def get_event_model(
-    model_name: EventModel, task_registry: TaskRegistry, *args, **kwargs
-) -> EventModelProtocol:
-    return EventModelFactory.get_model(model_name)(task_registry, *args, **kwargs)
+    model_name: EventModel,
+    task_registry: TaskRegistry,
+    chunk_manager: ChunkManger,
+    *args,
+    **kwargs,
+) -> BaseEventModel:
+    cls = EventModelFactory.get_model_class(model_name)
+    return cls(task_registry, chunk_manager, *args, **kwargs)

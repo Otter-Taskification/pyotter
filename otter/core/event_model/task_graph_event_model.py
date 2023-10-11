@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Iterable, List, Optional, Set, Tuple
 from warnings import warn
 
-from otter.core.chunks import Chunk
+from otter.core.chunks import Chunk, ChunkManger
 from otter.core.events import Event, Location
 from otter.core.tasks import Task, TaskRegistry, TaskSynchronisationContext
 from otter.definitions import (
@@ -15,7 +15,7 @@ from otter.definitions import (
 )
 from otter.log import logger_getter
 
-from .event_model import BaseEventModel, ChunkDict, ChunkStackDict, EventModelFactory
+from .event_model import BaseEventModel, EventModelFactory
 
 get_module_logger = logger_getter("task_graph_event_model")
 
@@ -25,14 +25,13 @@ class TaskGraphEventModel(BaseEventModel):
     def __init__(
         self,
         task_registry: TaskRegistry,
+        chunk_manager: ChunkManger,
         *args,
-        gather_return_addresses: Set[int] = None,
+        gather_return_addresses: Optional[Set[int]] = None,
         **kwargs,
     ):
-        super().__init__(task_registry)
-        self._return_addresses = (
-            gather_return_addresses if gather_return_addresses is not None else None
-        )
+        super().__init__(task_registry, chunk_manager)
+        self._return_addresses = gather_return_addresses
 
     def event_completes_chunk(self, event: Event) -> bool:
         return (
@@ -49,15 +48,13 @@ class TaskGraphEventModel(BaseEventModel):
     def event_skips_chunk_update(self, event: Event) -> bool:
         return False
 
-    @classmethod
-    def is_task_register_event(cls, event: Event) -> bool:
+    def is_task_register_event(self, event: Event) -> bool:
         return (
             event.event_type == EventType.task_switch
             and event.endpoint == Endpoint.enter
         )
 
-    @classmethod
-    def is_task_create_event(cls, event: Event) -> bool:
+    def is_task_create_event(self, event: Event) -> bool:
         return (
             event.event_type == EventType.task_switch
             and event.endpoint == Endpoint.enter
@@ -149,7 +146,9 @@ class TaskGraphEventModel(BaseEventModel):
 
 @TaskGraphEventModel.update_chunks_on(event_type=EventType.task_switch)
 def update_chunks_task_switch(
-    event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict
+    event: Event,
+    location: Location,
+    chunk_manager: ChunkManger,
 ) -> Optional[Chunk]:
     log = get_module_logger()
     log.debug(
@@ -163,16 +162,13 @@ def update_chunks_task_switch(
     key = event.unique_id
     if event.endpoint == Endpoint.enter:
         if enclosing_key != NullTaskID:
-            enclosing_chunk = chunk_dict[enclosing_key]
-            enclosing_chunk.append_event(event)
-        assert key not in chunk_dict
-        chunk = Chunk(event.region_type, task_id=key)
-        chunk_dict[key] = chunk
-        chunk.append_event(event)
-        return None
+            chunk_manager.append_to_chunk(enclosing_key, event)
+        assert not chunk_manager.contains(key)
+        chunk_manager.new_chunk(key, event.region_type, task_id=key, event=event)
+        result = None
     elif event.endpoint == Endpoint.leave:
-        chunk = chunk_dict[key]
-        chunk.append_event(event)
-        return chunk
+        chunk_manager.append_to_chunk(key, event)
+        result = chunk_manager.get_chunk(key)
     else:
         raise ValueError(f"unexpected endpoint: {event.endpoint}")
+    return result

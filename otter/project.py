@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import os
-
 # TODO: sqlite3 should be internal to otter.db
 import json
+import os
 import sqlite3
 import sys
 from collections import defaultdict
@@ -11,13 +10,12 @@ from contextlib import closing
 from itertools import count
 from typing import Any, AnyStr, Dict, Iterable, List, Set, Tuple
 
-import otter
 import igraph as ig
 from otf2 import LocationType as OTF2Location
 from otf2.definitions import Attribute as OTF2Attribute
 
 from . import db, log, reporting
-from .core.chunks import Chunk
+from .core.chunks import Chunk, ChunkManger
 from .core.event_model.event_model import EventModel, get_event_model
 from .core.events import Event, Location
 from .core.tasks import TaskRegistry, TaskSynchronisationContext
@@ -58,6 +56,7 @@ class Project:
         self.return_addresses: Set[int] = set()
         self.event_model = None
         self.task_registry = TaskRegistry()
+        self.chunk_manager = ChunkManger()
         self.chunks: list[Chunk] = []
 
         log.info("project root:  %s", self.project_root)
@@ -103,6 +102,7 @@ class UnpackTraceProject(Project):
             self.event_model = get_event_model(
                 event_model_name,
                 self.task_registry,
+                self.chunk_manager,
                 gather_return_addresses=self.return_addresses,
             )
             log.info("found event model name: %s", event_model_name)
@@ -120,6 +120,10 @@ class UnpackTraceProject(Project):
                 for location, event in reader.events
             )
             context_id: Dict[TaskSynchronisationContext, int] = CountingDict(count())
+
+            # TODO: maybe want to have a method here like self.event_model.generate_chunks() which populates the chunks in the db
+
+            # TODO: yield_chunks is the memory-intensive operation that needs to be refactored
             for chunk in self.event_model.yield_chunks(event_iter):
                 contexts = self.event_model.contexts_of(chunk)
                 context_ids = []
@@ -434,6 +438,7 @@ def unpack_trace(anchorfile: str, debug: bool = False) -> None:
     project = UnpackTraceProject(anchorfile, debug=debug)
     project.prepare_environment()
     with project.connection() as con:
+        # TODO: these two methods could be combined as neither is called anywhere else
         project.process_trace(con)
         project.write_tasks_to_db(con)
         con.print_summary()

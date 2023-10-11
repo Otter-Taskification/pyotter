@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
-from otter.core.chunks import Chunk
+from otter.core.chunks import Chunk, ChunkDict, ChunkManger
 from otter.core.events import Event, Location
 from otter.core.tasks import Task, TaskRegistry
 from otter.definitions import (
@@ -15,13 +15,12 @@ from otter.definitions import (
 )
 from otter.log import logger_getter
 
-from .event_model import BaseEventModel, ChunkDict, ChunkStackDict, EventModelFactory
+from .event_model import BaseEventModel, ChunkStackDict, EventModelFactory
 
 get_module_logger = logger_getter("omp_event_model")
 
 # Type hint aliases
 EventList = List[Event]
-ChunkDict = Dict[Any, Chunk]
 ChunkStackDict = Dict[Any, Deque[Chunk]]
 ChunkUpdateHandlerKey = Tuple[Optional[RegionType], EventType]
 ChunkUpdateHandlerFn = Callable[

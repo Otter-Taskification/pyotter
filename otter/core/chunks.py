@@ -1,19 +1,16 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Deque, Iterable, Optional
-
-from loggingdecorators import on_init
+from typing import Any, Deque, Dict, Iterable, Optional
 
 from .. import definitions as defn
-from ..log import DEBUG, logger_getter
+from ..log import logger_getter
 from .events import Event
 
 get_module_logger = logger_getter("chunks")
 
 
 class Chunk:
-    # @on_init(logger=logger_getter("init_logger"), level=DEBUG)
     def __init__(self, chunk_type: defn.RegionType, task_id: int):
         self.log = get_module_logger()
         self._events: Deque[Event] = deque()
@@ -70,3 +67,31 @@ class Chunk:
             self._base_repr,
         )
         self._events.append(event)
+
+
+ChunkDict = Dict[int, Chunk]
+
+
+class ChunkManger:
+    """Responsible for maintaining the set of chunks built from a trace"""
+
+    def __init__(self) -> None:
+        self._chunk_dict: ChunkDict = {}
+
+    def new_chunk(
+        self, key: int, chunk_type: defn.RegionType, task_id: int, event: Event
+    ):
+        chunk = Chunk(chunk_type, task_id=task_id)
+        self._chunk_dict[key] = chunk
+        chunk.append_event(event)
+
+    def append_to_chunk(self, key: int, event: Event) -> None:
+        chunk = self._chunk_dict[key]
+        chunk.append_event(event)
+
+    # TODO: this method is a stop-gap while we still need to return Chunks in yield_chunks. Will eventually just return the key of a completed chunk.
+    def get_chunk(self, key: int) -> Chunk:
+        return self._chunk_dict[key]
+
+    def contains(self, key: int) -> bool:
+        return key in self._chunk_dict
