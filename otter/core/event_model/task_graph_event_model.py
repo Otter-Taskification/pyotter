@@ -11,6 +11,7 @@ from otter.definitions import (
     EventModel,
     EventType,
     NullTaskID,
+    RegionType,
     SourceLocation,
 )
 from otter.log import logger_getter
@@ -77,6 +78,9 @@ class TaskGraphEventModel(BaseEventModel):
             event.event_type == EventType.task_switch
             and event.endpoint == Endpoint.leave
         )
+
+    def is_task_sync_event(self, event: Event) -> bool:
+        return event.region_type == RegionType.taskwait
 
     def get_task_completed(self, event: Event) -> int:
         return event.unique_id

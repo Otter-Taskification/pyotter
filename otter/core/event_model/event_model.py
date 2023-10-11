@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections import defaultdict, deque
 from itertools import islice
 from typing import Any, Deque, Dict, Iterable, List, Optional, Protocol, Tuple
 
 from otter.core.chunks import Chunk, ChunkManger
 from otter.core.events import Event, Location
-from otter.core.tasks import (NullTask, Task, TaskRegistry,
-                              TaskSynchronisationContext)
-from otter.definitions import (Attr, EventModel, EventType, RegionType,
-                               SourceLocation, TaskSyncType)
+from otter.core.tasks import NullTask, Task, TaskRegistry, TaskSynchronisationContext
+from otter.definitions import (
+    Attr,
+    EventModel,
+    EventType,
+    RegionType,
+    SourceLocation,
+    TaskSyncType,
+)
 from otter.log import logger_getter
 from otter.utils.typing import Decorator
 
@@ -156,6 +160,10 @@ class BaseEventModel(ABC):
         raise NotImplementedError()
 
     @abstractmethod
+    def is_task_sync_event(self, event: Event) -> bool:
+        raise NotImplementedError()
+
+    @abstractmethod
     def get_task_completed(self, event: Event) -> int:
         raise NotImplementedError()
 
@@ -264,8 +272,7 @@ class BaseEventModel(ABC):
             if encountering_task is NullTask:
                 raise RuntimeError("unexpected NullTask")
 
-            #! #BUG: this check should take place inside a method like self.is_task_sync_event
-            if event.region_type == RegionType.taskwait:
+            if self.is_task_sync_event(event):
                 # If the event represents the task encountering a taskwait
                 # barrier, record that the currently cached set of tasks are
                 # synchronised at this barrier, then clear those tasks from the
@@ -282,13 +289,13 @@ class BaseEventModel(ABC):
 
                 #! copy contents of List[Task] from task -> context
                 barrier_context.synchronise_from(encountering_task.task_barrier_cache)
-                
-                #! clear caches
+
+                #! clear cache
                 encountering_task.clear_task_barrier_cache()
 
                 #! store this context
                 contexts.append(barrier_context)
-            
+
             if self.is_task_create_event(event):
                 # If the current event records a task-create, ensure the created
                 # task is available for any later taskwait barriers that may be
