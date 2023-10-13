@@ -8,14 +8,14 @@ import sys
 from collections import defaultdict
 from contextlib import closing
 from itertools import count
-from typing import Any, AnyStr, Dict, Iterable, List, Set, Tuple
+from typing import Any, AnyStr, Dict, List, Set
 
 import igraph as ig
 from otf2 import LocationType as OTF2Location
 from otf2.definitions import Attribute as OTF2Attribute
 
 from . import db, log, reporting
-from .core.chunks import Chunk, ChunkManger
+from .core.chunks import Chunk, MemoryChunkManger
 from .core.event_model.event_model import (
     EventModel,
     get_event_model,
@@ -60,7 +60,7 @@ class Project:
         self.return_addresses: Set[int] = set()
         self.event_model = None
         self.task_registry = TaskRegistry()
-        self.chunk_manager = ChunkManger()
+        self.chunk_manager = MemoryChunkManger()
         self.chunks: list[Chunk] = []
 
         log.info("project root:  %s", self.project_root)

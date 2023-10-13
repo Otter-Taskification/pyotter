@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
-from otter.core.chunks import Chunk, ChunkDict, ChunkManger
+from otter.core.chunks import Chunk, ChunkDict
 from otter.core.events import Event, Location
 from otter.core.tasks import Task, TaskRegistry
 from otter.definitions import (

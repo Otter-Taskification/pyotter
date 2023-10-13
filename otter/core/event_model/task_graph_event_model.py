@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Iterable, List, Optional, Set, Tuple
 from warnings import warn
 
-from otter.core.chunks import Chunk, ChunkManger
+from otter.core.chunks import Chunk, AbstractChunkManager
 from otter.core.events import Event, Location
 from otter.core.tasks import Task, TaskRegistry, TaskSynchronisationContext
 from otter.definitions import (
@@ -26,7 +26,7 @@ class TaskGraphEventModel(BaseEventModel):
     def __init__(
         self,
         task_registry: TaskRegistry,
-        chunk_manager: ChunkManger,
+        chunk_manager: AbstractChunkManager,
         *args,
         gather_return_addresses: Optional[Set[int]] = None,
         **kwargs,
@@ -151,7 +151,7 @@ def update_chunks_task_switch(
     event: Event,
     location: Location,
     location_count: int,
-    chunk_manager: ChunkManger,
+    chunk_manager: AbstractChunkManager,
 ) -> Optional[int]:
     log = get_module_logger()
     log.debug(

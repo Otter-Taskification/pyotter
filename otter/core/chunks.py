@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections import deque
 from typing import Any, Deque, Dict, Iterable, Optional
 
@@ -72,10 +73,38 @@ class Chunk:
 ChunkDict = Dict[int, Chunk]
 
 
-class ChunkManger:
+class AbstractChunkManager(ABC):
     """Responsible for maintaining the set of chunks built from a trace"""
 
     def __init__(self, *args, **kwargs) -> None:
+        super().__init__()
+
+    @abstractmethod
+    def new_chunk(
+        self, key: int, chunk_type: defn.RegionType, task_id: int, event: Event
+    ):
+        ...
+
+    @abstractmethod
+    def append_to_chunk(
+        self, key: int, event: Event, location_ref: int, location_count: int
+    ) -> None:
+        ...
+
+    @abstractmethod
+    def get_chunk(self, key: int) -> Chunk:
+        ...
+
+    @abstractmethod
+    def contains(self, key: int) -> bool:
+        ...
+
+
+class MemoryChunkManger(AbstractChunkManager):
+    """Maintains in-memory the set of chunks built from a trace"""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self._chunk_dict: ChunkDict = {}
 
     def new_chunk(

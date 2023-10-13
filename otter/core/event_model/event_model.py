@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from itertools import islice
 from typing import Any, Deque, Dict, Iterable, List, Optional, Protocol, Tuple
 
-from otter.core.chunks import Chunk, ChunkManger
+from otter.core.chunks import Chunk, AbstractChunkManager
 from otter.core.events import Event, Location
 from otter.core.tasks import NullTask, Task, TaskRegistry, TaskSynchronisationContext
 from otter.definitions import (
@@ -33,14 +33,16 @@ class ChunkUpdateHandlerFn(Protocol):
         event: Event,
         location: Location,
         location_count: int,
-        chunk_manager: ChunkManger,
+        chunk_manager: AbstractChunkManager,
     ) -> Optional[int]:
         ...
 
 
 # Using ABC for a common __init__ between concrete models
 class BaseEventModel(ABC):
-    def __init__(self, task_registry: TaskRegistry, chunk_manager: ChunkManger):
+    def __init__(
+        self, task_registry: TaskRegistry, chunk_manager: AbstractChunkManager
+    ):
         self.log = logger_getter(self.__class__.__name__)()
         self.task_registry: TaskRegistry = task_registry
         self.chunk_manager = chunk_manager
@@ -318,7 +320,7 @@ class EventModelFactory:
 def get_event_model(
     model_name: EventModel,
     task_registry: TaskRegistry,
-    chunk_manager: ChunkManger,
+    chunk_manager: AbstractChunkManager,
     *args,
     **kwargs,
 ) -> BaseEventModel:
