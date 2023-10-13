@@ -23,7 +23,7 @@ class SeekingEventReader:
         self.definitions = definitions
 
     def seek_events(self, positions: Iterable[Tuple[int, int]], readers: Dict[int, Any]):
-        with self._callbacks():
+        with self._callbacks(readers):
             for location_ref, pos in positions:
 
                 # get the local event reader for the given location
@@ -46,10 +46,11 @@ class SeekingEventReader:
         self._location_event = (location, event)
 
     @contextmanager
-    def _callbacks(self):
+    def _callbacks(self, readers: Dict[int, Any]):
         reader_callbacks = _otf2.EvtReaderCallbacks_New()
         self._set_event_reader_callbacks(reader_callbacks)
-        _otf2.EvtReader_SetCallbacks("some_evt_reader_handle", reader_callbacks, None)
+        for evt_reader in readers.values():
+            _otf2.EvtReader_SetCallbacks(evt_reader, reader_callbacks, None)
         _otf2.EvtReaderCallbacks_Delete(reader_callbacks)
         yield
 
