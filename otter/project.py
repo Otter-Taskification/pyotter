@@ -19,7 +19,7 @@ from .core.chunks import Chunk, ChunkManger
 from .core.event_model.event_model import EventModel, get_event_model
 from .core.events import Event, Location
 from .core.tasks import TaskRegistry, TaskSynchronisationContext
-from .definitions import Attr, SourceLocation, TaskAttributes
+from .definitions import Attr, SourceLocation, TaskAttributes, TraceAttr
 from .reader import get_otf2_reader
 from .utils import CountingDict, batched
 
@@ -98,7 +98,7 @@ class UnpackTraceProject(Project):
         """Read a trace and create a database of tasks and their synchronisation constraints"""
 
         with get_otf2_reader(self.anchorfile) as reader:
-            event_model_name: EventModel = reader.get_event_model_name()
+            event_model_name = EventModel(reader.get_property(TraceAttr.event_model.value))
             self.event_model = get_event_model(
                 event_model_name,
                 self.task_registry,
