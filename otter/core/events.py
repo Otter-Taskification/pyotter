@@ -30,6 +30,10 @@ class Location:
     @property
     def name(self):
         return self._loc.name
+    
+    @property
+    def ref(self):
+        return self._loc._ref
 
     @property
     def current_parallel_region(self):

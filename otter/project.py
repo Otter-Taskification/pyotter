@@ -16,12 +16,16 @@ from otf2.definitions import Attribute as OTF2Attribute
 
 from . import db, log, reporting
 from .core.chunks import Chunk, ChunkManger
-from .core.event_model.event_model import EventModel, get_event_model
+from .core.event_model.event_model import (
+    EventModel,
+    get_event_model,
+    TraceEventIterable,
+)
 from .core.events import Event, Location
 from .core.tasks import TaskRegistry, TaskSynchronisationContext
 from .definitions import Attr, SourceLocation, TaskAttributes, TraceAttr
 from .reader import get_otf2_reader
-from .utils import CountingDict, batched
+from .utils import LabellingDict, CountingDict, batched
 
 
 class Project:
@@ -98,7 +102,9 @@ class UnpackTraceProject(Project):
         """Read a trace and create a database of tasks and their synchronisation constraints"""
 
         with get_otf2_reader(self.anchorfile) as reader:
-            event_model_name = EventModel(reader.get_property(TraceAttr.event_model.value))
+            event_model_name = EventModel(
+                reader.get_property(TraceAttr.event_model.value)
+            )
             self.event_model = get_event_model(
                 event_model_name,
                 self.task_registry,
@@ -108,24 +114,34 @@ class UnpackTraceProject(Project):
             log.info("found event model name: %s", event_model_name)
             log.info("using event model: %s", self.event_model)
             log.info("reading tasks")
+
             attributes: Dict[str, OTF2Attribute] = {
                 attr.name: attr for attr in reader.definitions.attributes
             }
+
             locations: Dict[OTF2Location, Location] = {
                 location: Location(location)
                 for location in reader.definitions.locations
             }
-            event_iter: Iterable[Tuple[Location, Event]] = (
-                (locations[location], Event(event, attributes))
+
+            # Count the number of events each location yields
+            location_counter = CountingDict()
+
+            event_iter: TraceEventIterable = (
+                (
+                    locations[location],
+                    location_counter.increment(location),
+                    Event(event, attributes),
+                )
                 for location, event in reader.events
             )
-            context_id: Dict[TaskSynchronisationContext, int] = CountingDict(count())
+
+            context_id: Dict[TaskSynchronisationContext, int] = LabellingDict(count())
 
             # TODO: maybe want to have a method here like self.event_model.generate_chunks() which populates the chunks in the db
 
             # TODO: yield_chunks is the memory-intensive operation that needs to be refactored
             for chunk in self.event_model.yield_chunks(event_iter):
-                
                 #! get the task-sync contexts by iterating over the events in the chunk
                 contexts = self.event_model.contexts_of(chunk)
                 context_ids = []
@@ -154,8 +170,8 @@ class UnpackTraceProject(Project):
         log.info("Writing tasks to %s", self.tasks_db)
 
         # Create unique labels for distinct source locations
-        source_location_id: Dict[SourceLocation, int] = CountingDict(count())
-        string_id: Dict[str, int] = CountingDict(count())
+        source_location_id: Dict[SourceLocation, int] = LabellingDict(count())
+        string_id: Dict[str, int] = LabellingDict(count())
 
         # Write the tasks and their source locations
         for tasks in batched(self.task_registry, 1000):

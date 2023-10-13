@@ -85,7 +85,9 @@ class ChunkManger:
         self._chunk_dict[key] = chunk
         chunk.append_event(event)
 
-    def append_to_chunk(self, key: int, event: Event) -> None:
+    def append_to_chunk(
+        self, key: int, event: Event, location_ref: int, location_count: int
+    ) -> None:
         chunk = self._chunk_dict[key]
         chunk.append_event(event)
 

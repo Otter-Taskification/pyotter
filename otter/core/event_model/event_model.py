@@ -20,6 +20,7 @@ from otter.utils.typing import Decorator
 
 # Type hint aliases
 EventList = List[Event]
+TraceEventIterable = Iterable[Tuple[Location, int, Event]]
 ChunkStackDict = Dict[Any, Deque[Chunk]]
 ChunkUpdateHandlerKey = Tuple[Optional[RegionType], EventType]
 
@@ -31,26 +32,10 @@ class ChunkUpdateHandlerFn(Protocol):
         self,
         event: Event,
         location: Location,
+        location_count: int,
         chunk_manager: ChunkManger,
     ) -> Optional[Chunk]:
         ...
-
-
-# Using a Protocol for better static analysis
-# class EventModelProtocol(Protocol):
-#     def __init__(self, task_registry: TaskRegistry, chunk_manager: ChunkManger):
-#         ...
-
-#     def notify_task_registry(self, event: Event) -> None:
-#         ...
-
-#     def yield_chunks(
-#         self, events_iter: Iterable[Tuple[Location, Event]]
-#     ) -> Iterable[Chunk]:
-#         ...
-
-#     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
-#         ...
 
 
 # Using ABC for a common __init__ between concrete models
@@ -206,14 +191,12 @@ class BaseEventModel(ABC):
                 completed_task_id, event.time, self.get_task_end_location(event)
             )
 
-    def yield_chunks(
-        self, events_iter: Iterable[Tuple[Location, Event]]
-    ) -> Iterable[Chunk]:
+    def yield_chunks(self, events_iter: TraceEventIterable) -> Iterable[Chunk]:
         log = self.log
         task_registry = self.task_registry
         log.debug(f"receiving events from {events_iter}")
 
-        for k, (location, event) in enumerate(events_iter):
+        for k, (location, location_count, event) in enumerate(events_iter):
             log.debug(
                 "got event %d: %s",
                 k,
@@ -223,17 +206,19 @@ class BaseEventModel(ABC):
             handler = self.get_update_chunk_handler(event)
             if self.event_completes_chunk(event):
                 assert handler is not None
-                completed_chunk = handler(event, location, self.chunk_manager)
+                completed_chunk = handler(
+                    event, location, location_count, self.chunk_manager
+                )
                 assert completed_chunk is not None
                 yield completed_chunk
             elif self.event_updates_chunk(event):
                 assert handler is not None
-                result = handler(event, location, self.chunk_manager)
+                result = handler(event, location, location_count, self.chunk_manager)
                 assert result is None
             elif self.event_skips_chunk_update(event):
                 pass
             else:  # event applies default chunk update logic
-                self.append_to_encountering_task_chunk(event)
+                self.append_to_encountering_task_chunk(event, location, location_count)
 
             # if self.is_task_register_event(event):
             #     task_registry.register_task(self.get_task_data(event))
@@ -245,8 +230,12 @@ class BaseEventModel(ABC):
         task_registry.calculate_all_num_descendants()
         task_registry.log_all_task_ts()
 
-    def append_to_encountering_task_chunk(self, event: Event) -> None:
-        self.chunk_manager.append_to_chunk(event.encountering_task_id, event)
+    def append_to_encountering_task_chunk(
+        self, event: Event, location: Location, location_count: int
+    ) -> None:
+        self.chunk_manager.append_to_chunk(
+            event.encountering_task_id, event, location.ref, location_count
+        )
 
     @abstractmethod
     def get_task_data(self, event: Event) -> Task:
@@ -265,7 +254,6 @@ class BaseEventModel(ABC):
     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
         contexts: List[TaskSynchronisationContext] = []
         for event in islice(chunk.events, 1, None):
-
             #! get the task corresponding to the event
             encountering_task = self.task_registry[event.encountering_task_id]
 

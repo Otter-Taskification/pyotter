@@ -16,7 +16,7 @@ from otter.definitions import (
 )
 from otter.log import logger_getter
 
-from .event_model import BaseEventModel, EventModelFactory
+from .event_model import BaseEventModel, EventModelFactory, TraceEventIterable
 
 get_module_logger = logger_getter("task_graph_event_model")
 
@@ -131,17 +131,15 @@ class TaskGraphEventModel(BaseEventModel):
         return True
 
     def yield_events_with_warning(
-        self, events_iter: Iterable[Tuple[Location, Event]]
-    ) -> Iterable[Tuple[Location, Event]]:
-        for location, event in events_iter:
+        self, events_iter: TraceEventIterable
+    ) -> TraceEventIterable:
+        for location, location_count, event in events_iter:
             if self.filter_event(event):
                 self.pre_yield_event_callback(event)
-                yield location, event
+                yield location, location_count, event
                 self.post_yield_event_callback(event)
 
-    def yield_chunks(
-        self, events_iter: Iterable[Tuple[Location, Event]]
-    ) -> Iterable[Chunk]:
+    def yield_chunks(self, events_iter: TraceEventIterable) -> Iterable[Chunk]:
         yield from super().yield_chunks(self.yield_events_with_warning(events_iter))
 
     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
@@ -152,6 +150,7 @@ class TaskGraphEventModel(BaseEventModel):
 def update_chunks_task_switch(
     event: Event,
     location: Location,
+    location_count: int,
     chunk_manager: ChunkManger,
 ) -> Optional[Chunk]:
     log = get_module_logger()
@@ -166,12 +165,14 @@ def update_chunks_task_switch(
     key = event.unique_id
     if event.endpoint == Endpoint.enter:
         if enclosing_key != NullTaskID:
-            chunk_manager.append_to_chunk(enclosing_key, event)
+            chunk_manager.append_to_chunk(
+                enclosing_key, event, location.ref, location_count
+            )
         assert not chunk_manager.contains(key)
         chunk_manager.new_chunk(key, event.region_type, task_id=key, event=event)
         result = None
     elif event.endpoint == Endpoint.leave:
-        chunk_manager.append_to_chunk(key, event)
+        chunk_manager.append_to_chunk(key, event, location.ref, location_count)
         result = chunk_manager.get_chunk(key)
     else:
         raise ValueError(f"unexpected endpoint: {event.endpoint}")
