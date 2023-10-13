@@ -33,7 +33,7 @@ def _select_action(args) -> None:
 
     with otter.profile.output(args.profile):
         if args.action == Action.UNPACK:
-            otter.project.unpack_trace(args.anchorfile, debug=debug)
+            otter.project.unpack_trace(args.anchorfile, debug=debug, db_chunk_manager=args.db_chunk_manager)
         elif args.action == Action.SHOW:
             if args.show == GraphType.CFG:
                 otter.project.show_control_flow_graph(

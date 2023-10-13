@@ -31,12 +31,14 @@ from .utils import LabellingDict, CountingDict, batched
 class Project:
     """Prepare to use an anchorfile as input"""
 
-    def __init__(self, anchorfile: str, debug: bool = False) -> None:
+    def __init__(self, anchorfile: str, debug: bool = False, db_chunk_manager: bool = False) -> None:
         self.log = log.get_logger("main")
 
         self.debug = debug
         if self.debug:
             log.debug("using project: %s", self)
+
+        self.db_chunk_manager = db_chunk_manager
 
         self.anchorfile = os.path.abspath(anchorfile)
         if not os.path.isfile(self.anchorfile):
@@ -101,8 +103,12 @@ class UnpackTraceProject(Project):
         """Read a trace and create a database of tasks and their synchronisation constraints"""
 
         with get_otf2_reader(self.anchorfile) as reader:
-            chunk_manager = MemoryChunkManger()
-            db_chunk_manager = DBChunkManager(reader, con)
+            if self.db_chunk_manager:
+                chunk_manager = DBChunkManager(reader, con)
+            else:
+                chunk_manager = MemoryChunkManger()
+            log.info("using chunk manager: %s", str(chunk_manager))
+
 
             event_model_name = EventModel(
                 reader.get_property(TraceAttr.event_model.value)
@@ -454,10 +460,10 @@ class BuildGraphFromDB(Project):
         return graph
 
 
-def unpack_trace(anchorfile: str, debug: bool = False) -> None:
+def unpack_trace(anchorfile: str, debug: bool = False, db_chunk_manager: bool = False) -> None:
     """unpack a trace into a database for querying"""
 
-    project = UnpackTraceProject(anchorfile, debug=debug)
+    project = UnpackTraceProject(anchorfile, debug=debug, db_chunk_manager=db_chunk_manager)
     project.prepare_environment()
     with project.connection() as con:
         # TODO: these two methods could be combined as neither is called anywhere else
