@@ -75,7 +75,7 @@ ChunkDict = Dict[int, Chunk]
 class ChunkManger:
     """Responsible for maintaining the set of chunks built from a trace"""
 
-    def __init__(self) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         self._chunk_dict: ChunkDict = {}
 
     def new_chunk(

@@ -34,7 +34,7 @@ class ChunkUpdateHandlerFn(Protocol):
         location: Location,
         location_count: int,
         chunk_manager: ChunkManger,
-    ) -> Optional[Chunk]:
+    ) -> Optional[int]:
         ...
 
 
@@ -191,7 +191,7 @@ class BaseEventModel(ABC):
                 completed_task_id, event.time, self.get_task_end_location(event)
             )
 
-    def yield_chunks(self, events_iter: TraceEventIterable) -> Iterable[Chunk]:
+    def yield_chunks(self, events_iter: TraceEventIterable) -> Iterable[int]:
         log = self.log
         task_registry = self.task_registry
         log.debug(f"receiving events from {events_iter}")
@@ -206,11 +206,11 @@ class BaseEventModel(ABC):
             handler = self.get_update_chunk_handler(event)
             if self.event_completes_chunk(event):
                 assert handler is not None
-                completed_chunk = handler(
+                completed_chunk_key = handler(
                     event, location, location_count, self.chunk_manager
                 )
-                assert completed_chunk is not None
-                yield completed_chunk
+                assert completed_chunk_key is not None
+                yield completed_chunk_key
             elif self.event_updates_chunk(event):
                 assert handler is not None
                 result = handler(event, location, location_count, self.chunk_manager)

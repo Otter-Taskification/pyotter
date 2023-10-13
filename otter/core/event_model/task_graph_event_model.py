@@ -152,7 +152,7 @@ def update_chunks_task_switch(
     location: Location,
     location_count: int,
     chunk_manager: ChunkManger,
-) -> Optional[Chunk]:
+) -> Optional[int]:
     log = get_module_logger()
     log.debug(
         "%s event_type=%s region_type=%s endpoint=%s",
@@ -173,7 +173,7 @@ def update_chunks_task_switch(
         result = None
     elif event.endpoint == Endpoint.leave:
         chunk_manager.append_to_chunk(key, event, location.ref, location_count)
-        result = chunk_manager.get_chunk(key)
+        result = key
     else:
         raise ValueError(f"unexpected endpoint: {event.endpoint}")
     return result
