@@ -8,7 +8,6 @@ import sqlite3
 from otter.otf2_ext.reader import OTF2Reader
 import otter.db
 
-from .. import definitions as defn
 from ..log import logger_getter
 from .events import Event
 
@@ -70,9 +69,6 @@ ChunkDict = Dict[int, Chunk]
 class AbstractChunkManager(ABC):
     """Responsible for maintaining the set of chunks built from a trace"""
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__()
-
     @abstractmethod
     def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int):
         ...
@@ -96,7 +92,6 @@ class MemoryChunkManger(AbstractChunkManager):
     """Maintains in-memory the set of chunks built from a trace"""
 
     def __init__(self) -> None:
-        super().__init__()
         self._chunk_dict: ChunkDict = {}
 
     def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int):
@@ -110,7 +105,6 @@ class MemoryChunkManger(AbstractChunkManager):
         chunk = self._chunk_dict[key]
         chunk.append_event(event)
 
-    # TODO: this method is a stop-gap while we still need to return Chunks in yield_chunks. Will eventually just return the key of a completed chunk.
     def get_chunk(self, key: int) -> Chunk:
         return self._chunk_dict[key]
 
@@ -124,7 +118,6 @@ class DBChunkManager(AbstractChunkManager):
     def __init__(
         self, reader: OTF2Reader, con: sqlite3.Connection, bufsize: int = 100
     ) -> None:
-        super().__init__()
         self.con = con
         self.bufsize = bufsize
         self._reader = reader
