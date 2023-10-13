@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Any, Deque, Dict, Iterable, Optional
+from typing import Deque, Dict, Iterable, Optional, List, Tuple
+import sqlite3
+
+from otter.otf2_ext.reader import OTF2Reader
+import otter.db
 
 from .. import definitions as defn
 from ..log import logger_getter
@@ -12,18 +16,16 @@ get_module_logger = logger_getter("chunks")
 
 
 class Chunk:
-    def __init__(self, chunk_type: defn.RegionType, task_id: int):
+    def __init__(self):
         self.log = get_module_logger()
         self._events: Deque[Event] = deque()
-        self._type = chunk_type
-        self._task_id = task_id
 
     def __len__(self):
         return len(self._events)
 
     @property
     def _base_repr(self) -> str:
-        return f"{self.__class__.__name__}({len(self._events)} events, self.task_id={self._task_id}, self.type={self.type})"
+        return f"{self.__class__.__name__}({len(self._events)} events)"
 
     @property
     def _data_repr(self) -> str:
@@ -42,10 +44,6 @@ class Chunk:
         return self._base_repr
 
     @property
-    def task_id(self) -> int:
-        return self._task_id
-
-    @property
     def first(self) -> Optional[Event]:
         return None if len(self._events) == 0 else self._events[0]
 
@@ -56,10 +54,6 @@ class Chunk:
     @property
     def events(self) -> Iterable[Event]:
         yield from self._events
-
-    @property
-    def type(self) -> defn.RegionType:
-        return self._type
 
     def append_event(self, event):
         self.log.debug(
@@ -80,9 +74,7 @@ class AbstractChunkManager(ABC):
         super().__init__()
 
     @abstractmethod
-    def new_chunk(
-        self, key: int, chunk_type: defn.RegionType, task_id: int, event: Event
-    ):
+    def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int):
         ...
 
     @abstractmethod
@@ -103,14 +95,12 @@ class AbstractChunkManager(ABC):
 class MemoryChunkManger(AbstractChunkManager):
     """Maintains in-memory the set of chunks built from a trace"""
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self) -> None:
+        super().__init__()
         self._chunk_dict: ChunkDict = {}
 
-    def new_chunk(
-        self, key: int, chunk_type: defn.RegionType, task_id: int, event: Event
-    ):
-        chunk = Chunk(chunk_type, task_id=task_id)
+    def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int):
+        chunk = Chunk()
         self._chunk_dict[key] = chunk
         chunk.append_event(event)
 
@@ -126,3 +116,55 @@ class MemoryChunkManger(AbstractChunkManager):
 
     def contains(self, key: int) -> bool:
         return key in self._chunk_dict
+
+
+class DBChunkManager(AbstractChunkManager):
+    """Maintains a db-backed set of chunks built from a trace"""
+
+    def __init__(
+        self, reader: OTF2Reader, con: sqlite3.Connection, bufsize: int = 100
+    ) -> None:
+        super().__init__()
+        self.con = con
+        self.bufsize = bufsize
+        self._reader = reader
+        self._buffer: List[Tuple[int, int, int]] = []
+
+    def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int):
+        self.append_to_chunk(key, event, location_ref, location_count)
+
+    def append_to_chunk(
+        self, key: int, event: Event, location_ref: int, location_count: int
+    ) -> None:
+        # append (key, location_ref, location_count) to the appropriate list
+        self._buffer.append((key, location_ref, location_count))
+        # if list is long enough, flush to DB
+        if len(self._buffer) > self.bufsize:
+            self._flush()
+
+    def get_chunk(self, key: int) -> Chunk:
+        # build the Chunk corresponding to the sequence of events given by a list of (location_ref, location_count) stored for the given key
+        self._flush()
+        rows: Iterable[Tuple[int, int]] = self.con.execute(
+            otter.db.scripts.get_chunk_events, (key,)
+        ).fetchall()
+        chunk = Chunk()
+        event_iter = (
+            Event(event, self._reader.attributes) for location, event in self._reader.seek_events(rows)
+        )
+        for event in event_iter:
+            chunk.append_event(event)
+        return chunk
+
+    def contains(self, key: int) -> bool:
+        for k, *_ in self._buffer:
+            if k == key:
+                return True
+        rows = self.con.execute(otter.db.scripts.get_chunk_events, (key,)).fetchall()
+        return len(rows) > 0
+
+    def _flush(self):
+        # flush internal buffer to db
+        self.con.executemany(otter.db.scripts.insert_chunk_events, self._buffer)
+        self.con.commit()
+        self._buffer.clear()

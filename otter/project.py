@@ -15,7 +15,7 @@ from otf2 import LocationType as OTF2Location
 from otf2.definitions import Attribute as OTF2Attribute
 
 from . import db, log, reporting
-from .core.chunks import Chunk, MemoryChunkManger
+from .core.chunks import Chunk, MemoryChunkManger, DBChunkManager
 from .core.event_model.event_model import (
     EventModel,
     get_event_model,
@@ -60,7 +60,6 @@ class Project:
         self.return_addresses: Set[int] = set()
         self.event_model = None
         self.task_registry = TaskRegistry()
-        self.chunk_manager = MemoryChunkManger()
         self.chunks: list[Chunk] = []
 
         log.info("project root:  %s", self.project_root)
@@ -102,13 +101,16 @@ class UnpackTraceProject(Project):
         """Read a trace and create a database of tasks and their synchronisation constraints"""
 
         with get_otf2_reader(self.anchorfile) as reader:
+            chunk_manager = MemoryChunkManger()
+            db_chunk_manager = DBChunkManager(reader, con)
+
             event_model_name = EventModel(
                 reader.get_property(TraceAttr.event_model.value)
             )
             self.event_model = get_event_model(
                 event_model_name,
                 self.task_registry,
-                self.chunk_manager,
+                chunk_manager,
                 gather_return_addresses=self.return_addresses,
             )
             log.info("found event model name: %s", event_model_name)
@@ -142,7 +144,8 @@ class UnpackTraceProject(Project):
 
             # TODO: yield_chunks is the memory-intensive operation that needs to be refactored
             for chunk_key in self.event_model.yield_chunks(event_iter):
-                chunk = self.chunk_manager.get_chunk(chunk_key)
+                chunk = chunk_manager.get_chunk(chunk_key)
+                assert chunk.first is not None
                 #! get the task-sync contexts by iterating over the events in the chunk
                 contexts = self.event_model.contexts_of(chunk)
                 context_ids = []
@@ -151,7 +154,7 @@ class UnpackTraceProject(Project):
                 for order, context in enumerate(contexts):
                     cid = context_id[context]
                     synchronised_tasks.extend((cid, task.id) for task in context)
-                    context_ids.append((chunk.task_id, cid, order))
+                    context_ids.append((self.event_model.get_task_data(chunk.first).id, cid, order))
                     context_meta.append((cid, int(context.synchronise_descendants)))
                 # write synchronised_tasks and context_ids to db
                 # write the definition of each context i.e. sync_descendants flag

@@ -2,6 +2,7 @@
 
 from typing import Iterable, Dict, Tuple, Any
 
+from otf2.definitions import Attribute as OTF2Attribute
 from otf2.reader import Reader
 import _otf2
 
@@ -21,11 +22,18 @@ class OTF2Reader(Reader):
             location._ref: _otf2.Reader_GetEvtReader(self._handle, location._ref)
             for location in self._locations
         }
+        self._attribute_dict: Dict[str, OTF2Attribute] = {
+            attr.name: attr for attr in self.definitions.attributes
+        }
 
     @property
     def properties(self) -> Dict[str, str]:
         return self._properties
-
+    
+    @property
+    def attributes(self) -> Dict[str, OTF2Attribute]:
+        return self._attribute_dict
+    
     def get_property(self, prop_name: str) -> str:
         return self._properties[prop_name]
     

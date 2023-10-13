@@ -139,7 +139,7 @@ class TaskGraphEventModel(BaseEventModel):
                 yield location, location_count, event
                 self.post_yield_event_callback(event)
 
-    def yield_chunks(self, events_iter: TraceEventIterable) -> Iterable[Chunk]:
+    def yield_chunks(self, events_iter: TraceEventIterable) -> Iterable[int]:
         yield from super().yield_chunks(self.yield_events_with_warning(events_iter))
 
     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
@@ -169,7 +169,7 @@ def update_chunks_task_switch(
                 enclosing_key, event, location.ref, location_count
             )
         assert not chunk_manager.contains(key)
-        chunk_manager.new_chunk(key, event.region_type, task_id=key, event=event)
+        chunk_manager.new_chunk(key, event, location.ref, location_count)
         result = None
     elif event.endpoint == Endpoint.leave:
         chunk_manager.append_to_chunk(key, event, location.ref, location_count)
