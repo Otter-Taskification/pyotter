@@ -27,6 +27,8 @@ from .definitions import Attr, SourceLocation, TaskAttributes, TraceAttr
 from .reader import get_otf2_reader
 from .utils import LabellingDict, CountingDict, batched
 
+from otter.otf2_ext import otf2_version
+
 
 class Project:
     """Prepare to use an anchorfile as input"""
@@ -103,22 +105,25 @@ class UnpackTraceProject(Project):
         """Read a trace and create a database of tasks and their synchronisation constraints"""
 
         with get_otf2_reader(self.anchorfile) as reader:
+            
             if self.db_chunk_manager:
                 chunk_manager = DBChunkManager(reader, con)
             else:
                 chunk_manager = MemoryChunkManger()
-            log.info("using chunk manager: %s", str(chunk_manager))
 
+            log.info("using chunk manager: %s", str(chunk_manager))
 
             event_model_name = EventModel(
                 reader.get_property(TraceAttr.event_model.value)
             )
+
             self.event_model = get_event_model(
                 event_model_name,
                 self.task_registry,
                 chunk_manager,
                 gather_return_addresses=self.return_addresses,
             )
+
             log.info("found event model name: %s", event_model_name)
             log.info("using event model: %s", self.event_model)
             log.info("reading tasks")
@@ -138,7 +143,7 @@ class UnpackTraceProject(Project):
             event_iter: TraceEventIterable = (
                 (
                     locations[location],
-                    location_counter.increment(location),
+                    reader.get_evt_reader_pos(location._ref),
                     Event(event, attributes),
                 )
                 for location, event in reader.events
@@ -463,6 +468,8 @@ class BuildGraphFromDB(Project):
 def unpack_trace(anchorfile: str, debug: bool = False, db_chunk_manager: bool = False) -> None:
     """unpack a trace into a database for querying"""
 
+    log.info("using OTF2 version %s", otf2_version)
+    
     project = UnpackTraceProject(anchorfile, debug=debug, db_chunk_manager=db_chunk_manager)
     project.prepare_environment()
     with project.connection() as con:
