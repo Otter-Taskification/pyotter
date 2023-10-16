@@ -40,7 +40,7 @@ class SeekingEventReader:
                 else:
                     yield self._location_event
 
-    def _set_location_event(self, event_type, location_ref, time, event_position _, attribute_list, *args):
+    def _set_location_event(self, event_type, location_ref, time, event_position, _, attribute_list, *args):
         event = event_type._construct(self.definitions, time, *args)
         event.attributes = AttributeList._construct(self.definitions, attribute_list)
         location = self.definitions.locations[location_ref]
