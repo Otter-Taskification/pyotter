@@ -8,6 +8,7 @@ from otf2.attribute_list import AttributeList
 
 import _otf2
 
+_otf2_version = (_otf2.VERSION_MAJOR, _otf2.VERSION_MINOR)
 
 class SeekingEventReader:
     """
@@ -39,7 +40,7 @@ class SeekingEventReader:
                 else:
                     yield self._location_event
 
-    def _set_location_event(self, event_type, location_ref, time, _, attribute_list, *args):
+    def _set_location_event(self, event_type, location_ref, time, event_position _, attribute_list, *args):
         event = event_type._construct(self.definitions, time, *args)
         event.attributes = AttributeList._construct(self.definitions, attribute_list)
         location = self.definitions.locations[location_ref]
@@ -130,10 +131,11 @@ class SeekingEventReader:
         _otf2.EvtReaderCallbacks_SetIoTryLockCallback(cbs, self._io_try_lock)
         _otf2.EvtReaderCallbacks_SetProgramBeginCallback(cbs, self._program_begin)
         _otf2.EvtReaderCallbacks_SetProgramEndCallback(cbs, self._program_end)
-        _otf2.EvtReaderCallbacks_SetNonBlockingCollectiveRequestCallback(cbs, self._non_blocking_collective_request)
-        _otf2.EvtReaderCallbacks_SetNonBlockingCollectiveCompleteCallback(cbs, self._non_blocking_collective_complete)
-        _otf2.EvtReaderCallbacks_SetCommCreateCallback(cbs, self._comm_create)
-        _otf2.EvtReaderCallbacks_SetCommDestroyCallback(cbs, self._comm_destroy)
+        if _otf2_version >= (3, 0):
+            _otf2.EvtReaderCallbacks_SetNonBlockingCollectiveRequestCallback(cbs, self._non_blocking_collective_request)
+            _otf2.EvtReaderCallbacks_SetNonBlockingCollectiveCompleteCallback(cbs, self._non_blocking_collective_complete)
+            _otf2.EvtReaderCallbacks_SetCommCreateCallback(cbs, self._comm_create)
+            _otf2.EvtReaderCallbacks_SetCommDestroyCallback(cbs, self._comm_destroy)
 
     def _buffer_flush(self, *args):
         self._set_location_event(events.BufferFlush, *args)
