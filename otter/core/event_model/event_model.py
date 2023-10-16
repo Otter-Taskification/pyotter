@@ -200,8 +200,9 @@ class BaseEventModel(ABC):
 
         for k, (location, location_count, event) in enumerate(events_iter):
             log.debug(
-                "got event %d: %s",
+                "got event %d (location_count=%d): %s",
                 k,
+                location_count,
                 event,
             )
 
