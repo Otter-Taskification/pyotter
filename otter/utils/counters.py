@@ -11,12 +11,12 @@ class LabellingDict(defaultdict):
         super().__init__(lambda: next(counter))
 
 
-class CountingDict(dict):
+class CountingDict(defaultdict):
     """A dict which maintains a unique counter for each key"""
 
-    def __init__(self):
-        super().__init__()
-        self._map = defaultdict(count)
+    def __init__(self, start: int = 0, step: int = 1):
+        super().__init__(int)
+        self._map = defaultdict(lambda: count(start=start, step=step))
 
     def increment(self, key):
         self[key] = next(self._map[key])
