@@ -26,12 +26,11 @@ class TaskGraphEventModel(BaseEventModel):
     def __init__(
         self,
         task_registry: TaskRegistry,
-        chunk_manager: AbstractChunkManager,
         *args,
         gather_return_addresses: Optional[Set[int]] = None,
         **kwargs,
     ):
-        super().__init__(task_registry, chunk_manager)
+        super().__init__(task_registry)
         self._return_addresses = gather_return_addresses
 
     def event_completes_chunk(self, event: Event) -> bool:
@@ -139,8 +138,8 @@ class TaskGraphEventModel(BaseEventModel):
                 yield location, location_count, event
                 self.post_yield_event_callback(event)
 
-    def yield_chunks(self, events_iter: TraceEventIterable) -> Iterable[int]:
-        yield from super().yield_chunks(self.yield_events_with_warning(events_iter))
+    def yield_chunks(self, events_iter: TraceEventIterable, chunk_manager: AbstractChunkManager) -> Iterable[int]:
+        yield from super().yield_chunks(self.yield_events_with_warning(events_iter), chunk_manager)
 
     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
         return super().contexts_of(chunk)
