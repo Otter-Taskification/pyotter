@@ -4,8 +4,7 @@ from collections import deque
 from typing import Dict
 
 from loggingdecorators import on_init
-from otf2 import LocationType as OTF2Location
-from otf2.definitions import Attribute as OTF2Attribute
+from otf2.definitions import Attribute as OTF2Attribute, Location as OTF2Location
 from otf2.events import _Event as OTF2Event
 from otf2.events import BufferFlush
 

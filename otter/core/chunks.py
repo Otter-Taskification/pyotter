@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Deque, Dict, Iterable, Optional, List, Tuple
+from typing import Deque, Dict, Iterable, Optional, List, Tuple, Generator
 import sqlite3
 
-from otter.otf2_ext.reader import OTF2Reader
+from otf2_ext import SeekingEventReader
+
 import otter.db
+from otter import log
 
 from ..log import logger_getter
 from .events import Event
@@ -70,6 +72,14 @@ class AbstractChunkManager(ABC):
     """Responsible for maintaining the set of chunks built from a trace"""
 
     @abstractmethod
+    def __iter__(self) -> Generator[int, None, None]:
+        ...
+
+    @abstractmethod
+    def __len__(self) -> int:
+        ...
+
+    @abstractmethod
     def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int):
         ...
 
@@ -87,12 +97,22 @@ class AbstractChunkManager(ABC):
     def contains(self, key: int) -> bool:
         ...
 
+    @abstractmethod
+    def close(self):
+        ...
+
 
 class MemoryChunkManger(AbstractChunkManager):
     """Maintains in-memory the set of chunks built from a trace"""
 
     def __init__(self) -> None:
         self._chunk_dict: ChunkDict = {}
+
+    def __iter__(self) -> Generator[int, None, None]:
+        yield from self._chunk_dict
+
+    def __len__(self) -> int:
+        return len(self._chunk_dict)
 
     def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int):
         chunk = Chunk()
@@ -110,18 +130,32 @@ class MemoryChunkManger(AbstractChunkManager):
 
     def contains(self, key: int) -> bool:
         return key in self._chunk_dict
+    
+    def close(self):
+        pass
 
 
 class DBChunkManager(AbstractChunkManager):
     """Maintains a db-backed set of chunks built from a trace"""
 
     def __init__(
-        self, reader: OTF2Reader, con: sqlite3.Connection, bufsize: int = 100
+        self, reader: SeekingEventReader, con: sqlite3.Connection, bufsize: int = 100
     ) -> None:
         self.con = con
         self.bufsize = bufsize
         self._reader = reader
         self._buffer: List[Tuple[int, int, int]] = []
+
+    def __iter__(self) -> Generator[int, None, None]:
+        self._flush()
+        rows = self.con.execute(otter.db.scripts.get_chunk_ids).fetchall()
+        for row in rows:
+            yield row["chunk_key"]
+
+    def __len__(self) -> int:
+        self._flush()
+        row = self.con.execute(otter.db.scripts.count_chunks).fetchone()
+        return row["num_chunks"]
 
     def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int):
         self.append_to_chunk(key, event, location_ref, location_count)
@@ -143,7 +177,7 @@ class DBChunkManager(AbstractChunkManager):
         ).fetchall()
         chunk = Chunk()
         event_iter = (
-            Event(event, self._reader.attributes) for location, event in self._reader.seek_events(rows)
+            Event(event, self._reader.attributes) for pos, (location, event) in self._reader.events(rows)
         )
         for event in event_iter:
             chunk.append_event(event)
@@ -155,6 +189,9 @@ class DBChunkManager(AbstractChunkManager):
                 return True
         rows = self.con.execute(otter.db.scripts.get_chunk_events, (key,)).fetchall()
         return len(rows) > 0
+    
+    def close(self):
+        self._flush()
 
     def _flush(self):
         # flush internal buffer to db
