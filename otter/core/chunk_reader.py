@@ -27,6 +27,13 @@ class ChunkReaderProtocol(Protocol):
     def __len__(self) -> int:
         ...
 
+    def items(self) -> Iterable[Tuple[int, Chunk]]:
+        ...
+
+    @property
+    def chunks(self) -> Iterable[Chunk]:
+        ...
+
     def get_chunk(self, key: int) -> Chunk:
         ...
 
@@ -45,6 +52,14 @@ class MemoryChunkReader:
 
     def __len__(self) -> int:
         return len(self._chunk_dict)
+
+    def items(self) -> Iterable[Tuple[int, Chunk]]:
+        yield from self._chunk_dict.items()
+
+    @property
+    def chunks(self) -> Iterable[Chunk]:
+        for _, chunk in self.items():
+            yield chunk
 
     def get_chunk(self, key: int) -> Chunk:
         return self._chunk_dict[key]
@@ -72,6 +87,15 @@ class DBChunkReader:
     def __len__(self) -> int:
         row = self.con.execute(db.scripts.count_chunks).fetchone()
         return row["num_chunks"]
+
+    def items(self) -> Iterable[Tuple[int, Chunk]]:
+        for key in iter(self):
+            yield key, self.get_chunk(key)
+
+    @property
+    def chunks(self) -> Iterable[Chunk]:
+        for _, chunk in self.items():
+            yield chunk
 
     def get_chunk(self, key: int) -> Chunk:
         rows: Iterable[Tuple[int, int]] = self.con.execute(db.scripts.get_chunk_events, (key,)).fetchall()
