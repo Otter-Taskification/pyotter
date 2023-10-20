@@ -6,19 +6,22 @@ import os
 import sqlite3
 import sys
 from collections import defaultdict
-from contextlib import closing
+from contextlib import closing, ExitStack
 from itertools import count
 from typing import Any, AnyStr, Dict, List, Set
 
 import igraph as ig
-from otf2.definitions import Attribute as OTF2Attribute
-from otf2.definitions import Location as OTF2Location
 
 import otf2_ext
-from otf2_ext import pyotf2_version
 
 from . import db, log, reporting
-from .core.chunks import Chunk, DBChunkManager, MemoryChunkManger
+from .core import (
+    Chunk,
+    DBChunkBuilder,
+    DBChunkReader,
+    MemoryChunkReader,
+    MemoryChunkBuilder,
+)
 from .core.event_model.event_model import (
     EventModel,
     TraceEventIterable,
@@ -28,7 +31,6 @@ from .core.events import Event, Location
 from .core.tasks import TaskRegistry, TaskSynchronisationContext
 from .definitions import Attr, SourceLocation, TaskAttributes, TraceAttr
 
-# from .reader import get_otf2_reader
 from .utils import CountingDict, LabellingDict, batched
 
 
@@ -104,22 +106,23 @@ class UnpackTraceProject(Project):
     def process_trace(self, con: sqlite3.Connection, db_chunk_manager: bool) -> Project:
         """Read a trace and create a database of tasks and their synchronisation constraints"""
 
-        with closing(otf2_ext.Reader(self.anchorfile)) as reader:
+        if db_chunk_manager:
+            chunk_builder = DBChunkBuilder(con, bufsize=5000)
+        else:
+            chunk_builder = MemoryChunkBuilder()
 
-            global_event_reader = otf2_ext.GlobalEventReader(reader)
-            seeking_event_reader = otf2_ext.SeekingEventReader(reader)
+        # First, build the chunks
+        with ExitStack() as stack:
+            reader = stack.enter_context(otf2_ext.open_trace(self.anchorfile))
 
-            if db_chunk_manager:
-                chunk_manager = DBChunkManager(seeking_event_reader, con, bufsize=5000)
-            else:
-                chunk_manager = MemoryChunkManger()
-            
             log.info("recorded trace version: %s", reader.trace_version)
 
-            if reader.trace_version != pyotf2_version:
-                log.warning("version mismatch: trace version is %s, python version is %s", reader.trace_version, pyotf2_version)
-
-            log.info("using chunk manager: %s", str(chunk_manager))
+            if reader.trace_version != otf2_ext.version:
+                log.warning(
+                    "version mismatch: trace version is %s, python version is %s",
+                    reader.trace_version,
+                    otf2_ext.version,
+                )
 
             event_model_name = EventModel(
                 reader.get_property(TraceAttr.event_model.value)
@@ -133,7 +136,6 @@ class UnpackTraceProject(Project):
 
             log.info("found event model name: %s", event_model_name)
             log.info("using event model: %s", self.event_model)
-            log.info("reading tasks")
 
             locations: Dict[int, Location] = {
                 ref: Location(location) for ref, location in reader.locations.items()
@@ -141,6 +143,9 @@ class UnpackTraceProject(Project):
 
             # Count the number of events each location yields
             location_counter = CountingDict(start=1)
+
+            # Get the global event reader which streams all events
+            global_event_reader = stack.enter_context(reader.events())
 
             event_iter: TraceEventIterable = (
                 (
@@ -151,16 +156,24 @@ class UnpackTraceProject(Project):
                 for location, event in global_event_reader
             )
 
-            context_id: Dict[TaskSynchronisationContext, int] = LabellingDict(count())
-
-            log.info("generating chunks")
-            self.event_model.generate_chunks(event_iter, chunk_manager)
-            num_chunks = len(chunk_manager)
+            log.info("building chunks")
+            log.info("using chunk builder: %s", str(chunk_builder))
+            self.event_model.generate_chunks(event_iter, chunk_builder)
+            num_chunks = len(chunk_builder)
             log.info("generated %d chunks", num_chunks)
 
-            log.info("generating task synchronisation metadata")
-            for chunk_key in chunk_manager:
-                chunk = chunk_manager.get_chunk(chunk_key)
+        # Second, iterate over the chunks to extract synchronisation metadata
+        log.info("generating task synchronisation metadata")
+        with ExitStack() as stack:
+            reader = stack.enter_context(otf2_ext.open_trace(self.anchorfile))
+            seek_events = stack.enter_context(reader.seek_events())
+            if db_chunk_manager:
+                chunk_reader = DBChunkReader(reader.attributes, seek_events, con)
+            else:
+                chunk_reader = MemoryChunkReader(chunk_builder.move())
+            context_id: Dict[TaskSynchronisationContext, int] = LabellingDict()
+
+            for chunk in chunk_reader.chunks:
                 assert chunk.first is not None
                 #! get the task-sync contexts by iterating over the events in the chunk
                 contexts = self.event_model.contexts_of(chunk)
@@ -174,18 +187,12 @@ class UnpackTraceProject(Project):
                         (self.event_model.get_task_data(chunk.first).id, cid, order)
                     )
                     context_meta.append((cid, int(context.synchronise_descendants)))
-                # write synchronised_tasks and context_ids to db
-                # write the definition of each context i.e. sync_descendants flag
                 con.executemany(db.scripts.insert_synchronisation, synchronised_tasks)
                 con.executemany(db.scripts.insert_chunk, context_ids)
                 con.executemany(db.scripts.insert_context, context_meta)
                 con.commit()
-        if self.debug:
-            log.debug("task registry encountered the following task attributes:")
-            for name in sorted(self.task_registry.attributes):
-                log.debug(" -- %s", name)
-        return self
 
+        
     def write_tasks_to_db(self, con: sqlite3.Connection) -> None:
         """Write a trace's tasks to a db"""
 
@@ -475,7 +482,7 @@ class BuildGraphFromDB(Project):
 def unpack_trace(anchorfile: str, debug: bool = False, db_chunk_manager: bool = False) -> None:
     """unpack a trace into a database for querying"""
 
-    log.info("using OTF2 python version %s", pyotf2_version)
+    log.info("using OTF2 python version %s", otf2_ext.version)
 
     project = UnpackTraceProject(anchorfile, debug=debug)
     project.prepare_environment()
