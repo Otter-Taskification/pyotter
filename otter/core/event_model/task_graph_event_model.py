@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Iterable, List, Optional, Set, Tuple
 from warnings import warn
 
-from otter.core.chunks import Chunk, AbstractChunkManager
+from otter.core.chunks import Chunk
+from otter.core.chunk_builder import ChunkBuilderProtocol
 from otter.core.events import Event, Location
 from otter.core.tasks import Task, TaskRegistry, TaskSynchronisationContext
 from otter.definitions import (
@@ -138,7 +139,7 @@ class TaskGraphEventModel(BaseEventModel):
                 yield location, location_count, event
                 self.post_yield_event_callback(event)
 
-    def yield_chunks(self, events_iter: TraceEventIterable, chunk_manager: AbstractChunkManager) -> Iterable[int]:
+    def yield_chunks(self, events_iter: TraceEventIterable, chunk_manager) -> Iterable[int]:
         yield from super().yield_chunks(self.yield_events_with_warning(events_iter), chunk_manager)
 
     def contexts_of(self, chunk: Chunk) -> List[TaskSynchronisationContext]:
@@ -150,7 +151,7 @@ def update_chunks_task_switch(
     event: Event,
     location: Location,
     location_count: int,
-    chunk_manager: AbstractChunkManager,
+    chunk_builder: ChunkBuilderProtocol,
 ) -> Optional[int]:
     log = get_module_logger()
     log.debug(
@@ -164,14 +165,14 @@ def update_chunks_task_switch(
     key = event.unique_id
     if event.endpoint == Endpoint.enter:
         if enclosing_key != NullTaskID:
-            chunk_manager.append_to_chunk(
+            chunk_builder.append_to_chunk(
                 enclosing_key, event, location.ref, location_count
             )
-        assert not chunk_manager.contains(key)
-        chunk_manager.new_chunk(key, event, location.ref, location_count)
+        assert not chunk_builder.contains(key)
+        chunk_builder.new_chunk(key, event, location.ref, location_count)
         result = None
     elif event.endpoint == Endpoint.leave:
-        chunk_manager.append_to_chunk(key, event, location.ref, location_count)
+        chunk_builder.append_to_chunk(key, event, location.ref, location_count)
         result = key
     else:
         raise ValueError(f"unexpected endpoint: {event.endpoint}")

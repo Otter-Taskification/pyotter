@@ -6,7 +6,8 @@ from itertools import islice
 from typing import Any, Deque, Dict, Iterable, List, Optional, Protocol, Tuple
 
 import otter
-from otter.core.chunks import Chunk, AbstractChunkManager
+from otter.core.chunks import Chunk
+from otter.core.chunk_builder import ChunkBuilderProtocol
 from otter.core.events import Event, Location
 from otter.core.tasks import NullTask, Task, TaskRegistry, TaskSynchronisationContext
 from otter.definitions import (
@@ -35,7 +36,7 @@ class ChunkUpdateHandlerFn(Protocol):
         event: Event,
         location: Location,
         location_count: int,
-        chunk_manager: AbstractChunkManager,
+        chunk_builder: ChunkBuilderProtocol,
     ) -> Optional[int]:
         ...
 
@@ -194,29 +195,31 @@ class BaseEventModel(ABC):
                 completed_task_id, event.time, self.get_task_end_location(event)
             )
 
-    def generate_chunks(self, events_iter: TraceEventIterable, chunk_manager: AbstractChunkManager) -> None:
+    def generate_chunks(self, events_iter: TraceEventIterable, chunk_builder: ChunkBuilderProtocol) -> None:
         task_registry = self.task_registry
         otter.log.debug(f"receiving events from %s", events_iter)
 
-        with closing(chunk_manager):
+        total_events = 0
+        with closing(chunk_builder):
             for k, (location, location_count, event) in enumerate(events_iter, start=1):
                 otter.log.debug("got event %d (location=%d, position=%d): %s", k, location, location_count, event)
 
                 handler = self.get_update_chunk_handler(event)
                 if self.event_completes_chunk(event):
                     assert handler is not None
-                    handler(event, location, location_count, chunk_manager)
+                    handler(event, location, location_count, chunk_builder)
                 elif self.event_updates_chunk(event):
                     assert handler is not None
-                    handler(event, location, location_count, chunk_manager)
+                    handler(event, location, location_count, chunk_builder)
                 elif self.event_skips_chunk_update(event):
                     pass
                 else:  # event applies default chunk update logic
-                    self.append_to_encountering_task_chunk(event, location, location_count, chunk_manager)
+                    self.append_to_encountering_task_chunk(event, location, location_count, chunk_builder)
+                total_events = k
 
-        otter.log.info(f"read %d events", k)
+        otter.log.info(f"read %d events", total_events)
 
-    def yield_chunks(self, events_iter: TraceEventIterable, chunk_manager: AbstractChunkManager) -> Iterable[int]:
+    def yield_chunks(self, events_iter: TraceEventIterable, chunk_manager) -> Iterable[int]:
         log = self.log
         task_registry = self.task_registry
         log.debug(f"receiving events from {events_iter}")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol, Dict, List, Tuple
+from typing import Protocol, List, Tuple
 import sqlite3
 
 from otter import db
@@ -9,21 +9,28 @@ from .events import Event
 from .chunks import Chunk, ChunkDict
 
 
-class ChunkWriterProtocol(Protocol):
+class ChunkBuilderProtocol(Protocol):
     """Capable of building the set of chunks from a trace"""
 
-    def __len__(self) -> int: ...
+    def __len__(self) -> int:
+        ...
 
-    def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int): ...
+    def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int):
+        ...
 
-    def append_to_chunk(self, key: int, event: Event, location_ref: int, location_count: int) -> None: ...
+    def append_to_chunk(
+        self, key: int, event: Event, location_ref: int, location_count: int
+    ) -> None:
+        ...
 
-    def contains(self, key: int) -> bool: ...
+    def contains(self, key: int) -> bool:
+        ...
 
-    def close(self): ...
+    def close(self):
+        ...
 
 
-class MemoryChunkWriter:
+class MemoryChunkBuilder:
     """Builds an in-memory set of the chunks in a trace"""
 
     def __init__(self) -> None:
@@ -45,25 +52,22 @@ class MemoryChunkWriter:
 
     def contains(self, key: int) -> bool:
         return key in self._chunk_dict
-    
+
     def move(self):
         chunks = self._chunk_dict
         self._chunk_dict.clear()
         return chunks
-    
+
     def close(self):
         pass
 
 
-class DBChunkWriter:
+class DBChunkBuilder:
     """Builds a database representation of the chunks in a trace"""
 
-    def __init__(
-        self, attributes, con: sqlite3.Connection, bufsize: int = 100
-    ) -> None:
+    def __init__(self, con: sqlite3.Connection, bufsize: int = 100) -> None:
         self.con = con
         self.bufsize = bufsize
-        self._attributes = attributes
         self._buffer: List[Tuple[int, int, int]] = []
 
     def __len__(self) -> int:
@@ -87,7 +91,7 @@ class DBChunkWriter:
                 return True
         rows = self.con.execute(db.scripts.get_chunk_events, (key,)).fetchall()
         return len(rows) > 0
-    
+
     def close(self):
         self._flush()
 
