@@ -28,10 +28,10 @@ from .core.event_model.event_model import (
     get_event_model,
 )
 from .core.events import Event, Location
-from .core.tasks import TaskRegistry, TaskSynchronisationContext
+from .core.task_builder import DBTaskBuilder
 from .definitions import Attr, SourceLocation, TaskAttributes, TraceAttr
 
-from .utils import CountingDict, LabellingDict, batched
+from .utils import CountingDict, LabellingDict
 
 
 class Project:
@@ -65,7 +65,6 @@ class Project:
         self.tasks_db = self.abspath(os.path.join(self.aux_dir, "tasks.db"))
         self.return_addresses: Set[int] = set()
         self.event_model = None
-        self.task_registry = TaskRegistry()
         self.chunks: list[Chunk] = []
 
         log.info("project root:  %s", self.project_root)
@@ -86,6 +85,11 @@ class Project:
 class UnpackTraceProject(Project):
     """Unpack a trace"""
 
+    def __init__(self, anchorfile: str, debug: bool = False) -> None:
+        super().__init__(anchorfile, debug)
+        self.source_location_id: Dict[SourceLocation, int] = LabellingDict()
+        self.string_id: Dict[str, int] = LabellingDict()
+
     def prepare_environment(self) -> None:
         """Prepare the environment - create any folders, databases, etc required by the project"""
 
@@ -100,18 +104,21 @@ class UnpackTraceProject(Project):
         else:
             log.info("creating tasks database %s", self.tasks_db)
         with closing(sqlite3.connect(self.tasks_db)) as con:
+            log.info("creating databases")
             con.executescript(db.scripts.create_tasks)
+            log.info("creating views")
             con.executescript(db.scripts.create_views)
 
-    def process_trace(self, con: sqlite3.Connection, db_chunk_manager: bool) -> Project:
+    def process_trace(self, con: sqlite3.Connection, db_chunk_manager: bool):
         """Read a trace and create a database of tasks and their synchronisation constraints"""
 
         if db_chunk_manager:
             chunk_builder = DBChunkBuilder(con, bufsize=5000)
         else:
             chunk_builder = MemoryChunkBuilder()
+        task_builder = DBTaskBuilder(con, self.source_location_id, self.string_id)
 
-        # First, build the chunks
+        # First, build the chunks & tasks data
         with ExitStack() as stack:
             reader = stack.enter_context(otf2_ext.open_trace(self.anchorfile))
 
@@ -130,7 +137,6 @@ class UnpackTraceProject(Project):
 
             self.event_model = get_event_model(
                 event_model_name,
-                self.task_registry,
                 gather_return_addresses=self.return_addresses,
             )
 
@@ -158,8 +164,8 @@ class UnpackTraceProject(Project):
 
             log.info("building chunks")
             log.info("using chunk builder: %s", str(chunk_builder))
-            self.event_model.generate_chunks(event_iter, chunk_builder)
-            num_chunks = len(chunk_builder)
+            with closing(chunk_builder) as chunk_builder, closing(task_builder) as task_builder:
+                num_chunks = self.event_model.generate_chunks(event_iter, chunk_builder, task_builder)
             log.info("generated %d chunks", num_chunks)
 
         # Second, iterate over the chunks to extract synchronisation metadata
@@ -171,87 +177,43 @@ class UnpackTraceProject(Project):
                 chunk_reader = DBChunkReader(reader.attributes, seek_events, con)
             else:
                 chunk_reader = MemoryChunkReader(chunk_builder.move())
-            context_id: Dict[TaskSynchronisationContext, int] = LabellingDict()
+            context_id = count()
 
             for chunk in chunk_reader.chunks:
                 assert chunk.first is not None
-                #! get the task-sync contexts by iterating over the events in the chunk
+                encountering_task_id = self.event_model.get_task_data(chunk.first).id
                 contexts = self.event_model.contexts_of(chunk)
                 context_ids = []
                 synchronised_tasks = []
                 context_meta = []
-                for order, context in enumerate(contexts):
-                    cid = context_id[context]
-                    synchronised_tasks.extend((cid, task.id) for task in context)
-                    context_ids.append(
-                        (self.event_model.get_task_data(chunk.first).id, cid, order)
-                    )
-                    context_meta.append((cid, int(context.synchronise_descendants)))
+                for order, (sync_descendants, task_ids) in enumerate(contexts):
+                    cid = next(context_id)
+                    synchronised_tasks.extend((cid, task) for task in task_ids)
+                    context_ids.append((encountering_task_id, cid, order))
+                    context_meta.append((cid, int(sync_descendants)))
                 con.executemany(db.scripts.insert_synchronisation, synchronised_tasks)
                 con.executemany(db.scripts.insert_chunk, context_ids)
                 con.executemany(db.scripts.insert_context, context_meta)
                 con.commit()
-
         
-    def write_tasks_to_db(self, con: sqlite3.Connection) -> None:
-        """Write a trace's tasks to a db"""
-
-        log.info("Writing tasks to %s", self.tasks_db)
-
-        # Create unique labels for distinct source locations
-        source_location_id: Dict[SourceLocation, int] = LabellingDict(count())
-        string_id: Dict[str, int] = LabellingDict(count())
-
-        # Write the tasks and their source locations
-        for tasks in batched(self.task_registry, 1000):
-            task_data = (
-                (
-                    task.id,
-                    str(task.start_ts),
-                    str(task.end_ts),
-                    task.naive_duration,
-                    source_location_id[task.init_location],
-                    source_location_id[task.start_location],
-                    source_location_id[task.end_location],
-                    task.task_flavour,
-                    string_id[task.task_label],
-                )
-                for task in tasks
-            )
-            con.executemany(db.scripts.insert_tasks, task_data)
-
-        con.commit()
-
-        # Write the definitions of the source locations, mapping their IDs to string IDs
+        # Finally, write the definitions of the source locations and then the strings
         source_location_definitions = (
             (
                 locid,
-                string_id[location.file],
-                string_id[location.func],
+                self.string_id[location.file],
+                self.string_id[location.func],
                 location.line,
             )
-            for (location, locid) in source_location_id.items()
+            for (location, locid) in self.source_location_id.items()
         )
         con.executemany(db.scripts.define_source_locations, source_location_definitions)
 
-        # Write the string definitions mapping ID to the string value
         string_definitions = (
-            (string_key, string) for (string, string_key) in string_id.items()
+            (string_key, string) for (string, string_key) in self.string_id.items()
         )
         con.executemany(db.scripts.define_strings, string_definitions)
 
-        # Write the task parent-child relationships
-        all_relations = (
-            (task.id, child_id)
-            for task in iter(self.task_registry)
-            for child_id in task.iter_children()
-        )
-        for relations in batched(all_relations, 1000):
-            con.executemany(db.scripts.insert_task_relations, relations)
         con.commit()
-
-        (tasks_inserted,) = con.execute(db.scripts.count_tasks).fetchone()
-        log.info("wrote %s tasks", tasks_inserted)
 
 
 class BuildGraphFromDB(Project):
@@ -489,7 +451,6 @@ def unpack_trace(anchorfile: str, debug: bool = False, db_chunk_manager: bool = 
     with project.connection() as con:
         # TODO: these two methods could be combined as neither is called anywhere else
         project.process_trace(con, db_chunk_manager=db_chunk_manager)
-        project.write_tasks_to_db(con)
         con.print_summary()
 
 
