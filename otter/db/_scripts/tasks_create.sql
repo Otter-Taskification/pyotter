@@ -3,18 +3,35 @@
 -- List the tasks and their start/end times
 create table task(
     id int unique not null,
-    start_ts,
-    end_ts,
-    duration int,
-    init_loc_id int not null,  -- the location where the task was initialised
-    start_loc_id int not null, -- the location where the task started
-    end_loc_id int not null,   -- the location where the task ended
+
+    -- these fields removed as they can be calculated from the task_history table
+    -- start_ts,
+    -- end_ts,
+    -- duration int,
+
+    -- these fields removed as they are now in the task_history table
+    -- init_loc_id int not null,  -- the location where the task was initialised
+    -- start_loc_id int not null, -- the location where the task started
+    -- end_loc_id int not null,   -- the location where the task ended
+
     flavour int,
     user_label,
     primary key (id),
-    foreign key (init_loc_id) references source (src_loc_id),
-    foreign key (start_loc_id) references source (src_loc_id),
-    foreign key (end_loc_id) references source (src_loc_id)
+
+    -- these keys removed as their fields removed
+    -- foreign key (init_loc_id) references source (src_loc_id),
+    -- foreign key (start_loc_id) references source (src_loc_id),
+    -- foreign key (end_loc_id) references source (src_loc_id)
+);
+
+-- List actions of each task
+create table task_history(
+    id int not null,       -- task ID
+    action int not null,   -- create/start/end
+    time not null,         -- time of action
+    location,              -- source location
+    primary key (id, action)
+    foreign key (id) references task (id)
 );
 
 -- List parent-child links
