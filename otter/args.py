@@ -170,12 +170,6 @@ def prepare_parser():
         formatter_class=formatter_class,
     )
     parse_action_unpack.add_argument(
-        "--db-chunk-manager",
-        help="select the DB chunk manager",
-        dest="db_chunk_manager",
-        action="store_true",
-    )
-    parse_action_unpack.add_argument(
         "anchorfile", help="the Otter OTF2 anchorfile to use"
     )
     add_common_arguments(parse_action_unpack)

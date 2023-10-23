@@ -19,8 +19,6 @@ from .core import (
     Chunk,
     DBChunkBuilder,
     DBChunkReader,
-    MemoryChunkReader,
-    MemoryChunkBuilder,
 )
 from .core.event_model.event_model import (
     EventModel,
@@ -109,13 +107,10 @@ class UnpackTraceProject(Project):
             log.info("creating views")
             con.executescript(db.scripts.create_views)
 
-    def process_trace(self, con: sqlite3.Connection, db_chunk_manager: bool):
+    def process_trace(self, con: sqlite3.Connection):
         """Read a trace and create a database of tasks and their synchronisation constraints"""
 
-        if db_chunk_manager:
-            chunk_builder = DBChunkBuilder(con, bufsize=5000)
-        else:
-            chunk_builder = MemoryChunkBuilder()
+        chunk_builder = DBChunkBuilder(con, bufsize=5000)
         task_builder = DBTaskBuilder(con, self.source_location_id, self.string_id)
 
         # First, build the chunks & tasks data
@@ -173,10 +168,7 @@ class UnpackTraceProject(Project):
         with ExitStack() as stack:
             reader = stack.enter_context(otf2_ext.open_trace(self.anchorfile))
             seek_events = stack.enter_context(reader.seek_events())
-            if db_chunk_manager:
-                chunk_reader = DBChunkReader(reader.attributes, seek_events, con)
-            else:
-                chunk_reader = MemoryChunkReader(chunk_builder.move())
+            chunk_reader = DBChunkReader(reader.attributes, seek_events, con)
             context_id = count()
 
             for chunk in chunk_reader.chunks:
@@ -441,7 +433,7 @@ class BuildGraphFromDB(Project):
         return graph
 
 
-def unpack_trace(anchorfile: str, debug: bool = False, db_chunk_manager: bool = False) -> None:
+def unpack_trace(anchorfile: str, debug: bool = False) -> None:
     """unpack a trace into a database for querying"""
 
     log.info("using OTF2 python version %s", otf2_ext.version)
@@ -450,7 +442,7 @@ def unpack_trace(anchorfile: str, debug: bool = False, db_chunk_manager: bool = 
     project.prepare_environment()
     with project.connection() as con:
         # TODO: these two methods could be combined as neither is called anywhere else
-        project.process_trace(con, db_chunk_manager=db_chunk_manager)
+        project.process_trace(con)
         con.print_summary()
 
 

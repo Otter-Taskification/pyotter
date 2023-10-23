@@ -213,9 +213,9 @@ class BaseEventModel(ABC):
         return num_chunks
 
     def append_to_encountering_task_chunk(
-        self, event: Event, location: Location, location_count: int, chunk_manager: AbstractChunkManager
+        self, event: Event, location: Location, location_count: int, chunk_builder: ChunkBuilderProtocol
     ) -> None:
-        chunk_manager.append_to_chunk(
+        chunk_builder.append_to_chunk(
             event.encountering_task_id, event, location.ref, location_count
         )
 

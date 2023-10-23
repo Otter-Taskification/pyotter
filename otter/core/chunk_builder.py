@@ -6,7 +6,6 @@ import sqlite3
 from otter import db
 
 from .events import Event
-from .chunks import Chunk, ChunkDict
 
 
 class ChunkBuilderProtocol(Protocol):
@@ -28,38 +27,6 @@ class ChunkBuilderProtocol(Protocol):
 
     def close(self):
         ...
-
-
-class MemoryChunkBuilder:
-    """Builds an in-memory set of the chunks in a trace"""
-
-    def __init__(self) -> None:
-        self._chunk_dict: ChunkDict = {}
-
-    def __len__(self) -> int:
-        return len(self._chunk_dict)
-
-    def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int):
-        chunk = Chunk()
-        self._chunk_dict[key] = chunk
-        chunk.append_event(event)
-
-    def append_to_chunk(
-        self, key: int, event: Event, location_ref: int, location_count: int
-    ) -> None:
-        chunk = self._chunk_dict[key]
-        chunk.append_event(event)
-
-    def contains(self, key: int) -> bool:
-        return key in self._chunk_dict
-
-    def move(self):
-        chunks = self._chunk_dict
-        self._chunk_dict.clear()
-        return chunks
-
-    def close(self):
-        pass
 
 
 class DBChunkBuilder:

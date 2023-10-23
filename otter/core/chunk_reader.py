@@ -8,7 +8,7 @@ from otf2_ext.events import EventType
 from otter import db
 
 from .events import Event
-from .chunks import Chunk, ChunkDict
+from .chunks import Chunk
 
 
 class SeekEventsCallback(Protocol):
@@ -39,33 +39,6 @@ class ChunkReaderProtocol(Protocol):
 
     def contains(self, key: int) -> bool:
         ...
-
-
-class MemoryChunkReader:
-    """Read from an in-memory set of chunks"""
-
-    def __init__(self, chunks: ChunkDict) -> None:
-        self._chunk_dict: ChunkDict = chunks
-
-    def __iter__(self) -> Generator[int, None, None]:
-        yield from self._chunk_dict
-
-    def __len__(self) -> int:
-        return len(self._chunk_dict)
-
-    def items(self) -> Iterable[Tuple[int, Chunk]]:
-        yield from self._chunk_dict.items()
-
-    @property
-    def chunks(self) -> Iterable[Chunk]:
-        for _, chunk in self.items():
-            yield chunk
-
-    def get_chunk(self, key: int) -> Chunk:
-        return self._chunk_dict[key]
-
-    def contains(self, key: int) -> bool:
-        return key in self._chunk_dict
 
 
 class DBChunkReader:
