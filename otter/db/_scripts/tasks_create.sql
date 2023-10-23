@@ -15,7 +15,7 @@ create table task(
     -- end_loc_id int not null,   -- the location where the task ended
 
     flavour int,
-    user_label,
+    user_label int,
     primary key (id),
 
     -- these keys removed as their fields removed
