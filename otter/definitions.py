@@ -101,6 +101,12 @@ class TaskType(str, Enum):
     target = "target_task"
 
 
+class TaskAction(int, Enum):
+    INIT = 0
+    START = 1
+    END = 2
+
+
 class Endpoint(str, Enum):
     enter = "enter"
     leave = "leave"
