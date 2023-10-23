@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from collections import deque
-from typing import Deque, Dict, Iterable, Optional, List, Tuple, Generator, Protocol
-import sqlite3
+from typing import Deque, Dict, Iterable, Optional, Tuple, Protocol
 
 from otf2_ext.events import EventType
-
-import otter.db
-from otter import log
 
 from ..log import logger_getter
 from .events import Event
