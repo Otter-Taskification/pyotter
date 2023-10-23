@@ -27,9 +27,9 @@ create table task(
 -- List actions of each task
 create table task_history(
     id int not null,       -- task ID
-    action int not null,   -- create/start/end
+    action int not null,   -- 0=init/1=start/2=end
     time not null,         -- time of action
-    location,              -- source location
+    location_id,           -- source location
     primary key (id, action)
     foreign key (id) references task (id)
 );

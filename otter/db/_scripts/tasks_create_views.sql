@@ -12,8 +12,11 @@ create view if not exists task_init_location(
         ,func.text as func
         ,src.line as line
     from task
+    inner join task_history as hist
+        on hist.id = task.id
+        and hist.action = 0 -- init
     inner join source as src
-        on src.src_loc_id = task.init_loc_id
+        on src.src_loc_id = hist.location_id
     inner join string as file
         on file.id = src.file_id
     inner join string as func
@@ -32,15 +35,18 @@ create view if not exists task_start_location(
         ,func.text as func
         ,src.line as line
     from task
+    inner join task_history as hist
+        on hist.id = task.id
+        and hist.action = 1 -- start
     inner join source as src
-        on src.src_loc_id = task.start_loc_id
+        on src.src_loc_id = hist.location_id
     inner join string as file
         on file.id = src.file_id
     inner join string as func
         on func.id = src.func_id
 ;
 
--- Get a readable view of the tasks' start locations
+-- Get a readable view of the tasks' end locations
 create view if not exists task_end_location(
          id
         ,file
@@ -52,8 +58,11 @@ create view if not exists task_end_location(
         ,func.text as func
         ,src.line as line
     from task
+    inner join task_history as hist
+        on hist.id = task.id
+        and hist.action = 2 -- end
     inner join source as src
-        on src.src_loc_id = task.end_loc_id
+        on src.src_loc_id = hist.location_id
     inner join string as file
         on file.id = src.file_id
     inner join string as func
@@ -83,9 +92,9 @@ create view if not exists task_attributes as
         ,parent.parent_id
         ,task.flavour
         ,string.text as task_label
-        ,task.start_ts
-        ,task.end_ts
-        ,task.duration
+        ,start.time as start_ts
+        ,end,time as end_ts
+        -- ,task.duration
         ,init_loc.file as init_file
         ,init_loc.func as init_func
         ,init_loc.line as init_line
@@ -96,6 +105,12 @@ create view if not exists task_attributes as
         ,end_loc.func as end_func
         ,end_loc.line as end_line
     from task
+    left join task_history as start
+        on task.id = start.id
+        and start.action == 1 -- start
+    left join task_history as end
+        on task.id = end.id
+        and end.action == 2 -- end
     left join task_relation as parent
         on task.id = parent.child_id
     left join string
