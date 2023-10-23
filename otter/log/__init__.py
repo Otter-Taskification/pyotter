@@ -55,10 +55,7 @@ def initialise(args):
 
     from . import config
 
-    try:
-        import importlib.resources as resources
-    except ImportError:
-        import importlib_resources as resources
+    import importlib.resources as resources
 
     if not os.path.isdir(args.logdir):
         os.mkdir(args.logdir)
