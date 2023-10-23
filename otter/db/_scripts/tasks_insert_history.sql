@@ -3,5 +3,6 @@
 insert into task_history values(
     ?, -- id
     ?, -- action
-    ?  -- time
+    ?, -- time
+    ?  -- location id
 );

@@ -93,7 +93,7 @@ create view if not exists task_attributes as
         ,task.flavour
         ,string.text as task_label
         ,start.time as start_ts
-        ,end,time as end_ts
+        ,end.time as end_ts
         -- ,task.duration
         ,init_loc.file as init_file
         ,init_loc.func as init_func
