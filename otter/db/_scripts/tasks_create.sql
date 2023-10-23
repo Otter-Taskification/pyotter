@@ -16,7 +16,7 @@ create table task(
 
     flavour int,
     user_label int,
-    primary key (id),
+    primary key (id)
 
     -- these keys removed as their fields removed
     -- foreign key (init_loc_id) references source (src_loc_id),
