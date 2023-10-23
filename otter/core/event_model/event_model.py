@@ -17,6 +17,8 @@ from otter.definitions import (
     RegionType,
     SourceLocation,
     TaskSyncType,
+    TaskAction,
+    NullTaskID
 )
 from otter.log import logger_getter
 from otter.utils.typing import Decorator
@@ -33,13 +35,10 @@ get_module_logger = logger_getter("event_model")
 class TaskBuilderProtocol(Protocol):
     """Capable of building a representation of the tasks in a trace"""
 
-    def add_task_metadata(self, task: int, label: int, flavour: int = -1):
+    def add_task_metadata(self, task: int, parent: Optional[int], label: str, flavour: int = -1):
         ...
 
-    def add_parent_child(self, parent: int, child: int):
-        ...
-
-    def add_task_action(self, task: int, action: int, time: str):
+    def add_task_action(self, task: int, action: TaskAction, time: str, location: SourceLocation):
         ...
 
     def close(self) -> None:
@@ -59,12 +58,9 @@ class ChunkUpdateHandlerFn(Protocol):
 
 # Using ABC for a common __init__ between concrete models
 class BaseEventModel(ABC):
-    def __init__(
-        self, task_registry: TaskRegistry, task_builder: TaskBuilderProtocol
-    ):
+    def __init__(self, task_registry: TaskRegistry):
         self.log = logger_getter(self.__class__.__name__)()
         self.task_registry: TaskRegistry = task_registry
-        self.task_builder = task_builder
 
     def __init_subclass__(cls):
         # Add to the subclass a dict for registering handlers to update chunks & return completed chunks
@@ -215,29 +211,44 @@ class BaseEventModel(ABC):
                 completed_task_id, event.time, self.get_task_end_location(event)
             )
 
-    def generate_chunks(self, events_iter: TraceEventIterable, chunk_builder: ChunkBuilderProtocol) -> None:
-        task_registry = self.task_registry
+    def generate_chunks(self, events_iter: TraceEventIterable, chunk_builder: ChunkBuilderProtocol, task_builder: TaskBuilderProtocol) -> int:
         otter.log.debug(f"receiving events from %s", events_iter)
 
         total_events = 0
-        with closing(chunk_builder):
-            for k, (location, location_count, event) in enumerate(events_iter, start=1):
-                otter.log.debug("got event %d (location=%d, position=%d): %s", k, location, location_count, event)
+        num_chunks = 0
+        for k, (location, location_count, event) in enumerate(events_iter, start=1):
+            otter.log.debug("got event %d (location=%d, position=%d): %s", k, location, location_count, event)
 
-                handler = self.get_update_chunk_handler(event)
-                if self.event_completes_chunk(event):
-                    assert handler is not None
-                    handler(event, location, location_count, chunk_builder)
-                elif self.event_updates_chunk(event):
-                    assert handler is not None
-                    handler(event, location, location_count, chunk_builder)
-                elif self.event_skips_chunk_update(event):
-                    pass
-                else:  # event applies default chunk update logic
-                    self.append_to_encountering_task_chunk(event, location, location_count, chunk_builder)
-                total_events = k
+            # Update the appropriate chunk
+            handler = self.get_update_chunk_handler(event)
+            if self.event_completes_chunk(event):
+                assert handler is not None
+                handler(event, location, location_count, chunk_builder)
+                num_chunks += 1
+            elif self.event_updates_chunk(event):
+                assert handler is not None
+                handler(event, location, location_count, chunk_builder)
+            elif self.event_skips_chunk_update(event):
+                pass
+            else:  # event applies default chunk update logic
+                self.append_to_encountering_task_chunk(event, location, location_count, chunk_builder)
+
+            # Update the task builder
+            if self.is_task_register_event(event):
+                task = self.get_task_data(event)
+                parent_id = task.parent_id if task.parent_id != NullTaskID else None
+                task_builder.add_task_metadata(task.id, parent_id, task.task_label)
+                task_builder.add_task_action(task.id, TaskAction.INIT, str(event.time), task.init_location)
+            if self.is_update_task_start_ts_event(event):
+                task_builder.add_task_action(self.get_task_entered(event), TaskAction.START, str(event.time), self.get_task_start_location(event))
+            if self.is_task_complete_event(event):
+                task_builder.add_task_action(self.get_task_completed(event), TaskAction.END, str(event.time), self.get_task_end_location(event))
+
+            total_events = k
 
         otter.log.info(f"read %d events", total_events)
+
+        return num_chunks
 
     def yield_chunks(self, events_iter: TraceEventIterable, chunk_manager) -> Iterable[int]:
         log = self.log
@@ -364,12 +375,6 @@ class EventModelFactory:
         return wrapper
 
 
-def get_event_model(
-    model_name: EventModel,
-    task_registry: TaskRegistry,
-    task_builder: TaskBuilderProtocol,
-    *args,
-    **kwargs,
-) -> BaseEventModel:
+def get_event_model(model_name: EventModel, task_registry: TaskRegistry, *args, **kwargs) -> BaseEventModel:
     cls = EventModelFactory.get_model_class(model_name)
-    return cls(task_registry, task_builder, *args, **kwargs)
+    return cls(task_registry, *args, **kwargs)

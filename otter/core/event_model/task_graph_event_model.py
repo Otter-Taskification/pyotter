@@ -17,7 +17,7 @@ from otter.definitions import (
 )
 from otter.log import logger_getter
 
-from .event_model import BaseEventModel, EventModelFactory, TraceEventIterable, TaskBuilderProtocol
+from .event_model import BaseEventModel, EventModelFactory, TraceEventIterable
 
 get_module_logger = logger_getter("task_graph_event_model")
 
@@ -27,12 +27,11 @@ class TaskGraphEventModel(BaseEventModel):
     def __init__(
         self,
         task_registry: TaskRegistry,
-        task_builder: TaskBuilderProtocol,
         *args,
         gather_return_addresses: Optional[Set[int]] = None,
         **kwargs,
     ):
-        super().__init__(task_registry, task_builder)
+        super().__init__(task_registry)
         self._return_addresses = gather_return_addresses
 
     def event_completes_chunk(self, event: Event) -> bool:
