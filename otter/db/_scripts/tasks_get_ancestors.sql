@@ -3,7 +3,7 @@ with ancestor as (
     select id
         ,0 as depth
     from task
-    where id in (5013)
+    where id in (XXX)
     union all
     select parent_id as id
         ,depth+1 as depth
