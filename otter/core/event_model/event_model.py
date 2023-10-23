@@ -30,6 +30,22 @@ ChunkUpdateHandlerKey = Tuple[Optional[RegionType], EventType]
 get_module_logger = logger_getter("event_model")
 
 
+class TaskBuilderProtocol(Protocol):
+    """Capable of building a representation of the tasks in a trace"""
+
+    def add_task_metadata(self, task: int, label: int, flavour: int = -1):
+        ...
+
+    def add_parent_child(self, parent: int, child: int):
+        ...
+
+    def add_task_action(self, task: int, action: int, time: str):
+        ...
+
+    def close(self) -> None:
+        ...
+
+
 class ChunkUpdateHandlerFn(Protocol):
     def __call__(
         self,
@@ -44,10 +60,11 @@ class ChunkUpdateHandlerFn(Protocol):
 # Using ABC for a common __init__ between concrete models
 class BaseEventModel(ABC):
     def __init__(
-        self, task_registry: TaskRegistry
+        self, task_registry: TaskRegistry, task_builder: TaskBuilderProtocol
     ):
         self.log = logger_getter(self.__class__.__name__)()
         self.task_registry: TaskRegistry = task_registry
+        self.task_builder = task_builder
 
     def __init_subclass__(cls):
         # Add to the subclass a dict for registering handlers to update chunks & return completed chunks
@@ -163,6 +180,7 @@ class BaseEventModel(ABC):
 
     def notify_task_registry(self, event: Event) -> None:
         if self.is_task_register_event(event):
+            #TODO: TaskRegistry WRITE
             self.task_registry.register_task(self.get_task_data(event))
 
         if self.is_update_task_start_ts_event(event):
@@ -170,6 +188,7 @@ class BaseEventModel(ABC):
             self.log.debug(
                 "notifying task start time: %d started at %d", task_entered, event.time
             )
+            #TODO: TaskRegistry WRITE
             self.task_registry.notify_task_start(
                 task_entered, event.time, self.get_task_start_location(event)
             )
@@ -191,6 +210,7 @@ class BaseEventModel(ABC):
             self.log.debug(
                 "event %s notifying task %d of end_ts", event, completed_task_id
             )
+            #TODO: TaskRegistry WRITE
             self.task_registry.notify_task_end(
                 completed_task_id, event.time, self.get_task_end_location(event)
             )
@@ -347,8 +367,9 @@ class EventModelFactory:
 def get_event_model(
     model_name: EventModel,
     task_registry: TaskRegistry,
+    task_builder: TaskBuilderProtocol,
     *args,
     **kwargs,
 ) -> BaseEventModel:
     cls = EventModelFactory.get_model_class(model_name)
-    return cls(task_registry, *args, **kwargs)
+    return cls(task_registry, task_builder, *args, **kwargs)
