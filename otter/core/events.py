@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections import deque
 from typing import Dict
 
-from loggingdecorators import on_init
 from otf2.definitions import Attribute as OTF2Attribute, Location as OTF2Location
 from otf2.events import _Event as OTF2Event
 from otf2.events import BufferFlush
@@ -16,8 +15,7 @@ get_module_logger = log.logger_getter("events")
 
 class Location:
     # NOTE: Responsible for recording its traversal into & out of parallel regions
-
-    @on_init(logger=log.logger_getter("init_logger"), level=log.DEBUG)
+    
     def __init__(self, location: OTF2Location):
         self.log = log.get_logger(self.__class__.__name__)
         self._loc = location
