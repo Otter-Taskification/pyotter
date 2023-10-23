@@ -5,7 +5,7 @@ from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 from otter.core.chunks import Chunk, ChunkDict
 from otter.core.events import Event, Location
-from otter.core.tasks import Task, TaskRegistry
+from otter.core.tasks import Task
 from otter.definitions import (
     EventModel,
     EventType,
@@ -24,14 +24,14 @@ EventList = List[Event]
 ChunkStackDict = Dict[Any, Deque[Chunk]]
 ChunkUpdateHandlerKey = Tuple[Optional[RegionType], EventType]
 ChunkUpdateHandlerFn = Callable[
-    [Event, Location, ChunkDict, ChunkStackDict, TaskRegistry], Optional[Chunk]
+    [Event, Location, ChunkDict, ChunkStackDict, Any], Optional[Chunk]
 ]
 
 
 @EventModelFactory.register(EventModel.OMP)
 class OMPEventModel(BaseEventModel):
-    def __init__(self, task_registry: TaskRegistry, *args, **kwargs):
-        super().__init__(task_registry)
+    def __init__(self, *args, **kwargs):
+        super().__init__()
         # A dictionary mapping a single-exec or master-begin event to a list of tasks to be synchronised
         self._task_sync_cache: Dict[Event, List[Task]] = defaultdict(list)
 
