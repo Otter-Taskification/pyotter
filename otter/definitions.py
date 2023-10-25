@@ -195,7 +195,7 @@ class TaskAttributes:
         return self.label is None and self.flavour is None
 
     def __str__(self) -> str:
-        return self.label
+        return f"TaskAttributes(label=\"{self.label}\", init={str(self.init_location)}, start={str(self.start_location)}, end={str(self.end_location)}"
 
     def asdict(self):
         return asdict(self)
