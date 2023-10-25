@@ -467,7 +467,7 @@ def show_task_hierarchy(anchorfile: str, dotfile: str, debug: bool = False) -> N
 
     for parent, child, total in rows:
         if not child.is_null():
-            graph.add_edge(vertices[parent], vertices[child], label=total)
+            graph.add_edge(vertices[parent], vertices[child], label=str(total))
 
     colour = reporting.colour_picker()
     for task, vertex in vertices.items():
