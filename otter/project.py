@@ -475,16 +475,17 @@ def show_task_hierarchy(anchorfile: str, dotfile: str, debug: bool = False) -> N
         r, g, b = (int(x * 256) for x in colour[task.label])
         vertex["color"] = f"#{r:02x}{g:02x}{b:02x}"
 
+    log.debug("writing dotfile: %s", dotfile)
     reporting.write_graph_to_file(graph, filename=dotfile)
 
+    log.debug("converting dotfile to svg")
     result, _, stderr, svgfile = reporting.convert_dot_to_svg(
         dotfile=dotfile, rankdir="LR"
     )
     if result != 0:
-        for line in stderr:
+        for line in stderr.splitlines():
             print(line, file=sys.stderr)
     else:
-        os.unlink(dotfile)
         print(f"task hierarchy graph written to {svgfile}")
 
 
