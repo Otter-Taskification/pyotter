@@ -58,7 +58,7 @@ def wrap(name, content, **kwargs):
 
 def graphviz_record_table(object_attr: dict, **kwargs):
     """A HTML-like table where each row represents one key-value pair of some object's attributes"""
-    table_attr = defaultdict(lambda: dict(), kwargs.get("table_attr", dict()))
+    table_attr = defaultdict(dict, kwargs.get("table_attr", dict()))
     with Tag("table", **table_attr["table"]) as t:
         for key, value in object_attr.items():
             with t.add(Tag("tr", **table_attr["tr"])) as tr:

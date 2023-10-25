@@ -1,10 +1,6 @@
+from importlib import resources
+
 from . import _scripts
-
-try:
-    import importlib.resources as resources
-except ImportError:
-    import importlib_resources as resources
-
 
 def get_sql(name: str) -> str:
     return resources.read_text(_scripts, name)
