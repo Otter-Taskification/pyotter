@@ -310,7 +310,7 @@ class BuildGraphFromDB(Project):
         return graph
 
     def build_control_flow_graph(
-        self, con: db.Connection, task: int, debug: bool = False
+        self, con: db.Connection, task: int, debug: bool
     ) -> ig.Graph:
         """Build a task's control-flow-graph"""
 
@@ -330,9 +330,8 @@ class BuildGraphFromDB(Project):
             barrier_vertex = None
             if sequence is not None:
                 barrier_vertex = graph.add_vertex(
-                    shape="octagon", style="filled", color="red"
+                    shape="octagon", style="filled", color="red", type="barrier"
                 )
-                barrier_vertex["type"] = "barrier"
                 graph.add_edge(cur, barrier_vertex)
 
             # add vertices for the tasks synchronised at this barrier
@@ -391,45 +390,25 @@ class BuildGraphFromDB(Project):
 
         # For vertices where the key is int, assume it indicates a task and get
         # all such tasks' attributes
-        task_attr = {
-            row["id"]: row
-            for row in con.attributes_of(n for n in label_data if isinstance(n, int))
-        }
-
-        for k, vertex in zip(label_data, graph.vs):
-            if k is None:
+        task_id_labels = [x for x in label_data if isinstance(x, int)]
+        task_attributes = dict((task_id, attributes) for task_id, *_, attributes in con.task_attributes(task_id_labels))
+        for label_item, vertex in zip(label_data, graph.vs):
+            if label_item is None:
                 vertex["label"] = ""
-            elif isinstance(k, int):
-                attr = task_attr[k]
-
-                # TODO: consider refactoring to use TaskAttributes instead of dict
-                data = {
-                    "id": k,
-                    "label": attr["task_label"],
-                    "flavour": attr["flavour"],
-                    "init_location": SourceLocation(
-                        attr["init_file"], attr["init_func"], attr["init_line"]
-                    ),
-                    "start_location": SourceLocation(
-                        attr["start_file"], attr["start_func"], attr["start_line"]
-                    ),
-                    "end_location": SourceLocation(
-                        attr["end_file"], attr["end_func"], attr["end_line"]
-                    ),
-                }
-
-                r, g, b = (int(x * 256) for x in colour[attr[Attr.task_label]])
+            elif isinstance(label_item, int):
+                data = {"id": label_item} # have id as the first item in the dict
+                data.update(task_attributes[label_item].asdict())
+                r, g, b = (int(x * 256) for x in colour[data["label"]])
                 vertex["label"] = reporting.as_html_table(data)
                 vertex["color"] = f"#{r:02x}{g:02x}{b:02x}"
-            elif isinstance(k, dict):
-                vertex["label"] = reporting.as_html_table(k)
-            elif isinstance(k, tuple):
-                vertex["label"] = reporting.as_html_table(dict(k))
+            elif isinstance(label_item, dict):
+                vertex["label"] = reporting.as_html_table(label_item)
+            elif isinstance(label_item, tuple):
+                vertex["label"] = reporting.as_html_table(dict(label_item))
             else:
                 raise ValueError(
                     f"expected int, dict, None or tuple of name-value pairs, got {k}"
                 )
-
         return graph
 
 
@@ -493,9 +472,9 @@ def show_control_flow_graph(
     anchorfile: str,
     dotfile: str,
     task: int,
-    style: bool = False,
-    simple: bool = False,
-    debug: bool = False,
+    style: bool,
+    simple: bool,
+    debug: bool,
 ) -> None:
     """Show the cfg of a given task"""
 
