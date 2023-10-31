@@ -40,7 +40,7 @@ def _select_action(args) -> None:
                     args.anchorfile,
                     args.dotfile,
                     args.task,
-                    args.style,
+                    True, # always apply styling
                     args.simple,
                     debug=debug,
                 )

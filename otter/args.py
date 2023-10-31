@@ -224,14 +224,6 @@ def prepare_parser():
         default="cfg_{task}.dot",
     )
     parser_show_cfg.add_argument(
-        "-s",
-        "--style",
-        dest="style",
-        help="apply styling to the graph",
-        action="store_true",
-        default=False,
-    )
-    parser_show_cfg.add_argument(
         "--simple",
         dest="simple",
         help="create a simplified graph",
