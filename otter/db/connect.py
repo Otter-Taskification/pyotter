@@ -28,7 +28,8 @@ class Connection(sqlite3.Connection):
     def __init__(self, db: str, **kwargs):
         super().__init__(db, **kwargs)
         self.db = db
-        self.row_factory = Row
+        self.default_row_factory = Row
+        self.row_factory = self.default_row_factory
 
     def print_summary(self) -> None:
         """Print summary information about the connected tasks database"""
@@ -54,7 +55,7 @@ class Connection(sqlite3.Connection):
         )
         return tuple(cur.fetchall())
 
-    def attributes_of(self, tasks: Iterable[int]) -> Tuple[Any]:
+    def attributes_of(self, tasks: Iterable[int]) -> Tuple[Any, ...]:
         # TODO: consider returning Tuple[TaskAttributes] instead
         tasks = tuple(tasks)
         placeholder = ",".join("?" for _ in tasks)
@@ -63,6 +64,18 @@ class Connection(sqlite3.Connection):
         )
         cur = self.execute(query_str, tasks)
         return tuple(cur.fetchall())
+    
+    def task_attributes(self, tasks: Iterable[int]) -> List[Tuple[int, int, str, str, TaskAttributes]]:
+        tasks = tuple(tasks)
+        placeholder = ",".join("?" for _ in tasks)
+        query_str = (
+            f"select * from task_attributes where id in ({placeholder}) order by id\n"
+        )
+        self.row_factory = self._task_attributes_row_factory
+        cur = self.execute(query_str, tasks)
+        self.row_factory = Row
+        return cur.fetchall()
+        
 
     @staticmethod
     def _parent_child_attributes_row_factory(
@@ -83,8 +96,13 @@ class Connection(sqlite3.Connection):
         return TaskAttributes(*task_attr), count
 
     @staticmethod
-    def _source_location_row_factory(_, values: tuple[Any]) -> SourceLocation:
+    def _source_location_row_factory(_, values: tuple[Any, ...]) -> SourceLocation:
         return SourceLocation(*values)
+    
+    @staticmethod
+    def _task_attributes_row_factory(_, values: tuple[Any, ...]):
+        task_id, parent_id, flavour, label, start_ts, end_ts, *locations = values
+        return task_id, parent_id, start_ts, end_ts, TaskAttributes(label, flavour, *locations)
 
     def parent_child_attributes(
         self,
