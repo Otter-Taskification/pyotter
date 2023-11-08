@@ -448,7 +448,7 @@ def show_task_hierarchy(anchorfile: str, dotfile: str, debug: bool = False) -> N
         if not child.is_null():
             graph.add_edge(vertices[parent], vertices[child], label=str(total))
 
-    colour = reporting.colour_picker()
+    colour = reporting.colour_picker(cycle=True)
     for task, vertex in vertices.items():
         vertex["label"] = reporting.as_html_table(task.asdict())
         r, g, b = (int(x * 256) for x in colour[task.label])

@@ -1,5 +1,6 @@
 import os
 import subprocess as sp
+import itertools
 from collections import defaultdict
 from typing import Literal, Optional, Tuple
 
@@ -56,8 +57,10 @@ some_colours = [
 ]
 
 
-def colour_picker():
+def colour_picker(cycle: bool = False):
     colour_iter = iter(some_colours)
+    if cycle:
+        colour_iter = itertools.cycle(colour_iter)
     return defaultdict(lambda: next(colour_iter))
 
 
