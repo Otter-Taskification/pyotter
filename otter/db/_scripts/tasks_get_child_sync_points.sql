@@ -1,6 +1,7 @@
 select rel.child_id
     ,sync.context_id
     ,ctx.sync_descendants
+    ,ctx.sync_start_ts
     ,chunk.sequence
 from task
 
@@ -8,6 +9,7 @@ from task
 inner join task_relation as rel
     on task.id = rel.parent_id
 
+-- TODO: doesn't look like we need task_attributes here
 -- add the childrens' attributes
 left join task_attributes as attr
     on rel.child_id = attr.id
