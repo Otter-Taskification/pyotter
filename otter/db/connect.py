@@ -145,6 +145,22 @@ class Connection(sqlite3.Connection):
                 )
             yield seq, rows
 
+    def task_synchronisation_groups(self, task: int):
+        records = self.child_sync_points(task)
+        sequences = defaultdict(list)
+        time = {}
+        sync_descendants = {}
+        for row in records:
+            s = row["sequence"]
+            sequences[s].append(row)
+            if s not in time:
+                time[s] = int(row["sync_start_ts"])
+            if s not in sync_descendants:
+                sync_descendants[s] = bool(row["sync_descendants"])
+        for seq, rows in sequences.items():
+            yield seq, rows, time[seq], sync_descendants[seq]
+
+
     def source_locations(self):
         """Get all the source locations defined in the trace"""
 
