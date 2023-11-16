@@ -48,12 +48,22 @@ class Connection(sqlite3.Connection):
             count = self.execute(query_count_rows).fetchone()
             print(row_format.format(row["type"], row["name"], count["rows"]))
 
+    def task_ids(self) -> Iterable[int]:
+        cur = self.cursor()
+        cur.execute("select id from task order by rowid")
+        while True:
+            row = cur.fetchone()
+            if row is None:
+                break
+            yield row["id"]
+
+    def root_tasks(self) -> Tuple[int]:
+        return (0,)
+
     def children_of(self, parent: int) -> Tuple[int]:
         cur = self.cursor()
-        cur.execute(
-            "select child_id from task_relation where parent_id in (?)", (parent,)
-        )
-        return tuple(cur.fetchall())
+        query = "select child_id from task_relation where parent_id in (?)"
+        return [r["child_id"] for r in cur.execute(query, (parent,)).fetchall()]
 
     def attributes_of(self, tasks: Iterable[int]) -> Tuple[Any, ...]:
         # TODO: consider returning Tuple[TaskAttributes] instead
@@ -64,7 +74,7 @@ class Connection(sqlite3.Connection):
         )
         cur = self.execute(query_str, tasks)
         return tuple(cur.fetchall())
-    
+
     def task_attributes(self, tasks: Iterable[int]) -> List[Tuple[int, int, int, str, str, TaskAttributes]]:
         tasks = tuple(tasks)
         placeholder = ",".join("?" for _ in tasks)
@@ -75,7 +85,6 @@ class Connection(sqlite3.Connection):
         cur = self.execute(query_str, tasks)
         self.row_factory = Row
         return cur.fetchall()
-        
 
     @staticmethod
     def _parent_child_attributes_row_factory(
@@ -98,7 +107,7 @@ class Connection(sqlite3.Connection):
     @staticmethod
     def _source_location_row_factory(_, values: tuple[Any, ...]) -> SourceLocation:
         return SourceLocation(*values)
-    
+
     @staticmethod
     def _task_attributes_row_factory(_, values: tuple[Any, ...]):
         task_id, parent_id, num_children, flavour, label, start_ts, end_ts, *locations = values
@@ -159,7 +168,6 @@ class Connection(sqlite3.Connection):
                 sync_descendants[s] = bool(row["sync_descendants"])
         for seq, rows in sequences.items():
             yield seq, rows, time[seq], sync_descendants[seq]
-
 
     def source_locations(self):
         """Get all the source locations defined in the trace"""
