@@ -173,6 +173,13 @@ class UnpackTraceProject(Project):
 
             for chunk in chunk_reader.chunks:
                 assert chunk.first is not None
+                try:
+                    assert self.event_model.is_task_register_event(chunk.first)
+                except AssertionError as e:
+                    log.error("expected a task-register event")
+                    log.error("event: %s", chunk.first)
+                    log.error("chunk: %s", chunk)
+                    raise e
                 encountering_task_id = self.event_model.get_task_data(chunk.first).id
                 contexts = self.event_model.contexts_of(chunk)
                 context_ids = []

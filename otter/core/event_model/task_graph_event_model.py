@@ -15,6 +15,7 @@ from otter.definitions import (
     SourceLocation,
 )
 from otter.log import logger_getter
+from otter import log
 
 from .event_model import BaseEventModel, EventModelFactory, TraceEventIterable, TaskBuilderProtocol
 
@@ -146,8 +147,8 @@ def update_chunks_task_switch(
     location_count: int,
     chunk_builder: ChunkBuilderProtocol,
 ) -> Optional[int]:
-    log = get_module_logger()
-    log.debug(
+    logger = get_module_logger()
+    logger.debug(
         "%s event_type=%s region_type=%s endpoint=%s",
         event,
         event.event_type,
@@ -161,7 +162,15 @@ def update_chunks_task_switch(
             chunk_builder.append_to_chunk(
                 enclosing_key, event, location.ref, location_count
             )
-        assert not chunk_builder.contains(key)
+        try:
+            assert not chunk_builder.contains(key)
+        except AssertionError as e:
+            log.error("failed to create chunk for key %s", key)
+            log.error("time=%d key=%s already defined in chunk builder", event.time, key)
+            log.error("location: %s ref=%d", location, location.ref)
+            log.error("location_count: %s", location_count)
+            log.error("event: %s", event)
+            raise e
         chunk_builder.new_chunk(key, event, location.ref, location_count)
         result = None
     elif event.endpoint == Endpoint.leave:
