@@ -233,8 +233,8 @@ class BaseEventModel(ABC):
         """For an event which represents the end of a task, get the source location of this event"""
         raise NotImplementedError()
 
-    def contexts_of(self, chunk: Chunk) -> List[Tuple[bool, List[int]]]:
-        contexts: List[Tuple[bool, List[int]]] = []
+    def contexts_of(self, chunk: Chunk) -> List[Tuple[bool, List[int], int]]:
+        contexts: List[Tuple[bool, List[int], int]] = []
         task_cache: DefaultDict[int, List[int]] = defaultdict(list)
         for event in islice(chunk.events, 1, None):
             encountering_task_id = event.encountering_task_id
@@ -242,7 +242,7 @@ class BaseEventModel(ABC):
                 raise RuntimeError("unexpected NullTask")
             if self.is_task_sync_event(event):
                 descendants = bool(event.sync_descendant_tasks == TaskSyncType.descendants)
-                contexts.append((descendants, task_cache[encountering_task_id]))
+                contexts.append((descendants, task_cache[encountering_task_id], event.time))
                 del task_cache[encountering_task_id]
             elif self.is_task_create_event(event):
                 task_cache[encountering_task_id].append(event.unique_id)

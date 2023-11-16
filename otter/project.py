@@ -185,11 +185,11 @@ class UnpackTraceProject(Project):
                 context_ids = []
                 synchronised_tasks = []
                 context_meta = []
-                for order, (sync_descendants, task_ids) in enumerate(contexts):
+                for order, (sync_descendants, task_ids, sync_start_ts) in enumerate(contexts):
                     cid = next(context_id)
                     synchronised_tasks.extend((cid, task) for task in task_ids)
                     context_ids.append((encountering_task_id, cid, order))
-                    context_meta.append((cid, int(sync_descendants)))
+                    context_meta.append((cid, int(sync_descendants), str(sync_start_ts)))
                 con.executemany(db.scripts.insert_synchronisation, synchronised_tasks)
                 con.executemany(db.scripts.insert_chunk, context_ids)
                 con.executemany(db.scripts.insert_context, context_meta)
