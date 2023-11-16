@@ -17,4 +17,5 @@ def _find_dot_or_die():
 
 _find_dot_or_die()
 
-from . import args, core, log, main, profile, project, reporting, utils
+from .definitions import TaskAttributes
+from . import args, core, log, main, profile, project, reporting, utils, db
