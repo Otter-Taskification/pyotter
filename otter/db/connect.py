@@ -65,7 +65,7 @@ class Connection(sqlite3.Connection):
         cur = self.execute(query_str, tasks)
         return tuple(cur.fetchall())
     
-    def task_attributes(self, tasks: Iterable[int]) -> List[Tuple[int, int, str, str, TaskAttributes]]:
+    def task_attributes(self, tasks: Iterable[int]) -> List[Tuple[int, int, int, str, str, TaskAttributes]]:
         tasks = tuple(tasks)
         placeholder = ",".join("?" for _ in tasks)
         query_str = (
@@ -101,8 +101,8 @@ class Connection(sqlite3.Connection):
     
     @staticmethod
     def _task_attributes_row_factory(_, values: tuple[Any, ...]):
-        task_id, parent_id, flavour, label, start_ts, end_ts, *locations = values
-        return task_id, parent_id, start_ts, end_ts, TaskAttributes(label, flavour, *locations)
+        task_id, parent_id, num_children, flavour, label, start_ts, end_ts, *locations = values
+        return task_id, parent_id, num_children, start_ts, end_ts, TaskAttributes(label, flavour, *locations)
 
     def parent_child_attributes(
         self,

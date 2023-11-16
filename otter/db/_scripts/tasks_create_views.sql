@@ -90,6 +90,7 @@ create view if not exists task_location as
 create view if not exists task_attributes as
     select task.id
         ,parent.parent_id
+        ,count(children.child_id) as num_children
         ,task.flavour
         ,string.text as task_label
         ,start.time as start_ts
@@ -121,6 +122,9 @@ create view if not exists task_attributes as
         on task.id = start_loc.id
     left join task_end_location as end_loc
         on task.id = end_loc.id
+    left join task_relation as children
+        on task.id = children.parent_id
+	group by task.id
 ;
 
 -- A readable view of all source locations
