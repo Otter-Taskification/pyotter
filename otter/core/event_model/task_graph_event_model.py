@@ -45,8 +45,11 @@ class TaskGraphEventModel(BaseEventModel):
             and event.endpoint == Endpoint.enter
         )
 
-    def event_skips_chunk_update(self, event: Event) -> bool:
-        return False
+    def event_skips_chunk_update(self, event: Event) -> bool: 
+        return (
+            event.region_type == RegionType.taskwait
+            and event.endpoint == Endpoint.leave
+        )
 
     def is_task_register_event(self, event: Event) -> bool:
         return (
@@ -80,6 +83,18 @@ class TaskGraphEventModel(BaseEventModel):
 
     def is_task_sync_event(self, event: Event) -> bool:
         return event.region_type == RegionType.taskwait
+    
+    def is_task_suspend_event(self, event: Event) -> bool:
+        return (
+            event.region_type == RegionType.taskwait
+            and event.endpoint == Endpoint.enter
+        )
+    
+    def is_task_resume_event(self, event: Event) -> bool:
+        return (
+            event.region_type == RegionType.taskwait
+            and event.endpoint == Endpoint.leave
+        )
 
     def get_task_completed(self, event: Event) -> int:
         return event.unique_id

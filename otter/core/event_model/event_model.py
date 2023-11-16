@@ -163,6 +163,14 @@ class BaseEventModel(ABC):
     @abstractmethod
     def is_task_sync_event(self, event: Event) -> bool:
         raise NotImplementedError()
+    
+    @abstractmethod
+    def is_task_suspend_event(self, event: Event) -> bool:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def is_task_resume_event(self, event: Event) -> bool:
+        raise NotImplementedError()
 
     @abstractmethod
     def get_task_completed(self, event: Event) -> int:
@@ -205,6 +213,11 @@ class BaseEventModel(ABC):
                 task_builder.add_task_action(self.get_task_entered(event), TaskAction.START, str(event.time), self.get_task_start_location(event))
             if self.is_task_complete_event(event):
                 task_builder.add_task_action(self.get_task_completed(event), TaskAction.END, str(event.time), self.get_task_end_location(event))
+
+            if self.is_task_suspend_event(event):
+                task_builder.add_task_action(event.encountering_task_id, TaskAction.SUSPEND, str(event.time), SourceLocation())
+            elif self.is_task_resume_event(event):
+                task_builder.add_task_action(event.encountering_task_id, TaskAction.RESUME, str(event.time), SourceLocation())
 
             total_events = k
 

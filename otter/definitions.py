@@ -105,6 +105,8 @@ class TaskAction(int, Enum):
     INIT = 0
     START = 1
     END = 2
+    SUSPEND = 3
+    RESUME = 4
 
 
 class Endpoint(str, Enum):
