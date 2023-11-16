@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from argparse import Namespace
 from enum import Enum
 from logging import DEBUG, ERROR, INFO, WARN, Logger, getLogger
 from typing import Optional
@@ -47,7 +48,7 @@ class _state_:
         return cls._is_initialised
 
 
-def initialise(args):
+def initialise(args=None):
     import os
     from logging import config as logging_config
 
@@ -56,6 +57,11 @@ def initialise(args):
     from . import config
 
     import importlib.resources as resources
+
+    if args is None:
+        args = Namespace()
+        args.logdir = "."
+        args.loglevel = "warn"
 
     if not os.path.isdir(args.logdir):
         os.mkdir(args.logdir)
