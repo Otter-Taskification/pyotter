@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import sqlite3
 from collections import defaultdict
+from itertools import groupby
 from typing import Any, Generator, Iterable, List, Optional, Tuple
 
 from .. import log
-from ..definitions import TaskAttributes, SourceLocation
+from ..utils import batched
+from ..definitions import TaskAttributes, SourceLocation, TaskAction
 from . import scripts
 
 
@@ -85,6 +87,25 @@ class Connection(sqlite3.Connection):
         cur = self.execute(query_str, tasks)
         self.row_factory = Row
         return cur.fetchall()
+    
+    def task_suspend_ts(self, tasks: Iterable[int]) -> Generator[tuple[int, list[tuple[int, int]]], Any, None]:
+        tasks = tuple(tasks)
+        placeholder = ",".join("?" for _ in tasks)
+        query = f"""select *
+        from task_history
+        where id in ({placeholder})
+        and action in ({TaskAction.SUSPEND.value}, {TaskAction.RESUME.value})
+        order by id, time"""
+        cur = self.execute(query, tasks)
+        rows = cur.fetchall()
+        grouper = groupby(rows, key = lambda row: row["id"])
+        for task_id, task_suspend_iter in grouper:
+            timestamps = []
+            for suspended, resumed in batched(task_suspend_iter, 2):
+                assert suspended["action"] == TaskAction.SUSPEND
+                assert resumed["action"] == TaskAction.RESUME
+                timestamps.append((int(suspended["time"]), int(resumed["time"])))
+            yield task_id, timestamps
 
     @staticmethod
     def _parent_child_attributes_row_factory(
@@ -163,7 +184,7 @@ class Connection(sqlite3.Connection):
             s = row["sequence"]
             sequences[s].append(row)
             if s not in time:
-                time[s] = int(row["sync_start_ts"])
+                time[s] = int(row["sync_complete_ts"])
             if s not in sync_descendants:
                 sync_descendants[s] = bool(row["sync_descendants"])
         for seq, rows in sequences.items():

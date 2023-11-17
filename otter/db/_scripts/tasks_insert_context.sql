@@ -1,5 +1,5 @@
 insert into context values(
     ?, -- context_id
     ?, -- sync_descendants
-    ?  -- sync_start_ts
+    ?  -- sync_complete_ts
 );

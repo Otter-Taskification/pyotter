@@ -48,7 +48,7 @@ class TaskGraphEventModel(BaseEventModel):
     def event_skips_chunk_update(self, event: Event) -> bool:
         return (
             event.region_type == RegionType.taskwait
-            and event.endpoint == Endpoint.leave
+            and event.endpoint == Endpoint.enter
         )
 
     def is_task_register_event(self, event: Event) -> bool:
