@@ -37,7 +37,7 @@ create view if not exists task_start_location(
     from task
     inner join task_history as hist
         on hist.id = task.id
-        and hist.action = 1 -- start
+        and hist.action = 2 -- start
     inner join source as src
         on src.src_loc_id = hist.location_id
     inner join string as file
@@ -60,7 +60,7 @@ create view if not exists task_end_location(
     from task
     inner join task_history as hist
         on hist.id = task.id
-        and hist.action = 2 -- end
+        and hist.action = 3 -- end
     inner join source as src
         on src.src_loc_id = hist.location_id
     inner join string as file
@@ -108,10 +108,10 @@ create view if not exists task_attributes as
     from task
     left join task_history as start
         on task.id = start.id
-        and start.action == 1 -- start
+        and start.action == 2 -- start
     left join task_history as end
         on task.id = end.id
-        and end.action == 2 -- end
+        and end.action == 3 -- end
     left join task_relation as parent
         on task.id = parent.child_id
     left join string

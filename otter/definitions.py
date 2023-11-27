@@ -103,10 +103,11 @@ class TaskType(str, Enum):
 
 class TaskAction(int, Enum):
     INIT = 0
-    START = 1
-    END = 2
-    SUSPEND = 3
-    RESUME = 4
+    CREATE = 1
+    START = 2
+    END = 3
+    SUSPEND = 4
+    RESUME = 5
 
 
 class Endpoint(str, Enum):
@@ -197,7 +198,7 @@ class TaskAttributes:
         return self.label is None and self.flavour is None
 
     def __str__(self) -> str:
-        return f"TaskAttributes(label=\"{self.label}\", init={str(self.init_location)}, start={str(self.start_location)}, end={str(self.end_location)}"
+        return f'TaskAttributes(label="{self.label}", init={str(self.init_location)}, start={str(self.start_location)}, end={str(self.end_location)}'
 
     def asdict(self):
         return asdict(self)
