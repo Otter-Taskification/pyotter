@@ -1,5 +1,5 @@
 import argparse
-from typing import Set, Optional
+from typing import Optional, Set
 
 import otter
 
@@ -8,9 +8,11 @@ class TaskPool:
     """Encapsulates the connection to the tasks database, responsible for
     traversing the database to spawn tasks"""
 
-    def __init__(self, con: otter.db.Connection, initial_tasks: Set[int]) -> None:
+    def __init__(
+        self, con: otter.db.Connection, initial_tasks: Optional[Set[int]] = None
+    ) -> None:
         self.con = con
-        self._ready_tasks = initial_tasks
+        self._ready_tasks = initial_tasks or set(con.root_tasks())
 
     def get_ready_tasks(self):
         return self._ready_tasks.copy()
@@ -41,15 +43,17 @@ class ThreadAgent:
 
 
 class TaskScheduler:
-    """Maintains the set of ready/suspended tasks, and activates threads so they
-    can request work."""
+    """Manages the task pool, and activates threads so they can request work."""
 
     def __init__(
         self, task_pool: TaskPool, num_threads: int = 1, global_clock: int = 0
     ) -> None:
         self.task_pool = task_pool
         self.global_clock = global_clock
+
+        # Each thread will send its next-available timestamp here
         self.next_available_ts = [0] * num_threads
+
         self.threads = [ThreadAgent(n, self) for n in range(num_threads)]
 
     def step(self):
@@ -57,9 +61,20 @@ class TaskScheduler:
         Get the time each thread is next available.
         Advance the global clock to the minimum such time.
         Activate all threads now available.
+
+        What are the possible effects of scheduling a task on a thread?
+            - Child tasks are spawned, and may be synchronised at a barrier.
+                (tasks can have distinct creation & execution times!)
+            - The thread is busy for the duration of the task i.e. unavailable
+                for scheduling another task.
+
+        2 ways to process the effects of scheduling a task on a thread:
+            1. immediately add effects to a queue of some sort
+            2. resolve effects when task next suspended/completed.
         """
         next_ts = min(self.next_available_ts)
         print(f"{next_ts=}")
+        self.global_clock = next_ts
         for thread in self.threads:
             thread.activate()
 
@@ -97,5 +112,5 @@ if __name__ == "__main__":
     project = otter.project.BuildGraphFromDB(args.anchorfile)
     with project.connection() as con:
         print(f"simulating trace {args.anchorfile}")
-        model = Model(TaskPool(con, set(con.root_tasks())), num_threads=4)
+        model = Model(TaskPool(con), num_threads=4)
         model.run(max_steps=3)
