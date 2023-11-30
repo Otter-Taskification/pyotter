@@ -6,20 +6,15 @@ import os
 import sqlite3
 import sys
 from collections import defaultdict
-from contextlib import closing, ExitStack
+from contextlib import ExitStack, closing
 from itertools import count
 from typing import Any, AnyStr, Dict, List, Set
 
 import igraph as ig
-
 import otf2_ext
 
 from . import db, log, reporting
-from .core import (
-    Chunk,
-    DBChunkBuilder,
-    DBChunkReader,
-)
+from .core import Chunk, DBChunkBuilder, DBChunkReader
 from .core.event_model.event_model import (
     EventModel,
     TraceEventIterable,
@@ -28,7 +23,6 @@ from .core.event_model.event_model import (
 from .core.events import Event, Location
 from .core.task_builder import DBTaskBuilder
 from .definitions import Attr, SourceLocation, TaskAttributes, TraceAttr
-
 from .utils import CountingDict, LabellingDict
 
 
@@ -159,11 +153,16 @@ class UnpackTraceProject(Project):
 
             log.info("building chunks")
             log.info("using chunk builder: %s", str(chunk_builder))
-            with closing(chunk_builder) as chunk_builder, closing(task_builder) as task_builder:
-                num_chunks = self.event_model.generate_chunks(event_iter, chunk_builder, task_builder)
+            with closing(chunk_builder) as chunk_builder, closing(
+                task_builder
+            ) as task_builder:
+                num_chunks = self.event_model.generate_chunks(
+                    event_iter, chunk_builder, task_builder
+                )
             log.info("generated %d chunks", num_chunks)
 
         # Second, iterate over the chunks to extract synchronisation metadata
+        # TODO: consider removing this 2nd loop entirely as it should be possible to read this data on-the-fly from the trace
         log.info("generating task synchronisation metadata")
         with ExitStack() as stack:
             reader = stack.enter_context(otf2_ext.open_trace(self.anchorfile))
@@ -174,27 +173,29 @@ class UnpackTraceProject(Project):
             for chunk in chunk_reader.chunks:
                 assert chunk.first is not None
                 try:
-                    assert self.event_model.is_task_register_event(chunk.first)
+                    assert self.event_model.is_chunk_start_event(chunk.first)
                 except AssertionError as e:
                     log.error("expected a task-register event")
                     log.error("event: %s", chunk.first)
                     log.error("chunk: %s", chunk)
                     raise e
-                encountering_task_id = self.event_model.get_task_data(chunk.first).id
+                # Get the ID of the task which this chunk represents
+                chunk_task_id = self.event_model.get_task_entered(chunk.first)
                 contexts = self.event_model.contexts_of(chunk)
                 context_ids = []
                 synchronised_tasks = []
                 context_meta = []
-                for order, (sync_descendants, task_ids, sync_complete_ts) in enumerate(contexts):
+                #! NOTE: task-graph event model now uses sync start time as the sync time
+                for order, (sync_descendants, task_ids, sync_ts) in enumerate(contexts):
                     cid = next(context_id)
                     synchronised_tasks.extend((cid, task) for task in task_ids)
-                    context_ids.append((encountering_task_id, cid, order))
-                    context_meta.append((cid, int(sync_descendants), str(sync_complete_ts)))
+                    context_ids.append((chunk_task_id, cid, order))
+                    context_meta.append((cid, int(sync_descendants), str(sync_ts)))
                 con.executemany(db.scripts.insert_synchronisation, synchronised_tasks)
                 con.executemany(db.scripts.insert_chunk, context_ids)
                 con.executemany(db.scripts.insert_context, context_meta)
                 con.commit()
-        
+
         # Finally, write the definitions of the source locations and then the strings
         source_location_definitions = (
             (
@@ -398,12 +399,15 @@ class BuildGraphFromDB(Project):
         # For vertices where the key is int, assume it indicates a task and get
         # all such tasks' attributes
         task_id_labels = [x for x in label_data if isinstance(x, int)]
-        task_attributes = dict((task_id, attributes) for task_id, *_, attributes in con.task_attributes(task_id_labels))
+        task_attributes = dict(
+            (task_id, attributes)
+            for task_id, *_, attributes in con.task_attributes(task_id_labels)
+        )
         for label_item, vertex in zip(label_data, graph.vs):
             if label_item is None:
                 vertex["label"] = ""
             elif isinstance(label_item, int):
-                data = {"id": label_item} # have id as the first item in the dict
+                data = {"id": label_item}  # have id as the first item in the dict
                 data.update(task_attributes[label_item].asdict())
                 r, g, b = (int(x * 256) for x in colour[data["label"]])
                 vertex["label"] = reporting.as_html_table(data)
