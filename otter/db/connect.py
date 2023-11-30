@@ -184,7 +184,7 @@ class Connection(sqlite3.Connection):
             s = row["sequence"]
             sequences[s].append(row)
             if s not in time:
-                time[s] = int(row["sync_complete_ts"])
+                time[s] = int(row["sync_ts"])
             if s not in sync_descendants:
                 sync_descendants[s] = bool(row["sync_descendants"])
         for seq, rows in sequences.items():
