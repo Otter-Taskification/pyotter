@@ -1,7 +1,7 @@
 select rel.child_id
     ,sync.context_id
     ,ctx.sync_descendants
-    ,ctx.sync_complete_ts
+    ,ctx.sync_ts
     ,chunk.sequence
 from task
 

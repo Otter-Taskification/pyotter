@@ -83,7 +83,7 @@ create table chunk(
 create table context(
     context_id int not null,
     sync_descendants int not null,
-    sync_complete_ts,
+    sync_ts,
     primary key (context_id)
 );
 

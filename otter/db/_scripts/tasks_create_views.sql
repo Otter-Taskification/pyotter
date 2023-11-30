@@ -1,7 +1,7 @@
 -- Create views of the tables in a tasks db
 
--- Get a readable view of the tasks' initialisation locations
-create view if not exists task_init_location(
+-- Get a readable view of the tasks' creation locations
+create view if not exists task_create_location(
          id
         ,file
         ,func
@@ -14,7 +14,7 @@ create view if not exists task_init_location(
     from task
     inner join task_history as hist
         on hist.id = task.id
-        and hist.action = 0 -- init
+        and hist.action = 1 -- create
     inner join source as src
         on src.src_loc_id = hist.location_id
     inner join string as file
@@ -72,8 +72,8 @@ create view if not exists task_end_location(
 -- Union of all source locations
 create view if not exists task_location as
     select *,
-           'init' as type
-    from task_init_location
+           'create' as type
+    from task_create_location
     union
     select *,
            'start' as type
@@ -96,9 +96,9 @@ create view if not exists task_attributes as
         ,start.time as start_ts
         ,end.time as end_ts
         -- ,task.duration
-        ,init_loc.file as init_file
-        ,init_loc.func as init_func
-        ,init_loc.line as init_line
+        ,create_loc.file as create_file
+        ,create_loc.func as create_func
+        ,create_loc.line as create_line
         ,start_loc.file as start_file
         ,start_loc.func as start_func
         ,start_loc.line as start_line
@@ -108,16 +108,16 @@ create view if not exists task_attributes as
     from task
     left join task_history as start
         on task.id = start.id
-        and start.action == 2 -- start
+        and start.action = 2 -- start
     left join task_history as end
         on task.id = end.id
-        and end.action == 3 -- end
+        and end.action = 3 -- end
     left join task_relation as parent
         on task.id = parent.child_id
     left join string
         on task.user_label = string.id
-    left join task_init_location as init_loc
-        on task.id = init_loc.id
+    left join task_create_location as create_loc
+        on task.id = create_loc.id
     left join task_start_location as start_loc
         on task.id = start_loc.id
     left join task_end_location as end_loc
