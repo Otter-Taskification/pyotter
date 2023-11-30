@@ -3,22 +3,31 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from itertools import islice
-from typing import Any, Deque, Dict, Iterable, List, Optional, Protocol, Tuple, DefaultDict
+from typing import (
+    Any,
+    DefaultDict,
+    Deque,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Protocol,
+    Tuple,
+)
 
 import otter
-from otter.core.chunks import Chunk
 from otter.core.chunk_builder import ChunkBuilderProtocol
+from otter.core.chunks import Chunk
 from otter.core.events import Event, Location
 from otter.core.tasks import Task
 from otter.definitions import (
-    Attr,
     EventModel,
     EventType,
+    NullTaskID,
     RegionType,
     SourceLocation,
-    TaskSyncType,
     TaskAction,
-    NullTaskID
+    TaskSyncType,
 )
 from otter.log import logger_getter
 from otter.utils.typing import Decorator
@@ -35,10 +44,14 @@ get_module_logger = logger_getter("event_model")
 class TaskBuilderProtocol(Protocol):
     """Capable of building a representation of the tasks in a trace"""
 
-    def add_task_metadata(self, task: int, parent: Optional[int], label: str, flavour: int = -1):
+    def add_task_metadata(
+        self, task: int, parent: Optional[int], label: str, flavour: int = -1
+    ):
         ...
 
-    def add_task_action(self, task: int, action: TaskAction, time: str, location: SourceLocation):
+    def add_task_action(
+        self, task: int, action: TaskAction, time: str, location: SourceLocation
+    ):
         ...
 
     def close(self) -> None:
@@ -96,24 +109,13 @@ class BaseEventModel(ABC):
 
     @classmethod
     def get_update_chunk_handler(cls, event: Event) -> Optional[ChunkUpdateHandlerFn]:
-        # Look up the handler by region & event type, falling back to just event type.
-        key = cls.get_chunk_update_handlers_key(event)
-        handler = cls.chunk_update_handlers.get(key)
-        if not handler:
-            key = cls.get_chunk_update_handlers_key(event, fallback=True)
-            handler = cls.chunk_update_handlers.get(key)
-        return handler
+        return cls.chunk_update_handlers.get((None, event.event_type))
 
     @classmethod
     def get_chunk_update_handlers_key(
         cls, event: Event, fallback: bool = False
     ) -> ChunkUpdateHandlerKey:
-        if fallback or not (event.get(Attr.region_type) is None):
-            return cls.make_chunk_update_handlers_key(event.event_type)
-        else:
-            return cls.make_chunk_update_handlers_key(
-                event.event_type, event.region_type
-            )
+        return cls.make_chunk_update_handlers_key(event.event_type)
 
     @staticmethod
     def make_chunk_update_handlers_key(
@@ -145,6 +147,10 @@ class BaseEventModel(ABC):
         raise NotImplementedError()
 
     @abstractmethod
+    def is_chunk_start_event(self, event: Event) -> bool:
+        raise NotImplementedError()
+
+    @abstractmethod
     def is_update_task_start_ts_event(self, event: Event) -> bool:
         raise NotImplementedError()
 
@@ -163,11 +169,11 @@ class BaseEventModel(ABC):
     @abstractmethod
     def is_task_sync_event(self, event: Event) -> bool:
         raise NotImplementedError()
-    
+
     @abstractmethod
     def is_task_suspend_event(self, event: Event) -> bool:
         raise NotImplementedError()
-    
+
     @abstractmethod
     def is_task_resume_event(self, event: Event) -> bool:
         raise NotImplementedError()
@@ -181,13 +187,24 @@ class BaseEventModel(ABC):
     def get_task_entered(event: Event) -> int:
         raise NotImplementedError()
 
-    def generate_chunks(self, events_iter: TraceEventIterable, chunk_builder: ChunkBuilderProtocol, task_builder: TaskBuilderProtocol) -> int:
+    def generate_chunks(
+        self,
+        events_iter: TraceEventIterable,
+        chunk_builder: ChunkBuilderProtocol,
+        task_builder: TaskBuilderProtocol,
+    ) -> int:
         otter.log.debug(f"receiving events from %s", events_iter)
 
         total_events = 0
         num_chunks = 0
         for k, (location, location_count, event) in enumerate(events_iter, start=1):
-            otter.log.debug("got event %d (location=%d, position=%d): %s", k, location, location_count, event)
+            otter.log.debug(
+                "got event %d (location=%d, position=%d): %s",
+                k,
+                location,
+                location_count,
+                event,
+            )
 
             # Update the appropriate chunk
             handler = self.get_update_chunk_handler(event)
@@ -201,23 +218,46 @@ class BaseEventModel(ABC):
             elif self.event_skips_chunk_update(event):
                 pass
             else:  # event applies default chunk update logic
-                self.append_to_encountering_task_chunk(event, location, location_count, chunk_builder)
+                self.append_to_encountering_task_chunk(
+                    event, location, location_count, chunk_builder
+                )
 
             # Update the task builder
             if self.is_task_register_event(event):
-                task = self.get_task_data(event)
+                task = self.get_task_registered_data(event)
                 parent_id = task.parent_id if task.parent_id != NullTaskID else None
                 task_builder.add_task_metadata(task.id, parent_id, task.task_label)
-                task_builder.add_task_action(task.id, TaskAction.INIT, str(event.time), task.init_location)
+                task_builder.add_task_action(
+                    task.id, TaskAction.CREATE, str(event.time), task.init_location
+                )
             if self.is_update_task_start_ts_event(event):
-                task_builder.add_task_action(self.get_task_entered(event), TaskAction.START, str(event.time), self.get_task_start_location(event))
+                task_builder.add_task_action(
+                    self.get_task_entered(event),
+                    TaskAction.START,
+                    str(event.time),
+                    self.get_source_location(event),
+                )
             if self.is_task_complete_event(event):
-                task_builder.add_task_action(self.get_task_completed(event), TaskAction.END, str(event.time), self.get_task_end_location(event))
-
+                task_builder.add_task_action(
+                    self.get_task_completed(event),
+                    TaskAction.END,
+                    str(event.time),
+                    self.get_source_location(event),
+                )
             if self.is_task_suspend_event(event):
-                task_builder.add_task_action(event.encountering_task_id, TaskAction.SUSPEND, str(event.time), SourceLocation())
+                task_builder.add_task_action(
+                    event.encountering_task_id,
+                    TaskAction.SUSPEND,
+                    str(event.time),
+                    SourceLocation(),
+                )
             elif self.is_task_resume_event(event):
-                task_builder.add_task_action(event.encountering_task_id, TaskAction.RESUME, str(event.time), SourceLocation())
+                task_builder.add_task_action(
+                    event.encountering_task_id,
+                    TaskAction.RESUME,
+                    str(event.time),
+                    SourceLocation(),
+                )
 
             total_events = k
 
@@ -226,27 +266,28 @@ class BaseEventModel(ABC):
         return num_chunks
 
     def append_to_encountering_task_chunk(
-        self, event: Event, location: Location, location_count: int, chunk_builder: ChunkBuilderProtocol
+        self,
+        event: Event,
+        location: Location,
+        location_count: int,
+        chunk_builder: ChunkBuilderProtocol,
     ) -> None:
         chunk_builder.append_to_chunk(
             event.encountering_task_id, event, location.ref, location_count
         )
 
     @abstractmethod
-    def get_task_data(self, event: Event) -> Task:
+    def get_task_registered_data(self, event: Event) -> Task:
         raise NotImplementedError()
 
     @abstractmethod
-    def get_task_start_location(self, event: Event) -> SourceLocation:
-        """For an event which represents the start of a task, get the source location of this event"""
-        raise NotImplementedError()
-
-    @abstractmethod
-    def get_task_end_location(self, event: Event) -> SourceLocation:
-        """For an event which represents the end of a task, get the source location of this event"""
+    def get_source_location(self, event: Event) -> SourceLocation:
+        """Get the source location of this event"""
         raise NotImplementedError()
 
     def contexts_of(self, chunk: Chunk) -> List[Tuple[bool, List[int], int]]:
+        """Construct a list of task synchronisation contexts encountered during a task"""
+        #! NOTE: this method assumes some knowledge about the event model by accessing event attributes directly
         contexts: List[Tuple[bool, List[int], int]] = []
         task_cache: DefaultDict[int, List[int]] = defaultdict(list)
         for event in islice(chunk.events, 1, None):
@@ -254,8 +295,13 @@ class BaseEventModel(ABC):
             if event.encountering_task_id == NullTaskID:
                 raise RuntimeError("unexpected NullTask")
             if self.is_task_sync_event(event):
-                descendants = bool(event.sync_descendant_tasks == TaskSyncType.descendants)
-                contexts.append((descendants, task_cache[encountering_task_id], event.time))
+                descendants = bool(
+                    event.sync_descendant_tasks == TaskSyncType.descendants
+                )
+                contexts.append(
+                    (descendants, task_cache[encountering_task_id], event.time)
+                )
+                # Clear the current list from the cache so we create a new one next time around
                 del task_cache[encountering_task_id]
             elif self.is_task_create_event(event):
                 task_cache[encountering_task_id].append(event.unique_id)
