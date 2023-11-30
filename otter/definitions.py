@@ -102,7 +102,7 @@ class TaskType(str, Enum):
 
 
 class TaskAction(int, Enum):
-    INIT = 0
+    # INIT = 0
     CREATE = 1
     START = 2
     END = 3
