@@ -1,10 +1,15 @@
 import argparse
 from collections import deque
+from contextlib import ExitStack
 from enum import Enum, auto
-from typing import Deque, Literal, Optional, Set, Tuple, Union
+from typing import Deque, Dict, List, Literal, Optional, Set, Tuple, Union
+
+import otf2_ext
 
 import otter
 from otter import log
+from otter.core.chunk_reader import ChunkReaderProtocol, DBChunkReader
+from otter.definitions import EventType
 
 
 class TSP(Enum):
@@ -16,10 +21,53 @@ class TSP(Enum):
 
 
 TaskSchedulingPoint = Union[
-    Tuple[Literal[TSP.CREATE], int, int, int, int],
-    Tuple[Literal[TSP.SUSPEND], int, int, int],
-    Tuple[Literal[TSP.COMPLETE], int, int, int],
-]  # (TSP.CREATE, time, thread, task, child_task) | (TSP, time, thread, task)
+    Tuple[
+        Literal[TSP.CREATE], int, int, int, int
+    ],  # (TSP.CREATE, time, thread, task, child_task)
+    Tuple[Literal[TSP.SUSPEND], int, int, int],  # (TSP.SUSPEND, time, thread, task)
+    Tuple[
+        Literal[TSP.COMPLETE], int, int, int, int
+    ],  # (TSP.COMPLETE, time, thread, task, parent_task)
+]
+
+"""
+Each TSP occurs as part of a segment of task. These segments start with either
+a task-enter or task-resume event and end at the very next task-suspend or task-leave
+event.
+
+For example, this task chunk:
+
+task-enter
+task-create
+task-sync-enter
+task-sync-leave
+task-create
+task-create
+task-create
+task-sync-enter
+task-sync-leave
+task-leave
+
+Has these task segments:
+
+1:
+    task-enter
+    task-create
+    task-sync-enter
+
+2:
+    task-sync-leave
+    task-create
+    task-create
+    task-create
+    task-sync-enter
+
+3:
+    task-sync-leave
+    task-leave
+
+Each TSP occurs at a known duration into the task segment.
+"""
 
 
 class TaskPool:
@@ -35,21 +83,25 @@ class TaskPool:
     """
 
     def __init__(
-        self, con: otter.db.Connection, initial_tasks: Optional[Set[int]] = None
+        self,
+        con: otter.db.Connection,
+        chunk_reader: ChunkReaderProtocol,
+        initial_tasks: Optional[Set[int]] = None,
     ) -> None:
         self.con = con
+        self.chunk_reader = chunk_reader
 
         # The set of tasks ready to be scheduled on a thread i.e. with no outstanding dependencies
         self._ready_tasks = initial_tasks or set(con.root_tasks())
 
         # The set of suspended tasks with a count of outstanding dependencies
-        self._waiting_tasks = {}
+        self._waiting_tasks: Dict[int, int] = {}
 
         # The set of currently running tasks - used to track which task chunk we're up to
         # Tasks in here are those which have multiple chunks to schedule (because they contain at least 1 task-sync point)
         # Tasks are added here the first time they are scheduled
         # Tasks remain in here until they are completed at which point they are removed
-        self._running_tasks = {}
+        self._running_tasks: Dict[int, int] = {}
 
         #! Note: the set of all tasks currently suspended is self._ready_tasks + self._waiting_tasks
 
@@ -59,7 +111,7 @@ class TaskPool:
     def tasks_pending(self):
         return bool(self._ready_tasks)
 
-    def schedule_new_task(self, task: int):
+    def schedule_new_task(self, task: int, thread: int):
         """Start a new task. This requires that the task is in the set of ready
         tasks and is not in the set of running tasks. Raise an error if this isn't
         true.
@@ -88,91 +140,87 @@ class TaskPool:
 
         if num_children == 0:
             # If the given task is a leaf task, the only TSP data is from the task-complete event
-            tsp_data = (TSP.COMPLETE, int(start_ts), int(end_ts))
+            tsp_data = [(TSP.COMPLETE, int(start_ts), int(end_ts))]
         else:
-            # get the list of task sync groups i.e. taskwait constructs encountered and the created tasks
-            # this list is possibly terminated by a batch of unsynchronised tasks
-            task_sync_groups = list(self.con.task_synchronisation_groups(task))
+            # If a task has any children, construct the sequence of TSPs it encounters
+            tsp_data = []
+            chunk = self.chunk_reader.get_chunk(task)
+            assert chunk.first is not None
+            assert chunk.first.event_type == EventType.task_enter
+            for event in chunk.events:
+                if event.event_type == EventType.task_create:
+                    tsp_data.append(
+                        (
+                            TSP.CREATE,
+                            event.time,
+                            thread,
+                            event.encountering_task_id,
+                            event.unique_id,
+                        )
+                    )
+                elif event.event_type == EventType.sync_begin:
+                    tsp_data.append(
+                        (
+                            TSP.SUSPEND,
+                            event.time,
+                            thread,
+                            event.encountering_task_id,
+                        )
+                    )
+                elif event.event_type == EventType.task_leave:
+                    tsp_data.append(
+                        (
+                            TSP.SUSPEND,
+                            event.time,
+                            thread,
+                            event.encountering_task_id,
+                        )
+                    )
 
-            # get the list of times (if any) at which this task was suspended & resumed
-            # a pair of timestamps is given here for each taskwait construct encountered
-            _, task_suspend_times = next(self.con.task_suspend_ts((task,)))
-
-            if len(task_suspend_times) < len(task_sync_groups):
-                msg = f"{task=} fewer task suspend times than task sync groups"
-                log.error(msg)
-                raise ValueError(msg)
-
-            if len(task_sync_groups) == len(task_suspend_times):
-                log.debug(
-                    f"{task=}: number of task sync groups matches number of suspend/resume timestamps"
-                )
-            elif len(task_sync_groups) == 1 + len(task_suspend_times):
-                log.debug(
-                    f"{task=}: one more task sync groups than suspend/resume timestamps"
-                )
-
-            # construct the list of times this task is started/suspended and the tasks created during those times
-            # make sure the last element indicates the end of the task
-            data_to_generate_TSPs = []
-            chunk_start_ts = int(start_ts)
-            for (sequence, rows, sync_ts, sync_descendants), (suspend, resume) in zip(
-                task_sync_groups, task_suspend_times
-            ):
-                assert (
-                    sync_ts == suspend
-                )  # the sync timestamp should also be the time the task was suspended
-                created_tasks = tuple(
-                    (int(r["child_id"]), int(r["child_crt_ts"])) for r in rows
-                )
-                log.debug(f"{task=}: {sequence=} start={chunk_start_ts} end={suspend}")
-
-                # Record the star of the subeqeuent chunk
-                chunk_start_ts = resume
-
-            log.debug(f"{task=}: last chunk start={chunk_start_ts} end={int(end_ts)}")
-
-            if len(task_sync_groups) == 1 + len(task_suspend_times):
-                log.debug(
-                    "there is a final group of un-synchronised tasks to handle!!!"
-                )
-
-            # get the first batch of TSP data
-            sequence, rows, sync_ts, sync_descendants = next(self._running_tasks[task])
-            if sequence is None:
-                log.warning(f"sequence was None for {task=}")
-            created_tasks = tuple(
-                (int(r["child_id"]), int(r["child_crt_ts"])) for r in rows
-            )
-            tsp_data = (
-                TSP.SUSPEND,
-                int(start_ts),  # the time this task started
-                int(sync_ts),  # the time this task chunk is finished
-                created_tasks,  # the generated children
-                sync_descendants,  # whether descendants are also synchronised
-            )
+            # Return data sufficient to construct the TSPs of this task
+            return tsp_data
 
         return tsp_data
 
-    def resume_suspended_task(self, task: int):
-        """Resume a previously suspended task. This requires that the task is
-        in the set of ready tasks and also in the set of running tasks.
+    def task_created(self, task: int):
+        """Add a new task to the pool of tasks ready to be scheduled"""
+        assert not (task in self._ready_tasks or task in self._waiting_tasks)
+        self._ready_tasks.add(task)
 
-        !!!
-        NOTE: the data model needs more thought for this. I can't easily get the last "chunk" after the final time a task is resumed, since there are no further tasks created and no further synchronisation!
-        !!!
-        """
+    def count_outstanding_children(self, task: int):
+        pending_children = sum(
+            1
+            for child in self.con.children_of(task)
+            if (
+                child in self._ready_tasks
+                or child in self._waiting_tasks
+                or child in self._running_tasks
+            )
+        )
+        return pending_children
 
-        msg = None
-        if not (task in self._running_tasks and task in self._ready_tasks):
-            msg = f"task {task} not in set of running tasks"
+    def notify_task_ready(self, task: int):
+        """Record that this task is now available to be scheduled i.e. there are
+        no outstanding dependencies."""
+        assert not (task in self._ready_tasks or task in self._waiting_tasks)
+        self._ready_tasks.add(task)
 
-        if msg:
-            log.error(msg)
-            raise ValueError(msg)
+    def notify_task_waiting(self, task: int, num_dependencies: int):
+        """Record that this task is not available to be scheduled until its
+        outstanding dependencies are met"""
+        assert not (task in self._ready_tasks or task in self._waiting_tasks)
+        self._waiting_tasks[task] = num_dependencies
 
-    def suspend_task(self, task: int, ndeps: Optional[int] = 0):
-        ...
+    def notify_task_complete(self, task: int, parent_task: int):
+        """Record that a task was completed and notify any waiting parent"""
+        if task in self._running_tasks:
+            del self._running_tasks[task]
+        if parent_task in self._waiting_tasks:
+            self._waiting_tasks[parent_task] -= 1
+            if self._waiting_tasks[parent_task] == 0:
+                del self._waiting_tasks[parent_task]
+                self.notify_task_ready(parent_task)
+        assert not (task in self._ready_tasks or task in self._waiting_tasks)
 
 
 class ThreadAgent:
@@ -296,19 +344,56 @@ class TaskScheduler:
         if mode == TSP.CREATE:
             # handle task-create TSP
             assert len(data) == 4
-            global_ts, thread, task, child = data
+            global_ts, thread, task, child_task = data
+
+            # 1. If eligible, add created task to set of ready tasks so it is
+            # immediately ready to schedule
+            self.task_pool.task_created(child_task)
+
         elif mode == TSP.SUSPEND:
             # handle task-suspend TSP i.e. encountered a taskwait
             assert len(data) == 3
             global_ts, thread, task = data
+
+            # 1. Determine how many OUTSTANDING dependencies this task has
+            #   - look at child tasks created but not completed
+            num_dependencies = self.task_pool.count_outstanding_children(task)
+
+            # 2. If 0 outstanding, add this task to the set of ready tasks
+            if num_dependencies == 0:
+                self.task_pool.notify_task_ready(task)
+
+            # 3. Otherwise, add this task to the pool of waiting task with count
+            # of unmet dependencies
+            else:
+                self.task_pool.notify_task_waiting(task, num_dependencies)
+
         elif mode == TSP.COMPLETE:
             # handle task-complete TSP
-            assert len(data) == 3
-            global_ts, thread, task = data
+            assert len(data) == 4
+            global_ts, thread, task, parent_task = data
+
+            # 1. If the parent is waiting, notify it of a met dependency
+            self.task_pool.notify_task_complete(task, parent_task)
+
+            # 2. If the parent now has 0 unmet dependencies, move it to set of
+            # ready tasks
+
         else:
             raise ValueError(f"unkown task scheduling point: {mode=}, {data=}")
 
-        # Ensure TSPs remain sorted in temporal order
+        # After handling TSP:
+
+        # A. For each available thread:
+        #   - determine tasks eligible to be scheduled on this thread
+        #   - call a handler to decide what to do (start/resume/do nothing)
+
+        # B. If a task was scheduled (either started/resumed) enqueue the
+        # generated TSPs
+
+        # C. Remove any scheduled task from the set of ready tasks
+
+        # D. Ensure TSPs remain sorted in temporal order
         self._task_scheduling_points = deque(
             sorted(self._task_scheduling_points, key=lambda tsp: tsp[1])
         )
@@ -336,7 +421,7 @@ class Model:
         while self.scheduler.task_scheduling_points_pending():
             print("[STEP]")
             self.scheduler.step()
-            steps = steps + 1
+            steps += 1
             if max_steps is not None and steps > max_steps:
                 break
 
@@ -348,7 +433,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     otter.log.initialise(args)
     project = otter.project.BuildGraphFromDB(args.anchorfile)
-    with project.connection() as con:
-        print(f"simulating trace {args.anchorfile}")
-        model = Model(TaskPool(con), num_threads=4)
+    print(f"simulating trace {args.anchorfile}")
+    with ExitStack() as ctx:
+        con = ctx.enter_context(project.connection())
+        reader = ctx.enter_context(otf2_ext.open_trace(args.anchorfile))
+        seek_events = ctx.enter_context(reader.seek_events())
+        chunk_reader = DBChunkReader(reader.attributes, seek_events, con)
+        model = Model(TaskPool(con, chunk_reader), num_threads=4)
         model.run(max_steps=3)
