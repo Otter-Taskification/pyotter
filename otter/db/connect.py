@@ -3,11 +3,11 @@ from __future__ import annotations
 import sqlite3
 from collections import defaultdict
 from itertools import groupby
-from typing import Any, Generator, Iterable, List, Optional, Tuple
+from typing import Any, Generator, Iterable, List, Optional, Tuple, Union
 
 from .. import log
+from ..definitions import SourceLocation, TaskAction, TaskAttributes
 from ..utils import batched
-from ..definitions import TaskAttributes, SourceLocation, TaskAction
 from . import scripts
 
 
@@ -77,18 +77,23 @@ class Connection(sqlite3.Connection):
         cur = self.execute(query_str, tasks)
         return tuple(cur.fetchall())
 
-    def task_attributes(self, tasks: Iterable[int]) -> List[Tuple[int, int, int, str, str, TaskAttributes]]:
-        tasks = tuple(tasks)
+    def task_attributes(
+        self, tasks: Union[int, Iterable[int]]
+    ) -> List[Tuple[int, int, int, str, str, TaskAttributes]]:
+        if isinstance(tasks, int):
+            tasks = (tasks,)
         placeholder = ",".join("?" for _ in tasks)
         query_str = (
             f"select * from task_attributes where id in ({placeholder}) order by id\n"
         )
         self.row_factory = self._task_attributes_row_factory
-        cur = self.execute(query_str, tasks)
+        cur = self.execute(query_str, tuple(tasks))
         self.row_factory = Row
         return cur.fetchall()
-    
-    def task_suspend_ts(self, tasks: Iterable[int]) -> Generator[tuple[int, list[tuple[int, int]]], Any, None]:
+
+    def task_suspend_ts(
+        self, tasks: Iterable[int]
+    ) -> Generator[tuple[int, list[tuple[int, int]]], Any, None]:
         tasks = tuple(tasks)
         placeholder = ",".join("?" for _ in tasks)
         query = f"""select *
@@ -98,7 +103,7 @@ class Connection(sqlite3.Connection):
         order by id, time"""
         cur = self.execute(query, tasks)
         rows = cur.fetchall()
-        grouper = groupby(rows, key = lambda row: row["id"])
+        grouper = groupby(rows, key=lambda row: row["id"])
         for task_id, task_suspend_iter in grouper:
             timestamps = []
             for suspended, resumed in batched(task_suspend_iter, 2):
@@ -131,8 +136,24 @@ class Connection(sqlite3.Connection):
 
     @staticmethod
     def _task_attributes_row_factory(_, values: tuple[Any, ...]):
-        task_id, parent_id, num_children, flavour, label, start_ts, end_ts, *locations = values
-        return task_id, parent_id, num_children, start_ts, end_ts, TaskAttributes(label, flavour, *locations)
+        (
+            task_id,
+            parent_id,
+            num_children,
+            flavour,
+            label,
+            start_ts,
+            end_ts,
+            *locations,
+        ) = values
+        return (
+            task_id,
+            parent_id,
+            num_children,
+            start_ts,
+            end_ts,
+            TaskAttributes(label, flavour, *locations),
+        )
 
     def parent_child_attributes(
         self,
