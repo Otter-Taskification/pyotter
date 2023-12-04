@@ -2,13 +2,14 @@ import argparse
 from collections import deque
 from contextlib import ExitStack
 from enum import Enum, auto
-from typing import Deque, Dict, List, Literal, Optional, Set, Tuple, Union
+from typing import Deque, Dict, Iterator, List, Literal, Optional, Set, Tuple, Union
 
 import otf2_ext
 
 import otter
 from otter import log
 from otter.core.chunk_reader import ChunkReaderProtocol, DBChunkReader
+from otter.core.events import Event
 from otter.definitions import EventType
 
 
@@ -101,36 +102,38 @@ class TaskPool:
         # Tasks in here are those which have multiple chunks to schedule (because they contain at least 1 task-sync point)
         # Tasks are added here the first time they are scheduled
         # Tasks remain in here until they are completed at which point they are removed
-        self._running_tasks: Dict[int, int] = {}
+        # Tasks in here may be running, scheduled or waiting
+        self._running_tasks: Dict[int, Tuple[int, int, str, str, Iterator[Event]]] = {}
 
         #! Note: the set of all tasks currently suspended is self._ready_tasks + self._waiting_tasks
 
     def get_ready_tasks(self):
         return self._ready_tasks.copy()
 
-    def tasks_pending(self):
-        return bool(self._ready_tasks)
+    def schedule_task(self, task: int):
+        """
+        Schedule a task from the set of ready tasks. This requires that the
+        given task is not waiting. It may be in the set of running tasks if it
+        was previously scheduled and then suspended e.g. at a taskwait
 
-    def schedule_new_task(self, task: int, thread: int):
-        """Start a new task. This requires that the task is in the set of ready
-        tasks and is not in the set of running tasks. Raise an error if this isn't
-        true.
-
-        Remove the given task from the set of ready tasks
+        Remove the given task from the set of ready tasks.
 
         Return data sufficient to construct the TSPs that result from scheduling
         this task (& in particular this task chunk)
+
+        Algorithm:
+
+        - if not in running tasks:
+            - store pending TSPs in self._running_tasks
+        - return the next set of TSPs pending for this task
         """
 
-        msg = None
-        if task in self._running_tasks:
-            msg = f"task {task} already in set of running tasks"
-        elif task not in self._ready_tasks:
-            msg = f"task {task} not in set of ready tasks"
+        assert task in self._ready_tasks and task not in self._waiting_tasks
 
-        if msg:
-            log.error(msg)
-            raise ValueError(msg)
+        if task in self._running_tasks:
+            log.debug(f"[TaskPool] resume task {task}")
+        else:
+            log.debug(f"[TaskPool] schedule new task {task}")
 
         self._ready_tasks.remove(task)
 
@@ -138,54 +141,18 @@ class TaskPool:
             task
         )[0]
 
-        if num_children == 0:
-            # If the given task is a leaf task, the only TSP data is from the task-complete event
-            tsp_data = [(TSP.COMPLETE, int(start_ts), int(end_ts))]
-        else:
-            # If a task has any children, construct the sequence of TSPs it encounters
-            tsp_data = []
-            chunk = self.chunk_reader.get_chunk(task)
-            assert chunk.first is not None
-            assert chunk.first.event_type == EventType.task_enter
-            for event in chunk.events:
-                if event.event_type == EventType.task_create:
-                    tsp_data.append(
-                        (
-                            TSP.CREATE,
-                            event.time,
-                            thread,
-                            event.encountering_task_id,
-                            event.unique_id,
-                        )
-                    )
-                elif event.event_type == EventType.sync_begin:
-                    tsp_data.append(
-                        (
-                            TSP.SUSPEND,
-                            event.time,
-                            thread,
-                            event.encountering_task_id,
-                        )
-                    )
-                elif event.event_type == EventType.task_leave:
-                    tsp_data.append(
-                        (
-                            TSP.SUSPEND,
-                            event.time,
-                            thread,
-                            event.encountering_task_id,
-                        )
-                    )
+        chunk = self.chunk_reader.get_chunk(task)
 
-            # Return data sufficient to construct the TSPs of this task
-            return tsp_data
+        if task not in self._running_tasks:
+            self._running_tasks[task] = (
+                parent,
+                num_children,
+                start_ts,
+                end_ts,
+                iter(chunk.events),
+            )
 
-        return tsp_data
-
-    def add_ready_task(self, task: int):
-        """Add a new task to the pool of tasks ready to be scheduled"""
-        assert not (task in self._ready_tasks or task in self._waiting_tasks)
-        self._ready_tasks.add(task)
+        return self._running_tasks[task]
 
     def count_outstanding_children(self, task: int):
         pending_children = sum(
@@ -199,29 +166,51 @@ class TaskPool:
         )
         return pending_children
 
-    def add_waiting_task(self, task: int, num_dependencies: int):
-        """Record that this task is not available to be scheduled until its
-        outstanding dependencies are met"""
-        assert not (task in self._ready_tasks or task in self._waiting_tasks)
-        self._waiting_tasks[task] = num_dependencies
+    def notify_task_create(self, task: int):
+        """
+        Notify that a task was created
+        """
+        log.debug(f"[TaskPool] task {task} created")
+        self._add_ready_task(task)
+        assert task in self._ready_tasks
 
     def notify_task_complete(self, task: int, parent_task: int):
-        """Record that a task was completed and notify any waiting parent"""
+        """
+        Notify a scheduled task that it was completed and notify any waiting parent
+        """
         if task in self._running_tasks:
             del self._running_tasks[task]
         if parent_task in self._waiting_tasks:
             self._waiting_tasks[parent_task] -= 1
             if self._waiting_tasks[parent_task] == 0:
                 del self._waiting_tasks[parent_task]
-                self.add_ready_task(parent_task)
+                self._add_ready_task(parent_task)
         assert not (task in self._ready_tasks or task in self._waiting_tasks)
 
     def notify_task_suspend(self, task: int):
+        """
+        Notify a scheduled task that it is suspended i.e. waiting for any
+        outstanding dependencies
+        """
         deps = self.count_outstanding_children(task)
         if deps == 0:
-            self.add_ready_task(task)
+            log.debug(f"[TaskPool] task {task} suspended (ready)")
+            self._add_ready_task(task)
         else:
-            self.add_waiting_task(task, deps)
+            log.debug(f"[TaskPool] task {task} suspended (waiting for {deps} tasks)")
+            self._add_waiting_task(task, deps)
+        assert task in self._ready_tasks or task in self._waiting_tasks
+
+    def _add_ready_task(self, task: int):
+        """Add a task to the pool of tasks ready to be scheduled"""
+        assert not (task in self._ready_tasks or task in self._waiting_tasks)
+        self._ready_tasks.add(task)
+
+    def _add_waiting_task(self, task: int, num_dependencies: int):
+        """Record that this task is not available to be scheduled until its
+        outstanding dependencies are met"""
+        assert not (task in self._ready_tasks or task in self._waiting_tasks)
+        self._waiting_tasks[task] = num_dependencies
 
 
 class ThreadAgent:
@@ -290,6 +279,22 @@ class TaskScheduler:
 
         self.threads = [ThreadAgent(n, self) for n in range(num_threads)]
 
+    def start(self):
+        """
+        Start the scheduler with whatever tasks are ready in the task pool
+        """
+        ready_tasks = self.task_pool.get_ready_tasks()
+        num_ready_tasks = len(ready_tasks)
+        log.debug(
+            f"[Sched] starting scheduler: {num_ready_tasks} tasks ready ({ready_tasks})"
+        )
+        for task in ready_tasks:
+            log.debug(f"[Sched] start: schedule {task}")
+            self.schedule_task(self.global_clock, task, 0)
+
+        for thread, next_avail in enumerate(self.next_available_ts):
+            log.debug(f"[Sched] thread {thread} next available: {next_avail}")
+
     def step(self):
         """
         Get the time each thread is next available.
@@ -342,10 +347,11 @@ class TaskScheduler:
 
         """
         mode, *data = self._task_scheduling_points.popleft()
+        log.debug(f"[Sched] step scheduler: {mode=}, {data=}")
         if mode == TSP.CREATE:
             assert len(data) == 4
             global_ts, thread, task, child_task = data
-            self.task_pool.add_ready_task(child_task)
+            self.task_pool.notify_task_create(child_task)
         elif mode == TSP.SUSPEND:
             assert len(data) == 3
             global_ts, thread, task = data
@@ -362,19 +368,92 @@ class TaskScheduler:
         # A. For each available thread:
         #   - determine tasks eligible to be scheduled on this thread
         #   - call a handler to decide what to do (start/resume/do nothing)
+        #   - if a task was scheduled (either started/resumed) enqueue the generated TSPs
+        #   - remove any scheduled task from the set of ready tasks
+        #   - ensure TSPs remain sorted in temporal order
 
-        # B. If a task was scheduled (either started/resumed) enqueue the
-        # generated TSPs
-
-        # C. Remove any scheduled task from the set of ready tasks
-
-        # D. Ensure TSPs remain sorted in temporal order
         self._task_scheduling_points = deque(
             sorted(self._task_scheduling_points, key=lambda tsp: tsp[1])
         )
 
-    def tasks_pending(self):
-        return self.task_pool.tasks_pending()
+    def schedule_task(self, global_ts: int, task: int, thread: int):
+        """
+        Schedule the given task on the given thread at the given global time
+
+        When a task is scheduled, the following happens:
+
+        1. The TSPs generated by the scheduled task segment are enqueued.
+        2. The given thread is marked as busy until this task segmet is complete.
+
+        Requires that the given thread is available at this time.
+        """
+        log.debug(f"[Sched] schedule {task=} on {thread=} at {global_ts=}")
+        (
+            parent,
+            num_children,
+            start_ts,
+            end_ts,
+            event_iter,
+        ) = self.task_pool.schedule_task(task)
+
+        first_event = next(event_iter)
+
+        assert first_event.event_type in [EventType.task_enter, EventType.sync_end]
+
+        # the native start ts of this part of the task
+        schedule_start_ts = int(first_event.time)
+
+        task_scheduling_points: List[TaskSchedulingPoint] = []
+        while True:
+            event = next(event_iter)
+            assert event.encountering_task_id == task
+            event_dt = int(event.time) - schedule_start_ts
+            event_ts = global_ts + event_dt
+            if event.event_type == EventType.task_create:
+                task_scheduling_points.append(
+                    (
+                        TSP.CREATE,
+                        event_ts,
+                        thread,
+                        task,
+                        event.unique_id,
+                    )
+                )
+            elif event.event_type == EventType.sync_begin:
+                task_scheduling_points.append((TSP.SUSPEND, event_ts, thread, task))
+                break
+            elif event.event_type == EventType.task_leave:
+                task_scheduling_points.append(
+                    (TSP.COMPLETE, event_ts, thread, task, parent)
+                )
+                break
+
+        thread_next_avail_ts = task_scheduling_points[-1][1]
+
+        log.debug(f"[Sched] -- {num_children=}")
+        log.debug(f"[Sched] -- {start_ts=}")
+        log.debug(f"[Sched] -- {end_ts=}")
+        log.debug(f"[Sched] -- task-scheduling points:")
+        for tsp in task_scheduling_points:
+            log.debug(f"[Sched] ---- {tsp=}]")
+
+        self.set_next_available_ts(thread, thread_next_avail_ts)
+
+        self.append_task_scheduling_points(task_scheduling_points)
+
+    def append_task_scheduling_points(
+        self, task_scheduling_points: List[TaskSchedulingPoint]
+    ):
+        log.debug(
+            f"[Sched] append {len(task_scheduling_points)} task-scheduling points"
+        )
+        self._task_scheduling_points.extend(task_scheduling_points)
+        self._task_scheduling_points = deque(
+            sorted(self._task_scheduling_points, key=lambda tsp: tsp[1])
+        )
+        log.debug(
+            f"[Sched] {len(task_scheduling_points)} task-scheduling points pending"
+        )
 
     def task_scheduling_points_pending(self):
         return len(self._task_scheduling_points) > 0
@@ -393,6 +472,7 @@ class Model:
         initial_tasks = self.scheduler.task_pool.get_ready_tasks()
         print(f"task pool contains {len(initial_tasks)} initial tasks: {initial_tasks}")
         steps = 0
+        self.scheduler.start()
         while self.scheduler.task_scheduling_points_pending():
             print("[STEP]")
             self.scheduler.step()
