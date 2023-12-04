@@ -182,7 +182,7 @@ class TaskPool:
 
         return tsp_data
 
-    def task_created(self, task: int):
+    def add_ready_task(self, task: int):
         """Add a new task to the pool of tasks ready to be scheduled"""
         assert not (task in self._ready_tasks or task in self._waiting_tasks)
         self._ready_tasks.add(task)
@@ -199,13 +199,7 @@ class TaskPool:
         )
         return pending_children
 
-    def notify_task_ready(self, task: int):
-        """Record that this task is now available to be scheduled i.e. there are
-        no outstanding dependencies."""
-        assert not (task in self._ready_tasks or task in self._waiting_tasks)
-        self._ready_tasks.add(task)
-
-    def notify_task_waiting(self, task: int, num_dependencies: int):
+    def add_waiting_task(self, task: int, num_dependencies: int):
         """Record that this task is not available to be scheduled until its
         outstanding dependencies are met"""
         assert not (task in self._ready_tasks or task in self._waiting_tasks)
@@ -219,8 +213,15 @@ class TaskPool:
             self._waiting_tasks[parent_task] -= 1
             if self._waiting_tasks[parent_task] == 0:
                 del self._waiting_tasks[parent_task]
-                self.notify_task_ready(parent_task)
+                self.add_ready_task(parent_task)
         assert not (task in self._ready_tasks or task in self._waiting_tasks)
+
+    def notify_task_suspend(self, task: int):
+        deps = self.count_outstanding_children(task)
+        if deps == 0:
+            self.add_ready_task(task)
+        else:
+            self.add_waiting_task(task, deps)
 
 
 class ThreadAgent:
@@ -342,43 +343,17 @@ class TaskScheduler:
         """
         mode, *data = self._task_scheduling_points.popleft()
         if mode == TSP.CREATE:
-            # handle task-create TSP
             assert len(data) == 4
             global_ts, thread, task, child_task = data
-
-            # 1. If eligible, add created task to set of ready tasks so it is
-            # immediately ready to schedule
-            self.task_pool.task_created(child_task)
-
+            self.task_pool.add_ready_task(child_task)
         elif mode == TSP.SUSPEND:
-            # handle task-suspend TSP i.e. encountered a taskwait
             assert len(data) == 3
             global_ts, thread, task = data
-
-            # 1. Determine how many OUTSTANDING dependencies this task has
-            #   - look at child tasks created but not completed
-            num_dependencies = self.task_pool.count_outstanding_children(task)
-
-            # 2. If 0 outstanding, add this task to the set of ready tasks
-            if num_dependencies == 0:
-                self.task_pool.notify_task_ready(task)
-
-            # 3. Otherwise, add this task to the pool of waiting task with count
-            # of unmet dependencies
-            else:
-                self.task_pool.notify_task_waiting(task, num_dependencies)
-
+            self.task_pool.notify_task_suspend(task)
         elif mode == TSP.COMPLETE:
-            # handle task-complete TSP
             assert len(data) == 4
             global_ts, thread, task, parent_task = data
-
-            # 1. If the parent is waiting, notify it of a met dependency
             self.task_pool.notify_task_complete(task, parent_task)
-
-            # 2. If the parent now has 0 unmet dependencies, move it to set of
-            # ready tasks
-
         else:
             raise ValueError(f"unkown task scheduling point: {mode=}, {data=}")
 
