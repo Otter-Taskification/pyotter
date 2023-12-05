@@ -49,14 +49,13 @@ class _state_:
 
 
 def initialise(args=None):
+    import importlib.resources as resources
     import os
     from logging import config as logging_config
 
     import yaml
 
     from . import config
-
-    import importlib.resources as resources
 
     if args is None:
         args = Namespace()
@@ -212,3 +211,10 @@ def is_error_enabled(logger: Optional[Logger] = None):
 
     logger = logger or get_logger("main")
     return logger.isEnabledFor(ERROR)
+
+
+def log_with_prefix(prefix, logging_func, sep=" "):
+    def wrapper(msg, *args):
+        logging_func(prefix + sep + msg, *args)
+
+    return wrapper

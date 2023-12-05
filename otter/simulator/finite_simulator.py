@@ -89,6 +89,8 @@ class TaskPool:
         chunk_reader: ChunkReaderProtocol,
         initial_tasks: Optional[Set[int]] = None,
     ) -> None:
+        self.debug = log.log_with_prefix("[TaskPool]", log.debug)
+
         self.con = con
         self.chunk_reader = chunk_reader
 
@@ -131,9 +133,9 @@ class TaskPool:
         assert task in self._ready_tasks and task not in self._waiting_tasks
 
         if task in self._running_tasks:
-            log.debug(f"[TaskPool] resume task {task}")
+            self.debug(f"resume task {task}")
         else:
-            log.debug(f"[TaskPool] schedule new task {task}")
+            self.debug(f"schedule new task {task}")
 
         self._ready_tasks.remove(task)
 
@@ -170,7 +172,7 @@ class TaskPool:
         """
         Notify that a task was created
         """
-        log.debug(f"[TaskPool] task {task} created")
+        self.debug(f"task {task} created")
         self._add_ready_task(task)
         assert task in self._ready_tasks
 
@@ -194,10 +196,10 @@ class TaskPool:
         """
         deps = self.count_outstanding_children(task)
         if deps == 0:
-            log.debug(f"[TaskPool] task {task} suspended (ready)")
+            self.debug(f"task {task} suspended (ready)")
             self._add_ready_task(task)
         else:
-            log.debug(f"[TaskPool] task {task} suspended (waiting for {deps} tasks)")
+            self.debug(f"task {task} suspended (waiting for {deps} tasks)")
             self._add_waiting_task(task, deps)
         assert task in self._ready_tasks or task in self._waiting_tasks
 
@@ -268,6 +270,8 @@ class TaskScheduler:
     def __init__(
         self, task_pool: TaskPool, num_threads: int = 1, global_clock: int = 0
     ) -> None:
+        self.debug = log.log_with_prefix(f"[Sched]", log.debug)
+
         self.task_pool = task_pool
         self.global_clock = global_clock
 
@@ -285,15 +289,13 @@ class TaskScheduler:
         """
         ready_tasks = self.task_pool.get_ready_tasks()
         num_ready_tasks = len(ready_tasks)
-        log.debug(
-            f"[Sched] starting scheduler: {num_ready_tasks} tasks ready ({ready_tasks})"
-        )
+        self.debug(f"starting scheduler: {num_ready_tasks} tasks ready ({ready_tasks})")
         for task in ready_tasks:
-            log.debug(f"[Sched] start: schedule {task}")
+            self.debug(f"start: schedule {task}")
             self.schedule_task(self.global_clock, task, 0)
 
         for thread, next_avail in enumerate(self.next_available_ts):
-            log.debug(f"[Sched] thread {thread} next available: {next_avail}")
+            self.debug(f"thread {thread} next available: {next_avail}")
 
     def step(self):
         """
@@ -347,7 +349,7 @@ class TaskScheduler:
 
         """
         mode, *data = self._task_scheduling_points.popleft()
-        log.debug(f"[Sched] step scheduler: {mode=}, {data=}")
+        self.debug(f" step scheduler: {mode=}, {data=}")
         if mode == TSP.CREATE:
             assert len(data) == 4
             global_ts, thread, task, child_task = data
@@ -387,7 +389,7 @@ class TaskScheduler:
 
         Requires that the given thread is available at this time.
         """
-        log.debug(f"[Sched] schedule {task=} on {thread=} at {global_ts=}")
+        self.debug(f" schedule {task=} on {thread=} at {global_ts=}")
         (
             parent,
             num_children,
@@ -430,12 +432,12 @@ class TaskScheduler:
 
         thread_next_avail_ts = task_scheduling_points[-1][1]
 
-        log.debug(f"[Sched] -- {num_children=}")
-        log.debug(f"[Sched] -- {start_ts=}")
-        log.debug(f"[Sched] -- {end_ts=}")
-        log.debug(f"[Sched] -- task-scheduling points:")
+        self.debug(f" -- {num_children=}")
+        self.debug(f" -- {start_ts=}")
+        self.debug(f" -- {end_ts=}")
+        self.debug(f" -- task-scheduling points:")
         for tsp in task_scheduling_points:
-            log.debug(f"[Sched] ---- {tsp=}]")
+            self.debug(f" ---- {tsp=}]")
 
         self.set_next_available_ts(thread, thread_next_avail_ts)
 
@@ -444,16 +446,12 @@ class TaskScheduler:
     def append_task_scheduling_points(
         self, task_scheduling_points: List[TaskSchedulingPoint]
     ):
-        log.debug(
-            f"[Sched] append {len(task_scheduling_points)} task-scheduling points"
-        )
+        self.debug(f"append {len(task_scheduling_points)} task-scheduling points")
         self._task_scheduling_points.extend(task_scheduling_points)
         self._task_scheduling_points = deque(
             sorted(self._task_scheduling_points, key=lambda tsp: tsp[1])
         )
-        log.debug(
-            f"[Sched] {len(task_scheduling_points)} task-scheduling points pending"
-        )
+        self.debug(f"{len(task_scheduling_points)} task-scheduling points pending")
 
     def task_scheduling_points_pending(self):
         return len(self._task_scheduling_points) > 0
