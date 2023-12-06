@@ -297,6 +297,9 @@ class TaskScheduler:
         # The time-ordered list of task-scheduling points to be evaluated
         self._task_scheduling_points: Deque[TaskSchedulingPoint] = deque()
 
+        # Map thread num to a set of tasks tied to that thread.
+        self._tied_tasks = [set() for _ in range(num_threads)]
+
         self.threads = [ThreadAgent(n, self) for n in range(num_threads)]
 
     def start(self):
@@ -347,6 +350,7 @@ class TaskScheduler:
             assert len(data) == 4
             global_ts, thread, task, parent_task = data
             self.task_pool.notify_task_complete(task, parent_task)
+            self._tied_tasks[thread].remove(task)
         else:
             raise ValueError(f"unkown task scheduling point: {mode=}, {data=}")
 
@@ -432,6 +436,9 @@ class TaskScheduler:
         # the thread is next available when it encounters the last tsp in this part of the task
         self.set_next_available_ts(thread, event_ts)
 
+        # all tasks are assumed to be tied
+        self.tie_task_to_thread(task, thread)
+
         self.append_task_scheduling_points(task_scheduling_points)
 
     def append_task_scheduling_points(
@@ -459,6 +466,15 @@ class TaskScheduler:
                 yield thread_id
             else:
                 self.debug(f"thread {thread_id} next available at {next_avail}")
+
+    def tie_task_to_thread(self, task: int, thread: int):
+        """
+        Record that a task is tied to a thread. The task must not already be tied
+        to any other thread.
+        """
+        assert task not in self._tied_tasks[thread]
+        self._tied_tasks[thread].add(task)
+        self.debug(f"task {task} tied to thread {thread}")
 
     def dump_task_scheduling_points(self):
         if log.is_debug_enabled():
