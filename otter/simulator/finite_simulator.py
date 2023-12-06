@@ -100,17 +100,30 @@ class TaskPool:
         # The set of suspended tasks with a count of outstanding dependencies
         self._waiting_tasks: Dict[int, int] = {}
 
-        # The set of currently running tasks - used to track which task chunk we're up to
-        # Tasks in here are those which have multiple chunks to schedule (because they contain at least 1 task-sync point)
+        # The set of currently running tasks - used to track where we're up to
         # Tasks are added here the first time they are scheduled
         # Tasks remain in here until they are completed at which point they are removed
-        # Tasks in here may be running, scheduled or waiting
+        # Tasks in here may be either scheduled or waiting.
+        # Tasks in here may not also be in self._ready_tasks.
         self._running_tasks: Dict[int, Tuple[int, int, str, str, Iterator[Event]]] = {}
 
         #! Note: the set of all tasks currently suspended is self._ready_tasks + self._waiting_tasks
 
     def get_ready_tasks(self):
+        """Returns a copy of the set of ready tasks"""
         return self._ready_tasks.copy()
+
+    def count_ready_tasks(self):
+        """Count tasks ready and yet to be scheduled"""
+        return len(self._ready_tasks)
+
+    def count_waiting_tasks(self):
+        """Count suspended tasks waiting for dependencies"""
+        return len(self._waiting_tasks)
+
+    def count_running_tasks(self):
+        """Count running tasks, which may be either scheduled or waiting"""
+        return len(self._running_tasks)
 
     def schedule_task(self, task: int):
         """
@@ -157,6 +170,9 @@ class TaskPool:
         return self._running_tasks[task]
 
     def count_outstanding_children(self, task: int):
+        """
+        Return the number of outstanding previously-created children of this task.
+        """
         pending_children = sum(
             1
             for child in self.con.children_of(task)
@@ -287,15 +303,26 @@ class TaskScheduler:
         """
         Start the scheduler with whatever tasks are ready in the task pool
         """
+        assert self.global_clock == 0
+        self.debug("* * * S T A R T * * *")
         ready_tasks = self.task_pool.get_ready_tasks()
         num_ready_tasks = len(ready_tasks)
         self.debug(f"starting scheduler: {num_ready_tasks} tasks ready ({ready_tasks})")
-        for task in ready_tasks:
-            self.debug(f"start: schedule {task}")
-            self.schedule_task(self.global_clock, task, 0)
+        for thread_id, next_avail in enumerate(self.next_available_ts):
+            assert next_avail == 0
+            if ready_tasks:
+                task = ready_tasks.pop()
+                self.debug(f"start: schedule {task=} on {thread_id=}")
+                self.schedule_task(self.global_clock, task, thread_id)
 
         for thread, next_avail in enumerate(self.next_available_ts):
             self.debug(f"thread {thread} next available: {next_avail}")
+
+        self.dump_task_scheduling_points()
+        self.dump_task_statistics()
+        self.dump_thread_state(self.global_clock)
+
+        self.debug("started")
 
     def step(self):
         """
@@ -348,8 +375,11 @@ class TaskScheduler:
         ==> Most sensible approach seems to be to replay the task-scheduling points that would be encountered in native execution, in order, making sure the set of ready/suspended tasks is kept up to date between TSPs.
 
         """
+        self.debug("* * * S T E P * * *")
         mode, *data = self._task_scheduling_points.popleft()
-        self.debug(f" step scheduler: {mode=}, {data=}")
+        self.global_clock = data[0]
+        self.debug(f"global clock advanced: {self.global_clock=}")
+        self.debug(f"got tsp: {mode=}, {data=}")
         if mode == TSP.CREATE:
             assert len(data) == 4
             global_ts, thread, task, child_task = data
@@ -374,9 +404,14 @@ class TaskScheduler:
         #   - remove any scheduled task from the set of ready tasks
         #   - ensure TSPs remain sorted in temporal order
 
-        self._task_scheduling_points = deque(
-            sorted(self._task_scheduling_points, key=lambda tsp: tsp[1])
-        )
+        self.debug(f"ready tasks: {self.task_pool.get_ready_tasks()}")
+
+        for thread_id in self.available_threads(self.global_clock):
+            self.debug(f"call TSP handler for {mode=} at {global_ts=}, {thread_id=}")
+
+        self.dump_task_scheduling_points()
+        self.dump_task_statistics()
+        self.dump_thread_state(self.global_clock)
 
     def schedule_task(self, global_ts: int, task: int, thread: int):
         """
@@ -389,15 +424,9 @@ class TaskScheduler:
 
         Requires that the given thread is available at this time.
         """
-        self.debug(f" schedule {task=} on {thread=} at {global_ts=}")
-        (
-            parent,
-            num_children,
-            start_ts,
-            end_ts,
-            event_iter,
-        ) = self.task_pool.schedule_task(task)
-
+        self.debug(f"schedule {task=} on {thread=} at {global_ts=}")
+        tsp_data = self.task_pool.schedule_task(task)
+        parent, num_children, start_ts, end_ts, event_iter = tsp_data
         first_event = next(event_iter)
 
         assert first_event.event_type in [EventType.task_enter, EventType.sync_end]
@@ -405,12 +434,18 @@ class TaskScheduler:
         # the native start ts of this part of the task
         schedule_start_ts = int(first_event.time)
 
+        # built the task-scheduling points which this task will encounter
         task_scheduling_points: List[TaskSchedulingPoint] = []
         while True:
             event = next(event_iter)
             assert event.encountering_task_id == task
+
+            # the offset of this event into this part of the tasks
             event_dt = int(event.time) - schedule_start_ts
+
+            # the simulated global time at which this tsp will be encountered
             event_ts = global_ts + event_dt
+
             if event.event_type == EventType.task_create:
                 task_scheduling_points.append(
                     (
@@ -430,16 +465,16 @@ class TaskScheduler:
                 )
                 break
 
-        thread_next_avail_ts = task_scheduling_points[-1][1]
+        if log.is_debug_enabled():
+            self.debug(f" -- {num_children=}")
+            self.debug(f" -- {start_ts=}")
+            self.debug(f" -- {end_ts=}")
+            self.debug(f" -- task-scheduling points from this task:")
+            for tsp in task_scheduling_points:
+                self.debug(f" ---- {tsp=}]")
 
-        self.debug(f" -- {num_children=}")
-        self.debug(f" -- {start_ts=}")
-        self.debug(f" -- {end_ts=}")
-        self.debug(f" -- task-scheduling points:")
-        for tsp in task_scheduling_points:
-            self.debug(f" ---- {tsp=}]")
-
-        self.set_next_available_ts(thread, thread_next_avail_ts)
+        # the thread is next available when it encounters the last tsp in this part of the task
+        self.set_next_available_ts(thread, event_ts)
 
         self.append_task_scheduling_points(task_scheduling_points)
 
@@ -459,6 +494,41 @@ class TaskScheduler:
     def set_next_available_ts(self, thread_id: int, time: int):
         self.next_available_ts[thread_id] = time
 
+    def available_threads(self, time: int):
+        """Return the threads available at the given time"""
+        self.debug(f"get threads available at {time=}")
+        for thread_id, next_avail in enumerate(self.next_available_ts):
+            if next_avail <= time:
+                self.debug(f"thread {thread_id} available at {time} {next_avail=}")
+                yield thread_id
+            else:
+                self.debug(f"thread {thread_id} next available at {next_avail}")
+
+    def dump_task_scheduling_points(self):
+        if log.is_debug_enabled():
+            self.debug(f"TSPs outstanding at global time {self.global_clock}:")
+            for tsp in self._task_scheduling_points:
+                self.debug(f"  {tsp}")
+
+    def dump_task_statistics(self):
+        if log.is_debug_enabled():
+            ready = self.task_pool.count_ready_tasks()
+            waiting = self.task_pool.count_waiting_tasks()
+            running = self.task_pool.count_running_tasks()
+            self.debug("task statistics:")
+            self.debug(f"  ready:     {ready:>6d}")
+            self.debug(f"  waiting:   {waiting:>6d}")
+            self.debug(f"  running:   {running:>6d}")
+
+    def dump_thread_state(self, time: int):
+        if log.is_debug_enabled():
+            self.debug("thread states at time {time}:")
+            for thread_id, next_avail in enumerate(self.next_available_ts):
+                if next_avail <= time:
+                    self.debug(f"  t{thread_id} IDLE {next_avail=}")
+                else:
+                    self.debug(f"  t{thread_id} BUSY {next_avail=}")
+
 
 class Model:
     """Creates the scheduler with the given number of threads"""
@@ -472,7 +542,6 @@ class Model:
         steps = 0
         self.scheduler.start()
         while self.scheduler.task_scheduling_points_pending():
-            print("[STEP]")
             self.scheduler.step()
             steps += 1
             if max_steps is not None and steps > max_steps:
