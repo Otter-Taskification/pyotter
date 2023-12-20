@@ -62,10 +62,20 @@ class Connection(sqlite3.Connection):
     def root_tasks(self) -> Tuple[int]:
         return (0,)
 
-    def children_of(self, parent: int) -> Tuple[int]:
+    def children_of(self, parent: int) -> List[int]:
         cur = self.cursor()
         query = "select child_id from task_relation where parent_id in (?)"
         return [r["child_id"] for r in cur.execute(query, (parent,)).fetchall()]
+
+    def ancestors_of(self, task: int) -> List[int]:
+        cur = self.cursor()
+        cur.execute(scripts.get_ancestors, (task,))
+        return [row["id"] for row in cur.fetchall()]
+
+    def descendants_of(self, task: int) -> List[int]:
+        cur = self.cursor()
+        cur.execute(scripts.get_descendants, (task,))
+        return [row["id"] for row in cur.fetchall()]
 
     def attributes_of(self, tasks: Iterable[int]) -> Tuple[Any, ...]:
         # TODO: consider returning Tuple[TaskAttributes] instead

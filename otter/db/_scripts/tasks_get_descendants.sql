@@ -1,16 +1,14 @@
--- Get all descendants of a task, including the task itself, upto some given depth
+-- Get all descendants of a task
 with descendant as (
-    select id
-        ,0 as depth
-    from task
-    where id in (0)
-    union all
     select child_id as id
-        ,depth+1 as depth
-    from descendant, task_relation
-    where descendant.id = task_relation.parent_id
+    from task_relation
+    where parent_id in (?)
+    union all
+    select rel.child_id as id
+    from descendant
+    inner join task_relation as rel
+    on descendant.id = rel.parent_id
 )
 select *
 from descendant
-where depth <= ?
 ;

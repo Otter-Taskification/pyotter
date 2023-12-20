@@ -1,16 +1,14 @@
--- Get all ancestors of a task, including the task itself
-with ancestor as (
-    select id
-        ,0 as depth
-    from task
-    where id in (XXX)
-    union all
+-- Get all ancestors of a task
+with ancestors as (
     select parent_id as id
-        ,depth+1 as depth
-    from ancestor, task_relation
-    where ancestor.id = task_relation.child_id
+    from task_relation
+    where child_id in (?)
+    union all
+    select rel.parent_id as id
+    from ancestors
+    inner join task_relation as rel
+    on ancestors.id = rel.child_id
 )
 select *
-from ancestor
-order by depth
+from ancestors
 ;
