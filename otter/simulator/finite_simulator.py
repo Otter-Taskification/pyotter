@@ -1,8 +1,21 @@
 import argparse
+import random
+import sys
 from collections import deque
 from contextlib import ExitStack
 from enum import Enum, auto
-from typing import Deque, Dict, Iterator, List, Literal, Optional, Set, Tuple, Union
+from typing import (
+    Deque,
+    Dict,
+    Iterator,
+    List,
+    Literal,
+    Optional,
+    Protocol,
+    Set,
+    Tuple,
+    Union,
+)
 
 import otf2_ext
 
@@ -21,14 +34,17 @@ class TSP(Enum):
     COMPLETE = auto()
 
 
+# time, thread, task, child_task, child_depth
+TaskCreateSchedulingPoint = Tuple[Literal[TSP.CREATE], int, int, int, int, int]
+
+# time, thread, task
+TaskSuspendSchedulingPoint = Tuple[Literal[TSP.SUSPEND], int, int, int]
+
+# time, thread, task, parent_task
+TaskCompleteSchedulingPoint = Tuple[Literal[TSP.COMPLETE], int, int, int, int]
+
 TaskSchedulingPoint = Union[
-    Tuple[
-        Literal[TSP.CREATE], int, int, int, int
-    ],  # (TSP.CREATE, time, thread, task, child_task)
-    Tuple[Literal[TSP.SUSPEND], int, int, int],  # (TSP.SUSPEND, time, thread, task)
-    Tuple[
-        Literal[TSP.COMPLETE], int, int, int, int
-    ],  # (TSP.COMPLETE, time, thread, task, parent_task)
+    TaskCreateSchedulingPoint, TaskSuspendSchedulingPoint, TaskCompleteSchedulingPoint
 ]
 
 """
@@ -71,6 +87,36 @@ Each TSP occurs at a known duration into the task segment.
 """
 
 
+class TaskSchedulingCallback(Protocol):
+    """
+    A scheduling callback invoked when a task encounters a task-scheduling event.
+
+    ### Parameters
+
+        - `task`: the new task for task-create events, otherwise it is the encountering task
+        - `resumable`: the tasks which can be resumed by this thread
+        - `schedulable`: the new tasks which can be started by this thread
+
+    ### Returns
+
+    The task to resume or start, or None if no action to be taken. The returned
+    task must be either resumable or schedulable on this thread.
+    """
+
+    def __call__(
+        self,
+        global_ts: int,
+        thread: int,
+        task: int,
+        resumable: List[int],
+        schedulable: List[int],
+    ) -> Optional[int]:
+        ...
+
+
+TaskSchedulingPolicy = Dict[TSP, TaskSchedulingCallback]
+
+
 class TaskPool:
     """Encapsulates the connection to the tasks database, responsible for
     traversing the database to spawn tasks
@@ -100,11 +146,11 @@ class TaskPool:
         # The set of suspended tasks with a count of outstanding dependencies
         self._waiting_tasks: Dict[int, int] = {}
 
-        # The set of currently running tasks - used to track where we're up to
+        # The set of currently running tasks, used to track where we're up to
         # Tasks are added here the first time they are scheduled
         # Tasks remain in here until they are completed at which point they are removed
-        # Tasks in here may be either scheduled or waiting.
-        # Tasks in here may not also be in self._ready_tasks.
+        # Tasks in here may be waiting, ready or scheduled i.e. this does not
+        # track the exact execution state of a task
         self._running_tasks: Dict[int, Tuple[int, int, str, str, Iterator[Event]]] = {}
 
         #! Note: the set of all tasks currently suspended is self._ready_tasks + self._waiting_tasks
@@ -112,6 +158,10 @@ class TaskPool:
     def get_ready_tasks(self):
         """Returns a copy of the set of ready tasks"""
         return self._ready_tasks.copy()
+
+    def get_running_tasks(self):
+        """Returns a copy of the set of running tasks"""
+        return set(self._running_tasks)
 
     def count_ready_tasks(self):
         """Count tasks ready and yet to be scheduled"""
@@ -165,6 +215,7 @@ class TaskPool:
                 start_ts,
                 end_ts,
                 iter(chunk.events),
+                # NOTE: could store task depth here
             )
 
         return self._running_tasks[task]
@@ -183,6 +234,14 @@ class TaskPool:
             )
         )
         return pending_children
+
+    def ancestor_of(self, leaf: int, branch: int) -> bool:
+        """Return True if branch is an ancestor of leaf, otherwise False"""
+        return branch in self.con.ancestors_of(leaf)
+
+    def filter_descendants_of(self, tasks: Set[int], branch: int) -> Set[int]:
+        """Filter `tasks` for descendants of `branch`"""
+        return tasks.intersection(set(self.con.descendants_of(branch)))
 
     def notify_task_create(self, task: int):
         """
@@ -276,19 +335,18 @@ class TaskScheduler:
     thread
     """
 
-    class Action(Enum):
-        """Represents the actions that can be taken at a task-scheduling point"""
-
-        START = auto()  # start a new task to execute on a thread
-        RESUME = auto()  # resume a previously suspended task
-        NONE = auto()  # take no action
-
     def __init__(
-        self, task_pool: TaskPool, num_threads: int = 1, global_clock: int = 0
+        self,
+        task_pool: TaskPool,
+        policy: TaskSchedulingPolicy,
+        num_threads: int = 1,
+        global_clock: int = 0,
     ) -> None:
-        self.debug = log.log_with_prefix(f"[Sched]", log.debug)
+        self.debug = log.log_with_prefix("[Sched]", log.debug)
+        self.error = log.log_with_prefix("[Sched]", log.error)
 
         self.task_pool = task_pool
+        self.policy = policy
         self.global_clock = global_clock
 
         # Each thread will send its next-available timestamp here
@@ -298,7 +356,11 @@ class TaskScheduler:
         self._task_scheduling_points: Deque[TaskSchedulingPoint] = deque()
 
         # Map thread num to a set of tasks tied to that thread.
-        self._tied_tasks = [set() for _ in range(num_threads)]
+        self._tied_tasks: List[Set[int]] = [set() for _ in range(num_threads)]
+
+        # The stack of tasks tied to each thread. Used to track the currently
+        # most junior task tied to a thread
+        self._tied_task_stack: List[Deque[int]] = [deque() for _ in range(num_threads)]
 
         self.threads = [ThreadAgent(n, self) for n in range(num_threads)]
 
@@ -316,14 +378,15 @@ class TaskScheduler:
             if ready_tasks:
                 task = ready_tasks.pop()
                 self.debug(f"start: schedule {task=} on {thread_id=}")
-                self.schedule_task(self.global_clock, task, thread_id)
+                self.schedule_task(self.global_clock, task, thread_id, 0)
 
-        for thread, next_avail in enumerate(self.next_available_ts):
-            self.debug(f"thread {thread} next available: {next_avail}")
-
-        self.dump_task_scheduling_points()
-        self.dump_task_statistics()
-        self.dump_thread_state(self.global_clock)
+        if log.is_debug_enabled():
+            self.debug("threads next available:")
+            for thread, next_avail in enumerate(self.next_available_ts):
+                self.debug(f"    thread {thread} next available: {next_avail}")
+            self.dump_task_scheduling_points()
+            self.dump_task_statistics()
+            self.dump_thread_state(self.global_clock)
 
         self.debug("started")
 
@@ -339,46 +402,99 @@ class TaskScheduler:
         self.debug(f"global clock advanced: {self.global_clock=}")
         self.debug(f"got tsp: {mode=}, {data=}")
         if mode == TSP.CREATE:
-            assert len(data) == 4
-            global_ts, thread, task, child_task = data
+            assert len(data) == 5
+            global_ts, thread, task, child_task, _ = data
+            self.debug(f"{mode}: {global_ts} {task=} creates {child_task}")
             self.task_pool.notify_task_create(child_task)
+            callback_task = child_task
         elif mode == TSP.SUSPEND:
             assert len(data) == 3
             global_ts, thread, task = data
+            self.debug(f"{mode}: {global_ts} {task=}")
             self.task_pool.notify_task_suspend(task)
+            callback_task = task
         elif mode == TSP.COMPLETE:
             assert len(data) == 4
             global_ts, thread, task, parent_task = data
+            self.debug(f"{mode}: {global_ts} {task=}")
             self.task_pool.notify_task_complete(task, parent_task)
             self._tied_tasks[thread].remove(task)
+            callback_task = task
+            assert self._tied_task_stack[thread].pop() == task
         else:
             raise ValueError(f"unkown task scheduling point: {mode=}, {data=}")
 
-        # After handling TSP:
-
-        # For each available thread:
-        #   - determine tasks eligible to be scheduled on this thread
-        #   - call a handler to decide what to do (start/resume/do nothing)
-        #   - if a task was scheduled (either started/resumed) enqueue the generated TSPs
-        #   - remove any scheduled task from the set of ready tasks
-        #   - ensure TSPs remain sorted in temporal order
-
         self.debug(f"ready tasks: {self.task_pool.get_ready_tasks()}")
 
-        for thread_id in self.available_threads(self.global_clock):
-            self.debug(f"call TSP handler for {mode=} at {global_ts=}, {thread_id=}")
+        self.debug("activate threads")
+        for thread in self.available_threads(self.global_clock):
+            self.debug(
+                f"[{thread=}]   call TSP callback for {mode=} at {global_ts=}, {thread=}"
+            )
+            selected_task = self._get_scheduling_decision(
+                self.policy[mode], thread, callback_task
+            )
+            if selected_task is not None:
+                self.schedule_task(self.global_clock, selected_task, thread, 0)
 
         self.dump_task_scheduling_points()
         self.dump_task_statistics()
         self.dump_thread_state(self.global_clock)
 
-    def schedule_task(self, global_ts: int, task: int, thread: int):
+    def _get_available_tasks(self, ready_tasks: Set[int], thread: int):
+        tied_tasks = self._tied_task_stack[thread]
+        resumable = set(tied_tasks).intersection(ready_tasks)
+        if tied_tasks:
+            self.debug(f"[{thread=}]   most junior tied task: {tied_tasks[-1]}")
+            schedulable = self.task_pool.filter_descendants_of(
+                ready_tasks, tied_tasks[-1]
+            )
+        else:
+            schedulable = ready_tasks
+        return resumable, schedulable
+
+    def _get_scheduling_decision(
+        self, callback: TaskSchedulingCallback, thread: int, task: int
+    ):
+        resumable, schedulable = self._get_available_tasks(
+            self.task_pool.get_ready_tasks(), thread
+        )
+
+        self.debug(f"[{thread=}]   schedulable new tasks: {schedulable}")
+        self.debug(f"[{thread=}]   resumable tied tasks:  {resumable}")
+
+        # We expect that schedulable and resumable tasks are distinct
+        overlap = schedulable.intersection(resumable)
+        if overlap:
+            self.error(
+                f"[{thread=}] {len(overlap)} tasks are both schedulable and resumable: {overlap}"
+            )
+            assert False
+
+        selected_task = callback(
+            self.global_clock,
+            thread,
+            task,
+            list(resumable),
+            list(schedulable),
+        )
+
+        if selected_task is not None:
+            assert selected_task in resumable or selected_task in schedulable
+
+        return selected_task
+
+    def schedule_task(self, global_ts: int, task: int, thread: int, depth: int):
         """
+        TODO: does this function correctly handle both new and resumed tasks???
+
         Start or resume the given task on the given thread at the given global
         time. Enqueue the TSPs encountered by the scheduled task segment. Mark
         the given thread as busy until this task segmet is complete.
 
         Requires that the given thread is available at this time.
+
+        Depth is the depth of this task in the task tree.
         """
         self.debug(f"schedule {task=} on {thread=} at {global_ts=}")
 
@@ -408,13 +524,7 @@ class TaskScheduler:
 
             if event.event_type == EventType.task_create:
                 task_scheduling_points.append(
-                    (
-                        TSP.CREATE,
-                        event_ts,
-                        thread,
-                        task,
-                        event.unique_id,
-                    )
+                    (TSP.CREATE, event_ts, thread, task, event.unique_id, depth + 1)
                 )
             elif event.event_type == EventType.sync_begin:
                 task_scheduling_points.append((TSP.SUSPEND, event_ts, thread, task))
@@ -472,41 +582,108 @@ class TaskScheduler:
         Record that a task is tied to a thread. The task must not already be tied
         to any other thread.
         """
+        self.debug(f"tie task {task} to thread {thread}")
         assert task not in self._tied_tasks[thread]
+        assert task not in self._tied_task_stack[thread]
+        if self._tied_task_stack[thread]:
+            assert self.task_pool.ancestor_of(task, self._tied_task_stack[thread][-1])
+        self._tied_task_stack[thread].append(task)
         self._tied_tasks[thread].add(task)
-        self.debug(f"task {task} tied to thread {thread}")
+        self.debug(f"    tasks tied to thread {thread}:")
+        self.debug(f"        set: {self._tied_tasks[thread]}")
+        self.debug(f"      stack: {self._tied_task_stack[thread]}")
+        self.debug(f"    task {task} tied to thread {thread}")
 
     def dump_task_scheduling_points(self):
-        if log.is_debug_enabled():
-            self.debug(f"TSPs outstanding at global time {self.global_clock}:")
-            for tsp in self._task_scheduling_points:
-                self.debug(f"  {tsp}")
+        self.debug(f"TSPs outstanding at global time {self.global_clock}:")
+        for tsp in self._task_scheduling_points:
+            self.debug(f"  {tsp}")
 
     def dump_task_statistics(self):
-        if log.is_debug_enabled():
-            ready = self.task_pool.count_ready_tasks()
-            waiting = self.task_pool.count_waiting_tasks()
-            running = self.task_pool.count_running_tasks()
-            self.debug("task statistics:")
-            self.debug(f"  ready:     {ready:>6d}")
-            self.debug(f"  waiting:   {waiting:>6d}")
-            self.debug(f"  running:   {running:>6d}")
+        ready = self.task_pool.count_ready_tasks()
+        waiting = self.task_pool.count_waiting_tasks()
+        running = self.task_pool.count_running_tasks()
+        self.debug("task statistics:")
+        self.debug(f"  ready:     {ready:>6d}")
+        self.debug(f"  waiting:   {waiting:>6d}")
+        self.debug(f"  running:   {running:>6d}")
 
     def dump_thread_state(self, time: int):
-        if log.is_debug_enabled():
-            self.debug("thread states at time {time}:")
-            for thread_id, next_avail in enumerate(self.next_available_ts):
-                if next_avail <= time:
-                    self.debug(f"  t{thread_id} IDLE {next_avail=}")
-                else:
-                    self.debug(f"  t{thread_id} BUSY {next_avail=}")
+        self.debug(f"thread states at time {time}:")
+        for thread_id, next_avail in enumerate(self.next_available_ts):
+            if next_avail <= time:
+                self.debug(f"  t{thread_id} IDLE {next_avail=}")
+            else:
+                self.debug(f"  t{thread_id} BUSY {next_avail=}")
+
+
+def on_create(
+    global_ts: int,
+    thread: int,
+    task: int,
+    resumable: List[int],
+    schedulable: List[int],
+) -> Optional[int]:
+    print(f"{task} created", file=sys.stderr)
+    if task in schedulable:
+        print(f"schedule task {task}", file=sys.stderr)
+        return task
+    else:
+        print(f"{task} not schedulable", file=sys.stderr)
+        return None
+
+
+def on_suspend(
+    global_ts: int,
+    thread: int,
+    task: int,
+    resumable: List[int],
+    schedulable: List[int],
+) -> Optional[int]:
+    print(f"{task} suspended", file=sys.stderr)
+    if task in resumable:
+        print(f"resume {task}", file=sys.stderr)
+        next_task = task
+    elif resumable:
+        next_task = random.choice(resumable)
+        print(f"resume {next_task}", file=sys.stderr)
+    elif schedulable:
+        next_task = random.choice(schedulable)
+        print(f"schedule {next_task}", file=sys.stderr)
+    else:
+        next_task = None
+
+
+def on_complete(
+    global_ts: int,
+    thread: int,
+    task: int,
+    resumable: List[int],
+    schedulable: List[int],
+) -> Optional[int]:
+    print(f"{task} completed", file=sys.stderr)
+    if resumable:
+        next_task = random.choice(resumable)
+        print(f"resume {next_task}", file=sys.stderr)
+    elif schedulable:
+        next_task = random.choice(schedulable)
+        print(f"schedule {next_task}", file=sys.stderr)
+    else:
+        next_task = None
+    return next_task
 
 
 class Model:
     """Creates the scheduler with the given number of threads"""
 
-    def __init__(self, task_pool: TaskPool, num_threads: int = 1) -> None:
-        self.scheduler = TaskScheduler(task_pool, num_threads)
+    def __init__(
+        self,
+        task_pool: TaskPool,
+        policy: TaskSchedulingPolicy,
+        num_threads: int = 1,
+    ) -> None:
+        self.debug = log.log_with_prefix("[Model]", log.debug)
+        self.scheduler = TaskScheduler(task_pool, policy, num_threads)
 
     def run(self, max_steps: Optional[int] = None):
         initial_tasks = self.scheduler.task_pool.get_ready_tasks()
@@ -514,9 +691,11 @@ class Model:
         steps = 0
         self.scheduler.start()
         while self.scheduler.task_scheduling_points_pending():
-            self.scheduler.step()
             steps += 1
+            self.debug(f"step={steps}")
+            self.scheduler.step()
             if max_steps is not None and steps > max_steps:
+                self.debug(f"stop after {steps} steps")
                 break
 
 
@@ -533,5 +712,10 @@ if __name__ == "__main__":
         reader = ctx.enter_context(otf2_ext.open_trace(args.anchorfile))
         seek_events = ctx.enter_context(reader.seek_events())
         chunk_reader = DBChunkReader(reader.attributes, seek_events, con)
-        model = Model(TaskPool(con, chunk_reader), num_threads=4)
-        model.run(max_steps=3)
+        policy = {
+            TSP.CREATE: on_create,
+            TSP.SUSPEND: on_suspend,
+            TSP.COMPLETE: on_complete,
+        }
+        model = Model(TaskPool(con, chunk_reader), policy, num_threads=4)
+        model.run()
