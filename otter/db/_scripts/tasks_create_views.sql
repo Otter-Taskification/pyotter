@@ -93,6 +93,7 @@ create view if not exists task_attributes as
         ,count(children.child_id) as num_children
         ,task.flavour
         ,string.text as task_label
+        ,crt.time as create_ts
         ,start.time as start_ts
         ,end.time as end_ts
         -- ,task.duration
@@ -106,6 +107,9 @@ create view if not exists task_attributes as
         ,end_loc.func as end_func
         ,end_loc.line as end_line
     from task
+    left join task_history as crt
+        on task.id = crt.id
+        and crt.action = 1 -- create
     left join task_history as start
         on task.id = start.id
         and start.action = 2 -- start
