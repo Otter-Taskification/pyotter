@@ -1,8 +1,8 @@
 select attr.task_label
     ,attr.flavour
-    ,attr.init_file
-    ,attr.init_func
-    ,attr.init_line
+    ,attr.create_file
+    ,attr.create_func
+    ,attr.create_line
     ,attr.start_file
     ,attr.start_func
     ,attr.start_line
@@ -11,9 +11,9 @@ select attr.task_label
     ,attr.end_line
     ,child.task_label as child_task_label
     ,child.flavour as child_flavour
-    ,child.init_file as child_init_file
-    ,child.init_func as child_init_func
-    ,child.init_line as child_init_line
+    ,child.create_file as child_create_file
+    ,child.create_func as child_create_func
+    ,child.create_line as child_create_line
     ,child.start_file as child_start_file
     ,child.start_func as child_start_func
     ,child.start_line as child_start_line
