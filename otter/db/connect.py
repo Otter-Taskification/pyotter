@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from collections import defaultdict
 from itertools import groupby
-from typing import Any, Generator, Iterable, List, Optional, Tuple, Union
+from typing import Any, Generator, Iterable, List, Optional, Tuple, Union, Sequence
 
 from .. import log
 from ..definitions import SourceLocation, TaskAction, TaskAttributes
@@ -88,8 +88,8 @@ class Connection(sqlite3.Connection):
         return tuple(cur.fetchall())
 
     def task_attributes(
-        self, tasks: Union[int, Iterable[int]]
-    ) -> List[Tuple[int, int, int, str, str, TaskAttributes]]:
+        self, tasks: Union[int, Sequence[int]]
+    ) -> List[Tuple[int, int, int, str, str, str, TaskAttributes]]:
         if isinstance(tasks, int):
             tasks = (tasks,)
         placeholder = ",".join("?" for _ in tasks)
@@ -122,6 +122,32 @@ class Connection(sqlite3.Connection):
                 timestamps.append((int(suspended["time"]), int(resumed["time"])))
             yield task_id, timestamps
 
+    def time_active(self, tasks: Sequence[int]) -> Sequence[Tuple[int, int, int]]:
+        "Return a tuple of task id, time active & time inactive for each task"
+        tasks = tuple(tasks)
+        placeholder = ",".join("?" for _ in tasks)
+        query = f"""
+        select id
+            ,sum(case when action in ({TaskAction.END.value}, {TaskAction.SUSPEND.value}) and prev_id = id then cast(time as int) - cast(prev_time as int) else 0 end) as time_active
+            ,sum(case when action in ({TaskAction.START.value}, {TaskAction.RESUME.value}) and prev_id = id then cast(time as int) - cast(prev_time as int) else 0 end) as time_inactive
+        from (
+            select hist.id
+                ,hist.action
+                ,hist.time
+                ,lag(time) over (order by id, time) as prev_time
+                ,lag(id) over (order by id, time) as prev_id
+            from task_history as hist
+            where id in ({placeholder})
+                and hist.action in (2, 3, 4, 5)
+            order by id, time
+        )
+        group by id
+        """
+        cur = self.execute(query, tasks)
+        rows = cur.fetchall()
+        result = [(row["id"], row["time_active"], row["time_inactive"]) for row in rows]
+        return result
+
     @staticmethod
     def _parent_child_attributes_row_factory(
         _, values: Tuple[Any, ...]
@@ -152,6 +178,7 @@ class Connection(sqlite3.Connection):
             num_children,
             flavour,
             label,
+            create_ts,
             start_ts,
             end_ts,
             *locations,
@@ -160,6 +187,7 @@ class Connection(sqlite3.Connection):
             task_id,
             parent_id,
             num_children,
+            create_ts,
             start_ts,
             end_ts,
             TaskAttributes(label, flavour, *locations),
@@ -180,7 +208,7 @@ class Connection(sqlite3.Connection):
         """Get the sequences of child tasks synchronised during a task."""
 
         cur = self.cursor()
-        cur.execute(scripts.get_child_sync_points, (task,))
+        cur.execute(scripts.get_child_sync_points, (task, task))
         results = tuple(cur.fetchall())
         if debug:
             log.debug("child_sync_points: got %d results", len(results))
@@ -208,18 +236,27 @@ class Connection(sqlite3.Connection):
 
     def task_synchronisation_groups(self, task: int):
         records = self.child_sync_points(task)
-        sequences = defaultdict(list)
-        time = {}
+        sequence_rows = defaultdict(list)
+        sync_start_ts = {}
+        chunk_duration = {}
         sync_descendants = {}
         for row in records:
-            s = row["sequence"]
-            sequences[s].append(row)
-            if s not in time:
-                time[s] = int(row["sync_ts"])
-            if s not in sync_descendants:
-                sync_descendants[s] = bool(row["sync_descendants"])
-        for seq, rows in sequences.items():
-            yield seq, rows, time[seq], sync_descendants[seq]
+            seq = row["sequence"]
+            sequence_rows[seq].append(row)
+            if seq not in sync_start_ts:
+                sync_start_ts[seq] = int(row["sync_ts"])
+            if seq not in chunk_duration:
+                chunk_duration[seq] = int(row["chunk_duration"])
+            if seq not in sync_descendants:
+                sync_descendants[seq] = bool(row["sync_descendants"])
+        for seq, rows in sequence_rows.items():
+            yield (
+                seq,
+                rows,
+                sync_start_ts[seq],
+                sync_descendants[seq],
+                chunk_duration[seq],
+            )
 
     def source_locations(self):
         """Get all the source locations defined in the trace"""
