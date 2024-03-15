@@ -62,6 +62,13 @@ class Connection(sqlite3.Connection):
     def root_tasks(self) -> Tuple[int]:
         return (0,)
 
+    def num_children(self, task: int) -> int:
+        cur = self.cursor()
+        query = (
+            "select count(*) as num_children from task_relation where parent_id in (?)"
+        )
+        return cur.execute(query, (task,)).fetchone()["num_children"]
+
     def children_of(self, parent: int) -> List[int]:
         cur = self.cursor()
         query = "select child_id from task_relation where parent_id in (?)"
