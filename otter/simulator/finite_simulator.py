@@ -202,7 +202,7 @@ class TaskPool:
 
         self._ready_tasks.remove(task)
 
-        task, parent, num_children, start_ts, end_ts, attr = self.con.task_attributes(
+        task, parent, num_children, create_ts, start_ts, end_ts, attr = self.con.task_attributes(
             task
         )[0]
 
