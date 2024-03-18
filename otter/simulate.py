@@ -2,6 +2,7 @@ import argparse
 from typing import TextIO
 
 import otter
+import igraph
 
 
 def descend(
@@ -136,7 +137,6 @@ def leaf_task(
     start = int(start_ts)
     end = int(end_ts)
     duration = end - start
-    otter.log.info(f"{pre} {task=} is a leaf task (dur = {duration}ns)")
     sched.write(f"{task},{global_start_ts},{duration}\n")
     return duration
 
@@ -194,6 +194,30 @@ def main(anchorfile, sched: TextIO, crit: TextIO):
             print(f"      relative:  {1/speedup:12.2%}")
 
 
+def detect_critical_tasks(sched: TextIO):
+    header = sched.readline()
+    otter.log.info(f"{header=}")
+    graph = igraph.Graph(directed=True)
+    graph.vs["name"] = None
+    for line in sched:
+        task, _, critical_child = line.strip().split(",")
+        otter.log.info(f"{task=}, {critical_child=}")
+        if task not in graph.vs["name"]:
+            v1 = graph.add_vertex(name=task)
+        if critical_child not in graph.vs["name"]:
+            v2 = graph.add_vertex(name=critical_child)
+        graph.add_edge(task, critical_child)
+    otter.log.info(f"num vertices: {len(graph.vs)}")
+    root_node = graph.vs.find(name="0")
+    neighbours = graph.neighborhood_size(vertices=root_node.index, order=99)
+    neighborhood = graph.neighborhood(vertices=root_node.index, order=neighbours)
+    critical_subgraph = graph.induced_subgraph(neighborhood)
+    otter.log.info(f"neighbours: {neighbours}")
+    otter.log.info(f"neighborhood: {neighborhood}")
+    print("Critical task sequence: ", end="")
+    print(", ".join(critical_subgraph.vs["name"]))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -212,6 +236,13 @@ if __name__ == "__main__":
         help="where to save data about critical tasks",
         default="crit.txt",
     )
+    parser.add_argument(
+        "--critical-tasks",
+        dest="detect_critical",
+        help="detect the sequence of critical tasks",
+        action="store_true",
+        default=False,
+    )
     parser.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
     otter.args.add_common_arguments(parser)
     args = parser.parse_args()
@@ -222,3 +253,9 @@ if __name__ == "__main__":
         sched_file.write("task,type,global_start_ts,duration\n")
         crit_file.write("task,sequence,critical_child\n")
         main(args.anchorfile, sched_file, crit_file)
+    otter.log.info(f"task scheduling data written to {args.sched}")
+    otter.log.info(f"critical sub-tasks written to {args.crit}")
+    if args.detect_critical:
+        otter.log.info("finding critical tasks")
+        with open(args.crit, "r", encoding="utf-8") as crit_file:
+            detect_critical_tasks(crit_file)
