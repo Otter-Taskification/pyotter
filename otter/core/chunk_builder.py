@@ -8,6 +8,17 @@ from otter import db
 from .events import Event
 
 
+class ChunkKeyNotFoundError(Exception):
+
+    def __init__(self, key: int) -> None:
+        super().__init__(f"chunk key not found: {key}")
+
+class ChunkKeyDuplicateError(Exception):
+
+    def __init__(self, key: int) -> None:
+        super().__init__(f"chunk key duplicated: {key}")
+
+
 class ChunkBuilderProtocol(Protocol):
     """Capable of building the set of chunks from a trace"""
 
@@ -43,9 +54,18 @@ class DBChunkBuilder:
         return row["num_chunks"]
 
     def new_chunk(self, key: int, event: Event, location_ref: int, location_count: int):
-        self.append_to_chunk(key, event, location_ref, location_count)
+        if self.contains(key):
+            raise ChunkKeyDuplicateError(key)
+        self._append_to_chunk(key, event, location_ref, location_count)
 
     def append_to_chunk(
+        self, key: int, event: Event, location_ref: int, location_count: int
+    ) -> None:
+        if not self.contains(key):
+            raise ChunkKeyNotFoundError(key)
+        self._append_to_chunk(key, event, location_ref, location_count)
+
+    def _append_to_chunk(
         self, key: int, event: Event, location_ref: int, location_count: int
     ) -> None:
         self._buffer.append((key, location_ref, location_count))

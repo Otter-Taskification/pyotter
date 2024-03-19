@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import otter.log
+
 from typing import Optional, Set, Tuple
 
-from otter.core.chunk_builder import ChunkBuilderProtocol
+from otter.core.chunk_builder import (
+    ChunkBuilderProtocol,
+    ChunkKeyNotFoundError,
+    ChunkKeyDuplicateError,
+)
 from otter.core.events import Event, Location
 from otter.core.tasks import Task
 from otter.definitions import Attr, EventModel, EventType, NullTaskID, SourceLocation
@@ -194,8 +200,13 @@ def update_chunks_task_enter(
     assert hasattr(event, Attr.encountering_task_id.value)
     task: int = event.encountering_task_id
     assert task != NullTaskID
-    assert not chunk_builder.contains(task)
-    chunk_builder.new_chunk(task, event, location.ref, location_count)
+    try:
+        chunk_builder.new_chunk(task, event, location.ref, location_count)
+    except ChunkKeyDuplicateError:
+        otter.log.error(f"prior events for {task=} when processing task-enter event:")
+        otter.log.error(f"  {location=}. {location_count=}")
+        otter.log.error(f"  {event}")
+        raise
     return None
 
 
@@ -209,6 +220,13 @@ def update_chunks_task_leave(
     assert hasattr(event, Attr.encountering_task_id.value)
     task: int = event.encountering_task_id
     assert task != NullTaskID
-    assert chunk_builder.contains(task)
-    chunk_builder.append_to_chunk(task, event, location.ref, location_count)
+    try:
+        chunk_builder.append_to_chunk(task, event, location.ref, location_count)
+    except ChunkKeyNotFoundError:
+        otter.log.error(
+            f"no prior events for {task=} when processing task-leave event:"
+        )
+        otter.log.error(f"  {location=}. {location_count=}")
+        otter.log.error(f"  {event}")
+        raise
     return task
