@@ -1,5 +1,24 @@
 -- Create views of the tables in a tasks db
 
+create view if not exists task_history(
+        id
+        ,action
+        ,time
+        ,location_id
+    ) as
+    select id
+        ,action
+        ,time
+        ,location_id
+    from task_history_unique
+    union all
+    select id
+        ,action
+        ,time
+        ,location_id
+    from task_history_multi
+;
+
 -- Get a readable view of the tasks' creation locations
 create view if not exists task_create_location(
          id

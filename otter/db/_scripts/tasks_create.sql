@@ -24,13 +24,23 @@ create table task(
     -- foreign key (end_loc_id) references source (src_loc_id)
 );
 
--- List actions of each task
-create table task_history(
+-- List unique actions of each task e.g. create, start, end
+create table task_history_unique(
     id int not null,       -- task ID
-    action int not null,   -- 0=init/1=start/2=end
+    action int not null,   -- 
     time not null,         -- time of action
     location_id,           -- source location
     primary key (id, action)
+    foreign key (id) references task (id)
+);
+
+-- List non-unique actions of each task
+create table task_history_multi(
+    id int not null,       -- task ID
+    action int not null,   -- 
+    time not null,         -- time of action
+    location_id,           -- source location
+    primary key (id, action, time)
     foreign key (id) references task (id)
 );
 
