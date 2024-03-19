@@ -18,6 +18,7 @@ from typing import (
 import otter.log
 import otter
 from otter.core.chunk_builder import ChunkBuilderProtocol
+from otter.core.task_builder import TaskBuilderProtocol
 from otter.core.chunks import Chunk
 from otter.core.events import Event, Location
 from otter.core.tasks import Task
@@ -37,25 +38,6 @@ EventList = List[Event]
 TraceEventIterable = Iterable[Tuple[Location, int, Event]]
 ChunkStackDict = Dict[Any, Deque[Chunk]]
 ChunkUpdateHandlerKey = Tuple[Optional[RegionType], EventType]
-
-
-class TaskBuilderProtocol(Protocol):
-    """Capable of building a representation of the tasks in a trace"""
-
-    def add_task_metadata(
-        self, task: int, parent: Optional[int], label: str, flavour: int = -1
-    ): ...
-
-    def add_task_action(
-        self,
-        task: int,
-        action: TaskAction,
-        time: str,
-        location: SourceLocation,
-        unique: bool = False,
-    ): ...
-
-    def close(self) -> None: ...
 
 
 class ChunkUpdateHandlerFn(Protocol):
