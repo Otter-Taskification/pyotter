@@ -704,7 +704,7 @@ if __name__ == "__main__":
     parser.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
     otter.args.add_common_arguments(parser)
     args = parser.parse_args()
-    log.initialise(args)
+    log.initialise(args.loglevel)
     project = otter.project.BuildGraphFromDB(args.anchorfile)
     print(f"simulating trace {args.anchorfile}")
     with ExitStack() as ctx:

@@ -3,138 +3,24 @@ version: 1
 
 formatters:
 
-  default:
-    format: '[{asctime}] [{name}] [{levelname}] [{filename:}:{lineno}] {message}'
-    datefmt: '%Y/%m/%d-%H:%M:%S'
-    style: '{'
-
   basic:
     format: '[{levelname}]: {message}'
     style: '{'
 
-  simple:
-    format: '{asctime} {name} [{levelname}]: {message}'
-    datefmt: '%Y/%m/%d-%H:%M:%S'
-    style: '{'
-
-  init:
-    format: '{name} [{levelname}] {filename}:{lineno} (in {funcName}): {message}'
-    style: '{'
-
 
 handlers:
-
-  infoConsole:
-    level: INFO
-    class: logging.StreamHandler
-    formatter: simple
-
-  infoConsoleBasic:
-    level: INFO
-    class: logging.StreamHandler
-    formatter: basic
 
   debugConsoleBasic:
     level: DEBUG
     class: logging.StreamHandler
     formatter: basic
 
-  debugConsole:
-    level: DEBUG
-    class: logging.StreamHandler
-    formatter: simple
-
-  debugFile:
-    level: DEBUG
-    class: logging.FileHandler
-    formatter: default
-    filename: otter.log
-    mode: w
-
-  debugInitFile:
-    level: DEBUG
-    class: logging.FileHandler
-    formatter: default
-    filename: otter.initialise.log
-    mode: w
-
-  debugObjectInitFile:
-    level: DEBUG
-    class: logging.FileHandler
-    formatter: init
-    filename: otter.object-init.log
-    mode: w
-
-#  eventsFile:
-#    level: DEBUG
-#    class: logging.FileHandler
-#    formatter: default
-#    filename: events.log
-#    mode: w
-
-  debugChunksFile:
-    level: DEBUG
-    class: logging.FileHandler
-    formatter: simple
-    filename: otter.chunks.log
-    mode: w
-
-  debugGraphsFile:
-    level: DEBUG
-    class: logging.FileHandler
-    formatter: simple
-    filename: otter.graphs.log
-    mode: w
-
-  debugTaskAttrFile:
-    level: DEBUG
-    class: logging.FileHandler
-    formatter: simple
-    filename: otter.tasks.log
-    mode: w
-
 
 loggers:
 
-  otter:
-    handlers: [debugFile]
-
-  otter.main:
+  main:
     handlers: [debugConsoleBasic]
-    propagate: True
-
-  otter.project:
-    handlers: [debugConsole]
-    propagate: True
-
-  otter.initialise:
-    handlers: [debugInitFile]
-    propagate: False
-
-  otter.tasks:
-    handlers: [debugTaskAttrFile]
-    propogate: False
-
-  otter.chunks_debug:
-    handlers: [debugChunksFile]
-    propagate: False
-
-  otter.graphs_debug:
-    handlers: [debugGraphsFile]
-    propagate: False
-
-  otter.tasks_debug:
-    handlers: [debugTaskAttrFile]
-    propagate: False
-
-  on_init:
-    handlers: [debugObjectInitFile]
 
 
 root:
   level: WARN
-
-
-otter:
-  init: on_init
-  initialise: otter.initialise

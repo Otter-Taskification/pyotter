@@ -114,14 +114,6 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
     parser.add_argument(
-        "--logdir",
-        dest="logdir",
-        default="otter-logs",
-        help="logging directory",
-        metavar="dir",
-    )
-
-    parser.add_argument(
         "--profile",
         dest="profile",
         metavar="file",

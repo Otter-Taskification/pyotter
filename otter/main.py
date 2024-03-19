@@ -28,7 +28,7 @@ def _select_action(args) -> None:
         otter.args.print_help()
         raise SystemExit(0)
 
-    otter.log.initialise(args)
+    otter.log.initialise(args.loglevel)
 
     debug = args.loglevel == otter.log.Level.DEBUG
 

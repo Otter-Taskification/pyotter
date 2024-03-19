@@ -247,7 +247,7 @@ if __name__ == "__main__":
     parser.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
     otter.args.add_common_arguments(parser)
     args = parser.parse_args()
-    otter.log.initialise(args)
+    otter.log.initialise(args.loglevel)
     with open(args.sched, "w", encoding="utf-8") as sched_file, open(
         args.crit, "w", encoding="utf-8"
     ) as crit_file:
