@@ -17,6 +17,7 @@ class DBTaskBuilder:
         self._task_meta: List[Tuple[int, int, int]] = []
         self._task_links: List[Tuple[int, int]] = []
         self._task_actions: List[Tuple[int, int, str, int]] = []
+        self._task_actions_unique: List[Tuple[int, int, str, int]] = []
 
     def add_task_metadata(self, task: int, parent: Optional[int], label: str, flavour: int = -1) -> None:
         self._task_meta.append((task, flavour, self._string_id[label]))
@@ -25,14 +26,14 @@ class DBTaskBuilder:
         if self._size >= self.bufsize:
             self._flush()
 
-    def add_task_action(self, task: int, action: TaskAction, time: str, location: SourceLocation) -> None:
+    def add_task_action(self, task: int, action: TaskAction, time: str, location: SourceLocation, unique: bool = False) -> None:
         self._task_actions.append((task, action, time, self._source_location_id[location]))
         if self._size >= self.bufsize:
             self._flush()
 
     @property
     def _size(self):
-        return len(self._task_meta) + len(self._task_links) + len(self._task_actions)
+        return len(self._task_meta) + len(self._task_links) + len(self._task_actions) + len(self._task_actions_unique)
 
     def _flush(self):
         if self._task_meta:
@@ -42,8 +43,17 @@ class DBTaskBuilder:
             self.con.executemany(db.scripts.insert_task_relations, self._task_links)
             self._task_links.clear()
         if self._task_actions:
-            self.con.executemany(db.scripts.insert_task_history, self._task_actions)
+            self.con.executemany(
+                "insert into task_history_multi values(?,?,?,?);",
+                self._task_actions,
+            )
             self._task_actions.clear()
+        if self._task_actions_unique:
+            self.con.executemany(
+                "insert into task_history_unique values(?,?,?,?);",
+                self._task_actions_unique,
+            )
+            self._task_actions_unique.clear()
         self.con.commit()
 
     def close(self) -> None:
