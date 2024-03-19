@@ -5,7 +5,8 @@ from collections import defaultdict
 from itertools import groupby
 from typing import Any, Generator, Iterable, List, Optional, Tuple, Union, Sequence
 
-from .. import log
+import otter.log
+
 from ..definitions import SourceLocation, TaskAction, TaskAttributes
 from ..utils import batched
 from . import scripts
@@ -32,6 +33,8 @@ class Connection(sqlite3.Connection):
         self.db = db
         self.default_row_factory = Row
         self.row_factory = self.default_row_factory
+        sqlite3_version = getattr(sqlite3, "sqlite_version", "???")
+        otter.log.info(f"using sqlite3.sqlite_version {sqlite3_version}")
 
     def print_summary(self) -> None:
         """Print summary information about the connected tasks database"""
@@ -40,13 +43,21 @@ class Connection(sqlite3.Connection):
 
         row_format = "{0:<8s} {1:20s} ({2} rows)"
 
-        rows = self.execute(
-            "select name, type from sqlite_schema where type in ('table', 'view')"
-        ).fetchall()
+        otter.log.info("try to read from sqlite_schema")
+        try:
+            rows = self.execute(
+                "select name, type from sqlite_schema where type in ('table', 'view')"
+            ).fetchall()
+        except sqlite3.OperationalError as err:
+            otter.log.info(err)
+            otter.log.info("failed to read from sqlite_schema, try from sqlite_master")
+            rows = self.execute(
+                "select name, type from sqlite_master where type in ('table', 'view')"
+            ).fetchall()
 
         for row in rows:
             query_count_rows = f"select count(*) as rows from {row['name']}"
-            log.debug(query_count_rows)
+            otter.log.debug(query_count_rows)
             count = self.execute(query_count_rows).fetchone()
             print(row_format.format(row["type"], row["name"], count["rows"]))
 
@@ -208,7 +219,7 @@ class Connection(sqlite3.Connection):
         self.row_factory = self._parent_child_attributes_row_factory
         cur = self.execute(scripts.count_children_by_parent_attributes)
         results = cur.fetchall()
-        log.debug("got %d rows", len(results))
+        otter.log.debug("got %d rows", len(results))
         return results
 
     def child_sync_points(self, task: int, debug: bool = False) -> Tuple[Any]:
@@ -218,7 +229,7 @@ class Connection(sqlite3.Connection):
         cur.execute(scripts.get_child_sync_points, (task, task))
         results = tuple(cur.fetchall())
         if debug:
-            log.debug("child_sync_points: got %d results", len(results))
+            otter.log.debug("child_sync_points: got %d results", len(results))
         return results
 
     def sync_groups(
@@ -236,7 +247,7 @@ class Connection(sqlite3.Connection):
             sequences[row["sequence"]].append(row)
         for seq, rows in sequences.items():
             if debug:
-                log.debug(
+                otter.log.debug(
                     "sync_groups: sequence %s yielding %d records", seq, len(rows)
                 )
             yield seq, rows
@@ -271,7 +282,7 @@ class Connection(sqlite3.Connection):
         self.row_factory = self._source_location_row_factory
         cur = self.execute("select * from source_location")
         results: List[SourceLocation] = cur.fetchall()
-        log.debug("got %d source locations", len(results))
+        otter.log.debug("got %d source locations", len(results))
         return results
 
     def task_types(self) -> List[Tuple[TaskAttributes, int]]:
@@ -280,5 +291,5 @@ class Connection(sqlite3.Connection):
         self.row_factory = self._task_count_by_attributes_row_factory
         cur = self.execute(scripts.count_tasks_by_attributes)
         results = cur.fetchall()
-        log.debug("got %d task definitions", len(results))
+        otter.log.debug("got %d task definitions", len(results))
         return results
