@@ -190,13 +190,13 @@ class BaseEventModel(ABC):
         chunk_builder: ChunkBuilderProtocol,
         task_builder: TaskBuilderProtocol,
     ) -> int:
-        otter.log.debug(f"receiving events from %s", events_iter)
+        otter.log.debug("receiving events from %s", events_iter)
 
         total_events = 0
         num_chunks = 0
         for k, (location, location_count, event) in enumerate(events_iter, start=1):
             otter.log.debug(
-                "got event %d (location=%d, position=%d): %s",
+                "got event %d (location=%s, position=%d): %s",
                 k,
                 location,
                 location_count,
