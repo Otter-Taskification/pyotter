@@ -22,6 +22,7 @@ otter = "otter.main:select_action"
 
 [tool.setuptools.packages.find]
 where = ["."]
+exclude = ["build*"]
 
 [tool.setuptools.package-data]
 "otter.reporting.templates" = ["*.html"]
