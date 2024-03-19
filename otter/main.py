@@ -2,6 +2,7 @@
 
 from json import dumps
 
+import otter.log
 import otter
 from otter.args import Action, GraphType
 

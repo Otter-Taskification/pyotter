@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import otter.log
+
 from collections import defaultdict
 from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
@@ -13,11 +15,8 @@ from otter.definitions import (
     SourceLocation,
     TaskStatus,
 )
-from otter.log import logger_getter
 
 from .event_model import BaseEventModel, ChunkStackDict, EventModelFactory
-
-get_module_logger = logger_getter("omp_event_model")
 
 # Type hint aliases
 EventList = List[Event]
@@ -181,10 +180,9 @@ class OMPEventModel(BaseEventModel):
 def update_chunks_parallel_begin(
     event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict
 ) -> None:
-    log = get_module_logger()
     task_chunk_key = (location.name, event.encountering_task_id, RegionType.task)
     parallel_chunk_key = (location.name, event.unique_id, RegionType.parallel)
-    log.debug(
+    otter.log.debug(
         f"{update_chunks_parallel_begin.__name__}: {task_chunk_key=}, {parallel_chunk_key=}"
     )
     location.enter_parallel_region(event.unique_id)
@@ -207,9 +205,8 @@ def update_chunks_parallel_begin(
 def update_chunks_parallel_end(
     event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict
 ) -> Chunk:
-    log = get_module_logger()
     task_chunk_key = (location.name, event.encountering_task_id, RegionType.task)
-    log.debug(f"{update_chunks_parallel_end.__name__}: {task_chunk_key=}")
+    otter.log.debug(f"{update_chunks_parallel_end.__name__}: {task_chunk_key=}")
     # append to parallel region chunk
     parallel_chunk_key = (location.name, event.unique_id, RegionType.parallel)
     parallel_chunk = chunk_dict[parallel_chunk_key]
@@ -230,9 +227,8 @@ def update_chunks_parallel_end(
 def update_chunks_initial_task_enter(
     event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict
 ) -> None:
-    log = get_module_logger()
     chunk_key = location.name, event.unique_id, RegionType.task
-    log.debug(f"{update_chunks_initial_task_enter.__name__}: {chunk_key=}")
+    otter.log.debug(f"{update_chunks_initial_task_enter.__name__}: {chunk_key=}")
     if chunk_key in chunk_dict:
         chunk = chunk_dict[chunk_key]
     else:
@@ -253,9 +249,8 @@ def update_chunks_initial_task_enter(
 def update_chunks_initial_task_leave(
     event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict
 ) -> Chunk:
-    log = get_module_logger()
     chunk_key = location.name, event.unique_id, RegionType.task
-    log.debug(f"{update_chunks_initial_task_leave.__name__}: {chunk_key=}")
+    otter.log.debug(f"{update_chunks_initial_task_leave.__name__}: {chunk_key=}")
     chunk = chunk_dict[chunk_key]
     chunk.append_event(event)
     return chunk
@@ -267,10 +262,9 @@ def update_chunks_initial_task_leave(
 def update_chunks_implicit_task_enter(
     event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict
 ) -> None:
-    log = get_module_logger()
     # (location name, current parallel ID, defn.RegionType.parallel)
     chunk_key = location.name, location.current_parallel_region, RegionType.parallel
-    log.debug(f"{update_chunks_implicit_task_enter.__name__}: {chunk_key=}")
+    otter.log.debug(f"{update_chunks_implicit_task_enter.__name__}: {chunk_key=}")
     chunk = chunk_dict[chunk_key]
     chunk.append_event(event)
     # Ensure implicit-task-id points to the same chunk for later events in this task
@@ -287,10 +281,9 @@ def update_chunks_implicit_task_enter(
 def update_chunks_implicit_task_leave(
     event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict
 ) -> None:
-    log = get_module_logger()
     # don't yield until parallel-end
     chunk_key = event.unique_id
-    log.debug(f"{update_chunks_implicit_task_leave.__name__}: {chunk_key=}")
+    otter.log.debug(f"{update_chunks_implicit_task_leave.__name__}: {chunk_key=}")
     chunk = chunk_dict[chunk_key]
     chunk.append_event(event)
 
@@ -304,10 +297,9 @@ def update_chunks_implicit_task_leave(
 def update_chunks_single_begin(
     event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict
 ) -> None:
-    log = get_module_logger()
     # Nested region - append to task chunk, push onto stack, create nested chunk
     task_chunk_key = event.encountering_task_id
-    log.debug(f"{update_chunks_single_begin.__name__}: {task_chunk_key=}")
+    otter.log.debug(f"{update_chunks_single_begin.__name__}: {task_chunk_key=}")
     task_chunk = chunk_dict.pop(task_chunk_key)
     task_chunk.append_event(event)
     # store the enclosing chunk
@@ -330,10 +322,9 @@ def update_chunks_single_begin(
 def update_chunks_single_end(
     event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict
 ) -> Chunk:
-    log = get_module_logger()
     # Nested region - append to inner chunk, yield, then pop enclosing chunk & append to that chunk
     task_chunk_key = event.encountering_task_id
-    log.debug(f"{update_chunks_single_end.__name__}: {task_chunk_key=}")
+    otter.log.debug(f"{update_chunks_single_end.__name__}: {task_chunk_key=}")
     task_chunk = chunk_dict[task_chunk_key]
     task_chunk.append_event(event)
     chunk_dict[task_chunk_key] = chunk_stack[task_chunk_key].pop()
@@ -345,10 +336,9 @@ def update_chunks_single_end(
 def update_chunks_task_switch(
     event: Event, location: Location, chunk_dict: ChunkDict, chunk_stack: ChunkStackDict
 ) -> Optional[Chunk]:
-    log = get_module_logger()
     this_chunk_key = event.encountering_task_id
     next_chunk_key = event.next_task_id
-    log.debug(
+    otter.log.debug(
         f"{update_chunks_task_switch.__name__}: {this_chunk_key=}, {next_chunk_key=}"
     )
     this_chunk = chunk_dict[this_chunk_key]
@@ -356,17 +346,17 @@ def update_chunks_task_switch(
     if (
         event.prior_task_status != TaskStatus.switch
     ):  # only update the prior task's chunk if it wasn't a regular switch event
-        log.debug(
+        otter.log.debug(
             f"{update_chunks_task_switch.__name__}: {event} updating chunk key={this_chunk_key} for {event.region_type} with status {event.prior_task_status}"
         )
         this_chunk.append_event(event)
         if event.prior_task_status == TaskStatus.complete:
             completed_chunk = this_chunk
     else:
-        log.debug(
+        otter.log.debug(
             f"{update_chunks_task_switch.__name__}: {event} skipped updating chunk key={this_chunk_key} for {event.region_type} with status {event.prior_task_status}"
         )
-    log.debug(
+    otter.log.debug(
         f"{update_chunks_task_switch.__name__}: {event} updating chunk key={next_chunk_key}"
     )
     if next_chunk_key in chunk_dict:

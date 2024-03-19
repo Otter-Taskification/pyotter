@@ -7,17 +7,13 @@ from otf2.definitions import Attribute as OTF2Attribute, Location as OTF2Locatio
 from otf2.events import _Event as OTF2Event
 from otf2.events import BufferFlush
 
-from .. import log
+import otter.log
 from ..definitions import Attr
-
-get_module_logger = log.logger_getter("events")
-
 
 class Location:
     # NOTE: Responsible for recording its traversal into & out of parallel regions
     
     def __init__(self, location: OTF2Location):
-        self.log = log.get_logger(self.__class__.__name__)
         self._loc = location
         self.parallel_region_deque = deque()
 
@@ -37,11 +33,11 @@ class Location:
         return self.parallel_region_deque[-1]
 
     def enter_parallel_region(self, id: int):
-        self.log.debug(f"{self} entered parallel region {id}")
+        otter.log.debug(f"{self} entered parallel region {id}")
         self.parallel_region_deque.append(id)
 
     def leave_parallel_region(self):
-        self.log.debug(f"{self} exited parallel region {self.current_parallel_region}")
+        otter.log.debug(f"{self} exited parallel region {self.current_parallel_region}")
         self.parallel_region_deque.pop()
 
 

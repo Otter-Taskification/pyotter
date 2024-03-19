@@ -13,7 +13,8 @@ from typing import Any, AnyStr, Dict, List, Set
 import igraph as ig
 import otf2_ext
 
-from . import db, log, reporting
+import otter.log as log
+from . import db, reporting
 from .core import Chunk, DBChunkBuilder, DBChunkReader
 from .core.event_model.event_model import (
     EventModel,
@@ -30,7 +31,6 @@ class Project:
     """Prepare to use an anchorfile as input"""
 
     def __init__(self, anchorfile: str, debug: bool = False) -> None:
-        self.log = log.get_logger("main")
 
         self.debug = debug
         if self.debug:

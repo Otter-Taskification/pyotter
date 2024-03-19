@@ -12,7 +12,6 @@ from otter.core.chunk_builder import (
 from otter.core.events import Event, Location
 from otter.core.tasks import Task
 from otter.definitions import Attr, EventModel, EventType, NullTaskID, SourceLocation
-from otter.log import logger_getter
 
 from .event_model import (
     BaseEventModel,
@@ -20,9 +19,6 @@ from .event_model import (
     TaskBuilderProtocol,
     TraceEventIterable,
 )
-
-get_module_logger = logger_getter("task_graph_event_model")
-
 
 """
 EVENT MODEL INCLUDING TASK-CREATE
@@ -166,7 +162,7 @@ class TaskGraphEventModel(BaseEventModel):
     def _filter_event(self, event: Event) -> bool:
         """Return True if an event should be processed when yielding chunks"""
         if event.is_buffer_flush_event():
-            self.log.warning("buffer flush event encountered - skipped (%s)", event)
+            otter.log.warning("buffer flush event encountered - skipped (%s)", event)
             return False
         return True
 

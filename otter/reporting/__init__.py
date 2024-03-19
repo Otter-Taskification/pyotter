@@ -6,10 +6,7 @@ from typing import Literal, Optional, Tuple
 
 from igraph import Graph
 
-from ..log import logger_getter
 from .make import graphviz_record_table
-
-get_module_logger = logger_getter("edges")
 
 
 # distinctipy.get_colors(15, pastel_factor=0.7)

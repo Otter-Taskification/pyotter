@@ -6,7 +6,6 @@ from itertools import groupby
 from typing import Any, Generator, Iterable, List, Optional, Tuple, Union, Sequence
 
 import otter.log
-
 from ..definitions import SourceLocation, TaskAction, TaskAttributes
 from ..utils import batched
 from . import scripts

@@ -5,10 +5,8 @@ from typing import Deque, Dict, Iterable, Optional, Tuple, Protocol
 
 from otf2_ext.events import EventType
 
-from ..log import logger_getter
+import otter.log
 from .events import Event
-
-get_module_logger = logger_getter("chunks")
 
 ChunkDict = Dict[int, "Chunk"]
 
@@ -21,7 +19,6 @@ class EventSeeker(Protocol):
 
 class Chunk:
     def __init__(self):
-        self.log = get_module_logger()
         self._events: Deque[Event] = deque()
 
     def __len__(self):
@@ -60,7 +57,7 @@ class Chunk:
         yield from self._events
 
     def append_event(self, event):
-        self.log.debug(
+        otter.log.debug(
             "append event %s to chunk: %s",
             event,
             self._base_repr,

@@ -1,6 +1,7 @@
 import argparse
 from typing import TextIO
 
+import otter.log
 import otter
 import igraph
 

@@ -19,8 +19,8 @@ from typing import (
 
 import otf2_ext
 
+import otter.log as log
 import otter
-from otter import log
 from otter.core.chunk_reader import ChunkReaderProtocol, DBChunkReader
 from otter.core.events import Event
 from otter.definitions import EventType
@@ -704,7 +704,7 @@ if __name__ == "__main__":
     parser.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
     otter.args.add_common_arguments(parser)
     args = parser.parse_args()
-    otter.log.initialise(args)
+    log.initialise(args)
     project = otter.project.BuildGraphFromDB(args.anchorfile)
     print(f"simulating trace {args.anchorfile}")
     with ExitStack() as ctx:

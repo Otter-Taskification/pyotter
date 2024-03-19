@@ -15,6 +15,7 @@ from typing import (
     Tuple,
 )
 
+import otter.log
 import otter
 from otter.core.chunk_builder import ChunkBuilderProtocol
 from otter.core.chunks import Chunk
@@ -29,7 +30,6 @@ from otter.definitions import (
     TaskAction,
     TaskSyncType,
 )
-from otter.log import logger_getter
 from otter.utils.typing import Decorator
 
 # Type hint aliases
@@ -37,8 +37,6 @@ EventList = List[Event]
 TraceEventIterable = Iterable[Tuple[Location, int, Event]]
 ChunkStackDict = Dict[Any, Deque[Chunk]]
 ChunkUpdateHandlerKey = Tuple[Optional[RegionType], EventType]
-
-get_module_logger = logger_getter("event_model")
 
 
 class TaskBuilderProtocol(Protocol):
@@ -72,8 +70,6 @@ class ChunkUpdateHandlerFn(Protocol):
 
 # Using ABC for a common __init__ between concrete models
 class BaseEventModel(ABC):
-    def __init__(self):
-        self.log = logger_getter(self.__class__.__name__)()
 
     def __init_subclass__(cls):
         # Add to the subclass a dict for registering handlers to update chunks & return completed chunks
