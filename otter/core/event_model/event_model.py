@@ -46,16 +46,18 @@ class TaskBuilderProtocol(Protocol):
 
     def add_task_metadata(
         self, task: int, parent: Optional[int], label: str, flavour: int = -1
-    ):
-        ...
+    ): ...
 
     def add_task_action(
-        self, task: int, action: TaskAction, time: str, location: SourceLocation
-    ):
-        ...
+        self,
+        task: int,
+        action: TaskAction,
+        time: str,
+        location: SourceLocation,
+        unique: bool = False,
+    ): ...
 
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...
 
 
 class ChunkUpdateHandlerFn(Protocol):
@@ -65,8 +67,7 @@ class ChunkUpdateHandlerFn(Protocol):
         location: Location,
         location_count: int,
         chunk_builder: ChunkBuilderProtocol,
-    ) -> Optional[int]:
-        ...
+    ) -> Optional[int]: ...
 
 
 # Using ABC for a common __init__ between concrete models
@@ -76,9 +77,9 @@ class BaseEventModel(ABC):
 
     def __init_subclass__(cls):
         # Add to the subclass a dict for registering handlers to update chunks & return completed chunks
-        cls.chunk_update_handlers: Dict[
-            ChunkUpdateHandlerKey, ChunkUpdateHandlerFn
-        ] = {}
+        cls.chunk_update_handlers: Dict[ChunkUpdateHandlerKey, ChunkUpdateHandlerFn] = (
+            {}
+        )
 
     @classmethod
     def update_chunks_on(
@@ -228,7 +229,11 @@ class BaseEventModel(ABC):
                 parent_id = task.parent_id if task.parent_id != NullTaskID else None
                 task_builder.add_task_metadata(task.id, parent_id, task.task_label)
                 task_builder.add_task_action(
-                    task.id, TaskAction.CREATE, str(event.time), task.init_location
+                    task.id,
+                    TaskAction.CREATE,
+                    str(event.time),
+                    task.init_location,
+                    unique=True,
                 )
             if self.is_update_task_start_ts_event(event):
                 task_builder.add_task_action(
@@ -236,6 +241,7 @@ class BaseEventModel(ABC):
                     TaskAction.START,
                     str(event.time),
                     self.get_source_location(event),
+                    unique=True,
                 )
             if self.is_task_complete_event(event):
                 task_builder.add_task_action(
@@ -243,6 +249,7 @@ class BaseEventModel(ABC):
                     TaskAction.END,
                     str(event.time),
                     self.get_source_location(event),
+                    unique=True,
                 )
             if self.is_task_suspend_event(event):
                 task_builder.add_task_action(
