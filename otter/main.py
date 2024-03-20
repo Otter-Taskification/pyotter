@@ -41,7 +41,7 @@ def _select_action(args) -> None:
                     args.anchorfile,
                     args.dotfile,
                     args.task,
-                    True, # always apply styling
+                    True,  # always apply styling
                     args.simple,
                     debug=debug,
                 )
@@ -60,6 +60,8 @@ def _select_action(args) -> None:
             otter.project.print_filter_to_stdout(
                 bool(args.include), args.include or args.exclude
             )
+        elif args.action == Action.SIMULATE:
+            otter.project.simulate_schedule(args.anchorfile, debug=debug)
         else:
             print(f"unknown action: {args.action}")
             otter.args.print_help()

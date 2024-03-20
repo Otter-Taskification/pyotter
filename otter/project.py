@@ -14,6 +14,7 @@ import igraph as ig
 import otf2_ext
 
 import otter.log as log
+import otter.simulator
 from . import db, reporting
 from .core import Chunk, DBChunkBuilder, DBChunkReader
 from .core.event_model.event_model import (
@@ -423,6 +424,16 @@ class BuildGraphFromDB(Project):
         return graph
 
 
+class SimulateFromDB(Project):
+    """Read an existing tasks database to simulate a schedule"""
+
+    def __init__(self, anchorfile: str, debug: bool = False) -> None:
+        super().__init__(anchorfile, debug=debug)
+        if not os.path.isfile(self.tasks_db):
+            log.error("no such file: %s", self.tasks_db)
+            raise SystemExit(1)
+
+
 def unpack_trace(anchorfile: str, debug: bool = False) -> None:
     """unpack a trace into a database for querying"""
 
@@ -603,3 +614,11 @@ def print_filter_to_stdout(include: bool, rules: List[List[str]]) -> None:
 
     for line in filter_file:
         print(line)
+
+
+def simulate_schedule(anchorfile: str, debug: bool = False) -> None:
+
+    project = SimulateFromDB(anchorfile, debug)
+    with project.connection() as con:
+        log.info(f"simulating trace {anchorfile}")
+        otter.simulator.simulate_ideal(con)
