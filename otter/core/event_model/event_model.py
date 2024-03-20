@@ -234,14 +234,14 @@ class BaseEventModel(ABC):
                     event.encountering_task_id,
                     TaskAction.SUSPEND,
                     str(event.time),
-                    SourceLocation(),
+                    self.get_source_location(event),
                 )
             elif self.is_task_resume_event(event):
                 task_builder.add_task_action(
                     event.encountering_task_id,
                     TaskAction.RESUME,
                     str(event.time),
-                    SourceLocation(),
+                    self.get_source_location(event),
                 )
 
             total_events = k
