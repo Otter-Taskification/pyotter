@@ -152,9 +152,10 @@ create view if not exists task_attributes as
 
 -- A readable view of all source locations
 create view if not exists source_location as
-    select file_name.text
-        ,func_name.text
+    select source.src_loc_id
+        ,file_name.text as file_name
         ,line
+        ,func_name.text as func_name
     from source
     left join string as file_name
         on source.file_id = file_name.id
