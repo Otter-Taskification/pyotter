@@ -5,17 +5,35 @@ import sqlite3
 import otter.log
 
 __TABLE__ = "critical_task"
+__VIEW_CRIT__ = "_critical_tasks"
 
 TABLE_EXISTS = f"select name from sqlite_master where name = '{__TABLE__}';"
 
 CREATE_TABLE = f"""
 create table {__TABLE__}(
-    id int unique not null,
+    id int not null,
     sequence int not null,
     critical_child int not null,
     primary key (id, sequence)
     foreign key (id) references task (id)
 )
+"""
+
+CREATE_VIEW_CRIT = f"""
+create view if not exists {__VIEW_CRIT__} as
+with descendant as (
+    select 0 as id
+    union all
+    select crit.critical_child as id
+    from descendant
+    inner join {__TABLE__} as crit
+    on descendant.id = crit.id
+)
+select attr.*
+from descendant
+inner join task_attributes as attr
+	on descendant.id = attr.id
+;
 """
 
 COUNT_ROWS = f"select count(*) as rows from {__TABLE__};"
@@ -35,6 +53,8 @@ class CritTaskWriter:
             otter.log.warning("overwriting critical task data")
             self.con.execute(f"drop table {__TABLE__}")
         self.con.execute(CREATE_TABLE)
+        self.con.execute(f"drop view if exists {__VIEW_CRIT__}")
+        self.con.execute(CREATE_VIEW_CRIT)
 
     def record_critical_task(self, task: int, sequence: int, critical_child: int):
         self.debug(f"got: {task=}, {sequence=}, {critical_child=}")
