@@ -60,6 +60,11 @@ class Connection(sqlite3.Connection):
             count = self.execute(query_count_rows).fetchone()
             print(row_format.format(row["type"], row["name"], count["rows"]))
 
+    def num_tasks(self) -> int:
+        cur = self.cursor()
+        cur.execute("select count(*) as num_tasks from task")
+        return cur.fetchone()["num_tasks"]
+
     def task_ids(self) -> Iterable[int]:
         cur = self.cursor()
         cur.execute("select id from task order by rowid")
