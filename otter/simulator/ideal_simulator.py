@@ -1,15 +1,26 @@
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Protocol
+
+from contextlib import closing
 
 import otter.log
 import otter.db
 
 
+class ScheduleWriterProtocol(Protocol):
+
+    def shedule_task(self, task: int, start_ts: int, duration: int): ...
+
+
 class TaskScheduler:
 
     def __init__(
-        self, con: otter.db.Connection, initial_tasks: Optional[Sequence[int]] = None
+        self,
+        con: otter.db.Connection,
+        schedule_writer: ScheduleWriterProtocol,
+        initial_tasks: Optional[Sequence[int]] = None,
     ) -> None:
         self.con = con
+        self.schedule_writer = schedule_writer
         self._root_tasks = initial_tasks or con.root_tasks()
         otter.log.debug("found %d root tasks", len(self._root_tasks))
 
@@ -46,6 +57,7 @@ class TaskScheduler:
             duration = self.branch_task(task, start_ts, end_ts, depth, global_start_ts)
         else:
             duration = self.leaf_task(task, start_ts, end_ts, depth, global_start_ts)
+        self.schedule_writer.shedule_task(task, global_start_ts, duration)
         return duration
 
     def branch_task(
@@ -79,12 +91,12 @@ class TaskScheduler:
 
         task_start_ts = global_start_ts
 
-        otter.log.debug(f"  {task=}")
+        # otter.log.debug(f"  {task=}")
         (_, execution_native_dt, suspended_native_dt), *_ = self.con.time_active(
             (task,)
         )
-        otter.log.debug(f"  time active:   {execution_native_dt:>9d} ns")
-        otter.log.debug(f"  time inactive: {suspended_native_dt:>9d} ns")
+        # otter.log.debug(f"  time active:   {execution_native_dt:>9d} ns")
+        # otter.log.debug(f"  time inactive: {suspended_native_dt:>9d} ns")
         task_native_dt = execution_native_dt + suspended_native_dt
 
         #! NOTE: could improve the SQL behind this as there's a lot of duplicated info returned when getting task sync groups.
@@ -107,9 +119,9 @@ class TaskScheduler:
                 crt_dt,
             ) in zip(sync_children_attr, child_crt_dt, strict=True):
                 assert child == _child
-                otter.log.debug(
-                    f"{crt_dt=:>9d} {child=:>4d} {chunk_duration=:>9d} {chunk_duration>=crt_dt}"
-                )
+                # otter.log.debug(
+                #     f"{crt_dt=:>9d} {child=:>4d} {chunk_duration=:>9d} {chunk_duration>=crt_dt}"
+                # )
                 child_duration = self.descend(
                     child, start_ts, end_ts, depth + 1, global_start_ts + crt_dt
                 )
@@ -142,15 +154,7 @@ class TaskScheduler:
         return duration
 
 
-class Model:
-
-    def __init__(self, con: otter.db.Connection) -> None:
-        self.scheduler = TaskScheduler(con)
-
-    def run(self) -> None:
-        self.scheduler.run()
-
-
 def simulate_ideal(con: otter.db.Connection):
-    model = Model(con)
-    model.run()
+    with closing(otter.db.ScheduleWriter(con)) as schedule_writer:
+        scheduler = TaskScheduler(con, schedule_writer)
+        scheduler.run()
