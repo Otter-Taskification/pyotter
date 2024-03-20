@@ -11,16 +11,23 @@ class ScheduleWriterProtocol(Protocol):
     def shedule_task(self, task: int, start_ts: int, duration: int): ...
 
 
+class CriticalTaskWriterProtocol(Protocol):
+
+    def record_critical_task(self, task: int, sequence: int, critical_child: int): ...
+
+
 class TaskScheduler:
 
     def __init__(
         self,
         con: otter.db.Connection,
         schedule_writer: ScheduleWriterProtocol,
+        crit_task_writer: CriticalTaskWriterProtocol,
         initial_tasks: Optional[Sequence[int]] = None,
     ) -> None:
         self.con = con
         self.schedule_writer = schedule_writer
+        self.crit_task_writer = crit_task_writer
         self._root_tasks = initial_tasks or con.root_tasks()
         otter.log.debug("found %d root tasks", len(self._root_tasks))
 
@@ -73,7 +80,7 @@ class TaskScheduler:
         children which are not synchronised
 
         Think of this as the "taskwait-inclusive duration", which is not the same as
-        the "inclusive duration" i.e. this task + all descendants.
+        the "inclusive duration" i.e. this task + all descendants.add
 
         The taskwait-inclusive duration is composed of two parts:
         - time spent executing the task itself (recorded in the trace)
@@ -89,15 +96,7 @@ class TaskScheduler:
         "taskwait-inclusive duration" among the children synchronised by a barrier
         """
 
-        task_start_ts = global_start_ts
-
-        # otter.log.debug(f"  {task=}")
-        (_, execution_native_dt, suspended_native_dt), *_ = self.con.time_active(
-            (task,)
-        )
-        # otter.log.debug(f"  time active:   {execution_native_dt:>9d} ns")
-        # otter.log.debug(f"  time inactive: {suspended_native_dt:>9d} ns")
-        task_native_dt = execution_native_dt + suspended_native_dt
+        (_, execution_native_dt, _), *_ = self.con.time_active((task,))
 
         #! NOTE: could improve the SQL behind this as there's a lot of duplicated info returned when getting task sync groups.
         #! could just return 1 row per sequence with the relevant times/durations, then 1 table per sequence with the synchronised child task IDs
@@ -119,9 +118,6 @@ class TaskScheduler:
                 crt_dt,
             ) in zip(sync_children_attr, child_crt_dt, strict=True):
                 assert child == _child
-                # otter.log.debug(
-                #     f"{crt_dt=:>9d} {child=:>4d} {chunk_duration=:>9d} {chunk_duration>=crt_dt}"
-                # )
                 child_duration = self.descend(
                     child, start_ts, end_ts, depth + 1, global_start_ts + crt_dt
                 )
@@ -131,6 +127,10 @@ class TaskScheduler:
                 if duration_into_barrier > barrier_duration:
                     barrier_duration = duration_into_barrier
                     critical_task = child
+            if critical_task is not None:
+                self.crit_task_writer.record_critical_task(
+                    task, sequence, critical_task
+                )
             suspended_ideal_dt = suspended_ideal_dt + barrier_duration
             global_start_ts = global_start_ts + chunk_duration + barrier_duration
 
@@ -155,6 +155,8 @@ class TaskScheduler:
 
 
 def simulate_ideal(con: otter.db.Connection):
-    with closing(otter.db.ScheduleWriter(con)) as schedule_writer:
-        scheduler = TaskScheduler(con, schedule_writer)
+    with closing(otter.db.ScheduleWriter(con)) as schedule_writer, closing(
+        otter.db.CritTaskWriter(con)
+    ) as crit_task_writer:
+        scheduler = TaskScheduler(con, schedule_writer, crit_task_writer)
         scheduler.run()
