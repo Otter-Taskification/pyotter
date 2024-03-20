@@ -13,6 +13,7 @@ class Action(str, Enum):
     SHOW = "show"
     SUMMARY = "summary"
     FILTER = "filter"
+    SIMULATE = "simulate"
 
 
 class GraphType(str, Enum):
@@ -27,6 +28,7 @@ description_action = {
     Action.SHOW: "Visualise a chosen task's graph or the task hierarchy.",
     Action.SUMMARY: "Print some summary information about the tasks database.",
     Action.FILTER: "Define a filter file based on the tasks recorded in a trace.",
+    Action.SIMULATE: "Simulate scheduling the tasks recorded in a trace.",
 }
 
 extra_description_action = {
@@ -99,6 +101,11 @@ def validate_filter_rule_pair(pair: str) -> str:
     return pair
 
 
+def add_anchorfile_argument(parser: argparse.ArgumentParser) -> None:
+    """Add the anchorfile argument to a parser"""
+    parser.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
+
+
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add common arguments to a parser"""
 
@@ -142,36 +149,23 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def prepare_parser():
-    """Prepare argument parser for otter.main.select_action()"""
-
-    formatter_class = argparse.ArgumentDefaultsHelpFormatter
-    parser = argparse.ArgumentParser(formatter_class=formatter_class, prog="otter")
-
-    # subparsers for each action (unpack, show, ...)
-    subparse_action = parser.add_subparsers(
-        dest="action", metavar="action", required=False
-    )
-    add_common_arguments(parser)
-
-    # parse the unpack action
-    parse_action_unpack = subparse_action.add_parser(
+def prepare_parser_unpack(parent: argparse._SubParsersAction[argparse.ArgumentParser]):
+    parse_action_unpack = parent.add_parser(
         Action.UNPACK.value,
         help=description_action[Action.UNPACK],
         description=description_action[Action.UNPACK],
-        formatter_class=formatter_class,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parse_action_unpack.add_argument(
-        "anchorfile", help="the Otter OTF2 anchorfile to use"
-    )
+    add_anchorfile_argument(parse_action_unpack)
     add_common_arguments(parse_action_unpack)
 
-    # parse the unpack action
-    parse_action_summary = subparse_action.add_parser(
+
+def prepare_parser_summary(parent: argparse._SubParsersAction[argparse.ArgumentParser]):
+    parse_action_summary = parent.add_parser(
         Action.SUMMARY.value,
         help=description_action[Action.SUMMARY],
         description=description_action[Action.SUMMARY],
-        formatter_class=formatter_class,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parse_action_summary.add_argument(
         "--source",
@@ -183,17 +177,16 @@ def prepare_parser():
         action="store_true",
         help="list the tasks recorded in the trace",
     )
-    parse_action_summary.add_argument(
-        "anchorfile", help="the Otter OTF2 anchorfile to use"
-    )
+    add_anchorfile_argument(parse_action_summary)
     add_common_arguments(parse_action_summary)
 
-    # parse the show action
-    parse_action_show = subparse_action.add_parser(
+
+def prepare_parser_show(parent: argparse._SubParsersAction[argparse.ArgumentParser]):
+    parse_action_show = parent.add_parser(
         Action.SHOW.value,
         help=description_action[Action.SHOW],
         description=description_action[Action.SHOW],
-        formatter_class=formatter_class,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     # subparsers for each graph type to show (cfg, hier, ...)
@@ -204,7 +197,7 @@ def prepare_parser():
         GraphType.CFG.value,
         help=description_show[GraphType.CFG],
         description=description_show[GraphType.CFG],
-        formatter_class=formatter_class,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_show_cfg.add_argument("task", help="task ID", type=int)
     parser_show_cfg.add_argument(
@@ -222,7 +215,7 @@ def prepare_parser():
         action="store_true",
         default=False,
     )
-    parser_show_cfg.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
+    add_anchorfile_argument(parser_show_cfg)
     add_common_arguments(parser_show_cfg)
 
     # parse the action "show hier"
@@ -230,7 +223,7 @@ def prepare_parser():
         GraphType.HIER.value,
         help=description_show[GraphType.HIER],
         description=description_show[GraphType.HIER],
-        formatter_class=formatter_class,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_show_hier.add_argument(
         "-o",
@@ -240,11 +233,12 @@ def prepare_parser():
         help="where to save the graph",
         default="hier.dot",
     )
-    parser_show_hier.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
+    add_anchorfile_argument(parser_show_hier)
     add_common_arguments(parser_show_hier)
 
-    # parse the filter action
-    parse_action_filter = subparse_action.add_parser(
+
+def prepare_parser_filter(parent: argparse._SubParsersAction[argparse.ArgumentParser]):
+    parse_action_filter = parent.add_parser(
         Action.FILTER.value,
         help=description_action[Action.FILTER],
         description=description_action[Action.FILTER]
@@ -271,6 +265,39 @@ def prepare_parser():
         nargs="+",
     )
     add_common_arguments(parse_action_filter)
+
+
+def prepare_parser_simulate(
+    parent: argparse._SubParsersAction[argparse.ArgumentParser],
+):
+    parse_action_simulate = parent.add_parser(
+        Action.SIMULATE.value,
+        help=description_action[Action.SIMULATE],
+        description=description_action[Action.SIMULATE],
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    add_anchorfile_argument(parse_action_simulate)
+    add_common_arguments(parse_action_simulate)
+
+
+def prepare_parser():
+    """Prepare argument parser for otter.main.select_action()"""
+
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter, prog="otter"
+    )
+
+    # subparsers for each action (unpack, show, ...)
+    subparse_action = parser.add_subparsers(
+        dest="action", metavar="action", required=False
+    )
+    add_common_arguments(parser)
+
+    prepare_parser_unpack(subparse_action)
+    prepare_parser_summary(subparse_action)
+    prepare_parser_show(subparse_action)
+    prepare_parser_filter(subparse_action)
+    prepare_parser_simulate(subparse_action)
 
     return parser
 
