@@ -1,19 +1,17 @@
 from typing import Optional, Sequence, Protocol
 
-from contextlib import closing
-
 import otter.log
 import otter.db
 
 
 class ScheduleWriterProtocol(Protocol):
 
-    def shedule_task(self, task: int, start_ts: int, duration: int): ...
+    def insert(self, task: int, start_ts: int, duration: int, /, *args): ...
 
 
 class CriticalTaskWriterProtocol(Protocol):
 
-    def record_critical_task(self, task: int, sequence: int, critical_child: int): ...
+    def insert(self, task: int, sequence: int, critical_child: int, /, *args): ...
 
 
 class TaskScheduler:
@@ -64,7 +62,7 @@ class TaskScheduler:
             duration = self.branch_task(task, start_ts, end_ts, depth, global_start_ts)
         else:
             duration = self.leaf_task(task, start_ts, end_ts, depth, global_start_ts)
-        self.schedule_writer.shedule_task(task, global_start_ts, duration)
+        self.schedule_writer.insert(task, global_start_ts, duration)
         return duration
 
     def branch_task(
@@ -128,9 +126,7 @@ class TaskScheduler:
                     barrier_duration = duration_into_barrier
                     critical_task = child
             if critical_task is not None:
-                self.crit_task_writer.record_critical_task(
-                    task, sequence, critical_task
-                )
+                self.crit_task_writer.insert(task, sequence, critical_task)
             suspended_ideal_dt = suspended_ideal_dt + barrier_duration
             global_start_ts = global_start_ts + chunk_duration + barrier_duration
 
@@ -155,8 +151,9 @@ class TaskScheduler:
 
 
 def simulate_ideal(con: otter.db.Connection):
-    with closing(otter.db.ScheduleWriter(con)) as schedule_writer, closing(
-        otter.db.CritTaskWriter(con)
-    ) as crit_task_writer:
-        scheduler = TaskScheduler(con, schedule_writer, crit_task_writer)
-        scheduler.run()
+    schedule_writer = otter.db.ScheduleWriter(con)
+    crit_task_writer = otter.db.CritTaskWriter(con)
+    con.on_close(schedule_writer.close)
+    con.on_close(crit_task_writer.close)
+    scheduler = TaskScheduler(con, schedule_writer, crit_task_writer)
+    scheduler.run()

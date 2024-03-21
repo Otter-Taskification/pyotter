@@ -162,3 +162,19 @@ create view if not exists source_location as
     left join string as func_name
         on source.func_id = func_name.id
 ;
+
+-- 
+create view if not exists _critical_tasks as
+    with descendant as (
+        select 0 as id
+        union all
+        select crit.critical_child as id
+        from descendant
+        inner join critical_task as crit
+        on descendant.id = crit.id
+    )
+    select attr.*
+    from descendant
+    inner join task_attributes as attr
+        on descendant.id = attr.id
+;

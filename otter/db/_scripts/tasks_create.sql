@@ -104,3 +104,21 @@ create table chunk_contents(
     event_pos int not null,
     primary key (chunk_key, location_ref, event_pos)
 );
+
+-- 
+create table critical_task(
+    id int not null,
+    sequence int not null,
+    critical_child int not null,
+    primary key (id, sequence)
+    foreign key (id) references task (id)
+);
+
+--
+create table task_schedule(
+    id int unique not null,
+    start_ts int not null,
+    duration int not null,
+    primary key (id)
+    foreign key (id) references task (id)
+);

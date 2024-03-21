@@ -3,7 +3,17 @@ from __future__ import annotations
 import sqlite3
 from collections import defaultdict
 from itertools import groupby
-from typing import Any, Generator, Iterable, List, Optional, Tuple, Union, Sequence
+from typing import (
+    Any,
+    Generator,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+    Sequence,
+    Callable,
+)
 
 import otter.log
 from ..definitions import SourceLocation, TaskAction, TaskAttributes
@@ -29,11 +39,25 @@ class Connection(sqlite3.Connection):
 
     def __init__(self, db: str, **kwargs):
         super().__init__(db, **kwargs)
+        self.debug = otter.log.log_with_prefix(
+            f"{self.__class__.__name__}", otter.log.debug
+        )
         self.db = db
         self.default_row_factory = Row
         self.row_factory = self.default_row_factory
+        self._callbacks_on_close: List[Callable] = []
         sqlite3_version = getattr(sqlite3, "sqlite_version", "???")
         otter.log.info(f"using sqlite3.sqlite_version {sqlite3_version}")
+
+    def on_close(self, callback: Callable):
+        self._callbacks_on_close.append(callback)
+
+    def close(self) -> None:
+        self.debug(f"closing {self}")
+        for callback in self._callbacks_on_close:
+            self.debug(f"call {callback}")
+            callback()
+        super().close()
 
     def print_summary(self) -> None:
         """Print summary information about the connected tasks database"""
