@@ -196,6 +196,8 @@ class UnpackTraceProject(Project):
                 con.executemany(db.scripts.insert_chunk, context_ids)
                 con.executemany(db.scripts.insert_context, context_meta)
 
+            con.commit()
+
         # Finally, write the definitions of the source locations and then the strings
         source_location_definitions = (
             (
@@ -212,6 +214,8 @@ class UnpackTraceProject(Project):
             (string_key, string) for (string, string_key) in self.string_id.items()
         )
         con.executemany(db.scripts.define_strings, string_definitions)
+
+        con.commit()
 
 
 class BuildGraphFromDB(Project):
