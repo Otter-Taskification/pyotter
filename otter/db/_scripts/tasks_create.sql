@@ -114,11 +114,29 @@ create table critical_task(
     foreign key (id) references task (id)
 );
 
+
+--------------------------------------------------------------------------------
 --
-create table task_schedule(
-    id int unique not null,
-    start_ts int not null,
-    duration int not null,
-    primary key (id)
+-- Tables related to the simulated schedule
+--
+--------------------------------------------------------------------------------
+
+-- List unique actions of each task e.g. create, start, end
+create table _sim_task_history_unique(
+    id int not null,       -- task ID
+    action int not null,   -- 
+    time not null,         -- time of action
+    location_id,           -- source location
+    primary key (id, action)
+    foreign key (id) references task (id)
+);
+
+-- List non-unique actions of each task
+create table _sim_task_history_multi(
+    id int not null,       -- task ID
+    action int not null,   -- 
+    time not null,         -- time of action
+    location_id,           -- source location
+    primary key (id, action, time)
     foreign key (id) references task (id)
 );

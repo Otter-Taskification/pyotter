@@ -178,3 +178,28 @@ create view if not exists _critical_tasks as
     inner join task_attributes as attr
         on descendant.id = attr.id
 ;
+
+--------------------------------------------------------------------------------
+--
+-- Views related to the simulated schedule
+--
+--------------------------------------------------------------------------------
+
+create view if not exists _sim_task_history(
+        id
+        ,action
+        ,time
+        ,location_id
+    ) as
+    select id
+        ,action
+        ,time
+        ,location_id
+    from _sim_task_history_unique
+    union all
+    select id
+        ,action
+        ,time
+        ,location_id
+    from _sim_task_history_multi
+;

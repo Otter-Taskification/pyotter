@@ -2,11 +2,12 @@ from typing import Optional, Sequence, Protocol
 
 import otter.log
 import otter.db
+from otter.definitions import TaskAction
 
 
 class ScheduleWriterProtocol(Protocol):
 
-    def insert(self, task: int, start_ts: int, duration: int, /, *args): ...
+    def insert(self, task: int, action: TaskAction, event_ts: int, /, *args): ...
 
 
 class CriticalTaskWriterProtocol(Protocol):
@@ -58,11 +59,14 @@ class TaskScheduler:
         self, task: int, start_ts: str, end_ts: str, depth: int, global_start_ts: int
     ):
         """Descend into the children of task. At the root, handle leaf tasks"""
+        # self.schedule_writer.insert task-start action
+        self.schedule_writer.insert(task, TaskAction.START, global_start_ts)
         if self.con.num_children(task) > 0:
             duration = self.branch_task(task, start_ts, end_ts, depth, global_start_ts)
         else:
             duration = self.leaf_task(task, start_ts, end_ts, depth, global_start_ts)
-        self.schedule_writer.insert(task, global_start_ts, duration)
+        # self.schedule_writer.insert task-complete action
+        self.schedule_writer.insert(task, TaskAction.END, global_start_ts + duration)
         return duration
 
     def branch_task(
@@ -107,6 +111,7 @@ class TaskScheduler:
             sync_descendants,
             chunk_duration,
         ) in sync_groups:
+            # self.schedule_writer.insert task-suspend event at start of barrier
             child_crt_dt = [(r["child_id"], r["child_crt_dt"]) for r in rows]
             sync_children_attr = self.con.task_attributes([r["child_id"] for r in rows])
             barrier_duration = 0
@@ -128,6 +133,7 @@ class TaskScheduler:
             if critical_task is not None:
                 self.crit_task_writer.insert(task, sequence, critical_task)
             suspended_ideal_dt = suspended_ideal_dt + barrier_duration
+            # self.schedule_writer.insert task-resume event after barrier
             global_start_ts = global_start_ts + chunk_duration + barrier_duration
 
         taskwait_inclusive_dt = execution_native_dt + suspended_ideal_dt

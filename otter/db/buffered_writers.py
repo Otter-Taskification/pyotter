@@ -2,6 +2,8 @@ from typing import List, Tuple, Any
 
 import otter.log
 
+from otter.definitions import TaskAction
+
 from .connect import Connection
 
 
@@ -57,12 +59,24 @@ class CritTaskWriter(BufferedDBWriter):
         return super().insert(task, sequence, critical_child)
 
 
-class ScheduleWriter(BufferedDBWriter):
+class ScheduleWriter:
 
     def __init__(
         self, con: Connection, bufsize: int = 1000, overwrite: bool = True
     ) -> None:
-        super().__init__(con, "task_schedule", 3, bufsize, overwrite)
+        self._writer_unique = BufferedDBWriter(
+            con, "_sim_task_history_unique", 4, bufsize=1000, overwrite=True
+        )
+        self._writer_multi = BufferedDBWriter(
+            con, "_sim_task_history_multi", 4, bufsize=1000, overwrite=True
+        )
 
-    def insert(self, task: int, start_ts: int, duration: int, /, *args):
-        return super().insert(task, start_ts, duration)
+    def insert(self, task: int, action: TaskAction, event_ts: int, /, *args):
+        if action in (TaskAction.CREATE, TaskAction.START, TaskAction.END):
+            self._writer_unique.insert(task, action.value, event_ts, -1)
+        else:
+            self._writer_multi.insert(task, action.value, event_ts, -1)
+
+    def close(self):
+        self._writer_multi.close()
+        self._writer_unique.close()
