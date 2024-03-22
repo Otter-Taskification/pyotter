@@ -39,15 +39,19 @@ class Connection(sqlite3.Connection):
 
     def __init__(self, db: str, **kwargs):
         super().__init__(db, **kwargs)
-        self.debug = otter.log.log_with_prefix(
-            f"{self.__class__.__name__}", otter.log.debug
-        )
+        prefix = f"[{self.__class__.__name__}]"
+        self.debug = otter.log.log_with_prefix(prefix, otter.log.debug)
+        self.info = otter.log.log_with_prefix(prefix, otter.log.info)
         self.db = db
         self.default_row_factory = Row
         self.row_factory = self.default_row_factory
         self._callbacks_on_close: List[Callable] = []
         sqlite3_version = getattr(sqlite3, "sqlite_version", "???")
         otter.log.info(f"using sqlite3.sqlite_version {sqlite3_version}")
+
+    def commit(self):
+        self.debug("commit called")
+        super().commit()
 
     def on_close(self, callback: Callable):
         self._callbacks_on_close.append(callback)
