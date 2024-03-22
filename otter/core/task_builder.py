@@ -62,9 +62,8 @@ class DBTaskBuilder:
         location: SourceLocation,
         unique: bool = False,
     ) -> None:
-        self._task_actions.append(
-            (task, action, time, self._source_location_id[location])
-        )
+        coll = self._task_actions_unique if unique else self._task_actions
+        coll.append((task, action, time, self._source_location_id[location]))
         if self._size >= self.bufsize:
             self._flush()
 
