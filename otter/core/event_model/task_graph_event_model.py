@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import otter.log
-
 from typing import Optional, Set, Tuple
+
+import otter.log
 
 from otter.core.chunk_builder import (
     ChunkBuilderProtocol,
@@ -11,12 +11,19 @@ from otter.core.chunk_builder import (
 )
 from otter.core.events import Event, Location
 from otter.core.tasks import Task
-from otter.definitions import Attr, EventModel, EventType, NullTaskID, SourceLocation
+from otter.definitions import (
+    Attr,
+    EventModel,
+    EventType,
+    NullTaskID,
+    SourceLocation,
+    TaskMetaCallback,
+    TaskActionCallback,
+)
 
 from .event_model import (
     BaseEventModel,
     EventModelFactory,
-    TaskBuilderProtocol,
     TraceEventIterable,
 )
 
@@ -179,10 +186,14 @@ class TaskGraphEventModel(BaseEventModel):
         self,
         events_iter: TraceEventIterable,
         chunk_builder: ChunkBuilderProtocol,
-        task_builder: TaskBuilderProtocol,
+        add_task_metadata_cbk: TaskMetaCallback,
+        add_task_action_cbk: TaskActionCallback,
     ):
         return super().generate_chunks(
-            self._filter_with_callbacks(events_iter), chunk_builder, task_builder
+            self._filter_with_callbacks(events_iter),
+            chunk_builder,
+            add_task_metadata_cbk,
+            add_task_action_cbk,
         )
 
 

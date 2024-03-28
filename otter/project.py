@@ -14,7 +14,9 @@ import igraph as ig
 import otf2_ext
 
 import otter.log as log
+import otter.db
 import otter.simulator
+
 from . import db, reporting
 from .core import Chunk, DBChunkBuilder, DBChunkReader
 from .core.event_model.event_model import (
@@ -23,7 +25,6 @@ from .core.event_model.event_model import (
     get_event_model,
 )
 from .core.events import Event, Location
-from .core.task_builder import DBTaskBuilder
 from .definitions import Attr, SourceLocation, TaskAttributes, TraceAttr
 from .utils import CountingDict, LabellingDict
 
@@ -106,7 +107,8 @@ class UnpackTraceProject(Project):
         """Read a trace and create a database of tasks and their synchronisation constraints"""
 
         chunk_builder = DBChunkBuilder(con, bufsize=5000)
-        task_builder = DBTaskBuilder(con, self.source_location_id, self.string_id)
+        task_meta_writer = otter.db.DBTaskMetaWriter(con, self.string_id)
+        task_action_writer = otter.db.DBTaskActionWriter(con, self.source_location_id)
 
         # First, build the chunks & tasks data
         with ExitStack() as stack:
@@ -154,12 +156,17 @@ class UnpackTraceProject(Project):
 
             log.info("building chunks")
             log.info("using chunk builder: %s", str(chunk_builder))
-            with closing(chunk_builder) as chunk_builder, closing(
-                task_builder
-            ) as task_builder:
+            with ExitStack() as temp:
+                chunk_builder = temp.enter_context(closing(chunk_builder))
+                task_meta_writer = temp.enter_context(closing(task_meta_writer))
+                task_action_writer = temp.enter_context(closing(task_action_writer))
                 num_chunks = self.event_model.generate_chunks(
-                    event_iter, chunk_builder, task_builder
+                    event_iter,
+                    chunk_builder,
+                    task_meta_writer.add_task_metadata,
+                    task_action_writer.add_task_action,
                 )
+
             log.info("generated %d chunks", num_chunks)
 
         # Second, iterate over the chunks to extract synchronisation metadata

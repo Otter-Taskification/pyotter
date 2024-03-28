@@ -18,7 +18,6 @@ from typing import (
 import otter.log
 import otter
 from otter.core.chunk_builder import ChunkBuilderProtocol
-from otter.core.task_builder import TaskBuilderProtocol
 from otter.core.chunks import Chunk
 from otter.core.events import Event, Location
 from otter.core.tasks import Task
@@ -30,6 +29,8 @@ from otter.definitions import (
     SourceLocation,
     TaskAction,
     TaskSyncType,
+    TaskMetaCallback,
+    TaskActionCallback,
 )
 from otter.utils.typing import Decorator
 
@@ -170,7 +171,8 @@ class BaseEventModel(ABC):
         self,
         events_iter: TraceEventIterable,
         chunk_builder: ChunkBuilderProtocol,
-        task_builder: TaskBuilderProtocol,
+        add_task_metadata_cbk: TaskMetaCallback,
+        add_task_action_cbk: TaskActionCallback,
     ) -> int:
         otter.log.debug("receiving events from %s", events_iter)
 
@@ -205,8 +207,8 @@ class BaseEventModel(ABC):
             if self.is_task_register_event(event):
                 task = self.get_task_registered_data(event)
                 parent_id = task.parent_id if task.parent_id != NullTaskID else None
-                task_builder.add_task_metadata(task.id, parent_id, task.task_label)
-                task_builder.add_task_action(
+                add_task_metadata_cbk(task.id, parent_id, task.task_label)
+                add_task_action_cbk(
                     task.id,
                     TaskAction.CREATE,
                     str(event.time),
@@ -214,7 +216,7 @@ class BaseEventModel(ABC):
                     unique=True,
                 )
             if self.is_update_task_start_ts_event(event):
-                task_builder.add_task_action(
+                add_task_action_cbk(
                     self.get_task_entered(event),
                     TaskAction.START,
                     str(event.time),
@@ -222,7 +224,7 @@ class BaseEventModel(ABC):
                     unique=True,
                 )
             if self.is_task_complete_event(event):
-                task_builder.add_task_action(
+                add_task_action_cbk(
                     self.get_task_completed(event),
                     TaskAction.END,
                     str(event.time),
@@ -230,14 +232,14 @@ class BaseEventModel(ABC):
                     unique=True,
                 )
             if self.is_task_suspend_event(event):
-                task_builder.add_task_action(
+                add_task_action_cbk(
                     event.encountering_task_id,
                     TaskAction.SUSPEND,
                     str(event.time),
                     self.get_source_location(event),
                 )
             elif self.is_task_resume_event(event):
-                task_builder.add_task_action(
+                add_task_action_cbk(
                     event.encountering_task_id,
                     TaskAction.RESUME,
                     str(event.time),
