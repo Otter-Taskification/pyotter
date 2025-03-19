@@ -170,3 +170,43 @@ class SimTaskActionWriter(WriterBase):
             )
         con.execute("delete from sim_task_suspend_meta where sim_id = ?;", (sim_id,))
         con.commit()
+
+
+class SimTaskActionDummyWriter(WriterBase):
+
+    def add_task_action(
+        self,
+        task: int,
+        action: TaskAction,
+        time: int,
+        source_location: SourceLocation,
+        /,
+        *,
+        location_ref: Optional[int] = None,
+        location_count: Optional[int] = None,
+        cpu: int,
+        tid: int,
+    ) -> None:
+        print(
+            task,
+            action,
+            time,
+            source_location,
+            cpu,
+            tid,
+            sep=","
+        )
+
+    def add_task_suspend_meta(
+        self, task: int, time: int, sync_descendants: bool, sync_mode: int
+    ) -> None:
+        print(
+            task,
+            time,
+            int(sync_descendants),
+            sync_mode,
+            sep=","
+        )
+
+    def close(self):
+        pass

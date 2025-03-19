@@ -323,6 +323,21 @@ def prepare_parser_simulate(
         description=description_action[Action.SIMULATE],
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parse_action_simulate.add_argument(
+        "--finite",
+        help="use finite scheduling simulator",
+        action="store_true",
+    )
+    parse_action_simulate.add_argument(
+        "--threads",
+        help="number of threads to use in finite scheduler",
+        type=int,
+    )
+    parse_action_simulate.add_argument(
+        "--dummy",
+        help="if selected, print scheduling callbacks instead of writing to DB",
+        action="store_true",
+    )
     add_common_arguments(parse_action_simulate)
 
 
@@ -344,6 +359,13 @@ def prepare_parser_plot(
         "-t",
         "--task",
         help="task whose descendants should be plotted",
+        default=None,
+        type=int,
+    )
+    parse_action_plot.add_argument(
+        "--sim",
+        dest="sim_id",
+        help="which simulated scheduling data to plot",
         default=None,
         type=int,
     )

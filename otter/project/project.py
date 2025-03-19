@@ -72,5 +72,5 @@ class SimulateTrace(ProjectBase):
     def reader(self):
         return self._reader
 
-    def connect(self, /):
-        return otter.db.WriteSimConnection(Path(self.project_root))
+    def connect(self, /, dummy: bool = False):
+        return otter.db.WriteSimConnection(Path(self.project_root), dummy=dummy)

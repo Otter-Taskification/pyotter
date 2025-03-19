@@ -61,10 +61,15 @@ def _select_action(args) -> None:
         elif args.action == Action.FILTER:
             otter.project.print_filter_to_stdout(bool(args.include), args.include or args.exclude)
         elif args.action == Action.SIMULATE:
-            otter.project.simulate_schedule(args.anchorfile)
+            otter.project.simulate_schedule(
+                args.anchorfile,
+                finite=args.finite,
+                dummy=args.dummy,
+                num_threads=args.threads
+            )
         elif args.action == Action.PLOT:
             result = otter.project.plot_scheduling_data(
-                args.anchorfile, title=args.title, task=args.task, do_format=args.format
+                args.anchorfile, title=args.title, task=args.task, do_format=args.format, sim_id=args.sim_id
             )
             if result:
                 show, *_ = result

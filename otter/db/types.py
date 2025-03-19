@@ -1,7 +1,7 @@
 from dataclasses import dataclass, InitVar, field, asdict
 from typing import NamedTuple, Callable, Optional
 
-from otter.definitions import TaskAction, TaskID
+from otter.definitions import TaskAction, TaskID, TaskSyncMode
 
 
 class SourceLocation(NamedTuple):
@@ -15,19 +15,13 @@ class SourceLocation(NamedTuple):
 
 @dataclass(frozen=True)
 class Event:
-    id: int
-    event: int
-    _action: InitVar[int]
-    action: TaskAction = field(init=False)
-    file_name: InitVar[str]
-    func_name: InitVar[str]
-    line: InitVar[int]
     time: int
-    location: SourceLocation = field(init=False)
-
-    def __post_init__(self, action: int, file_name: str, func_name: str, line: int) -> None:
-        super().__setattr__("location", SourceLocation(file_name, func_name, line))
-        super().__setattr__("action", TaskAction(action))
+    task: TaskID
+    action: TaskAction
+    location: SourceLocation
+    cpu: int
+    thread: int
+    sync_mode: Optional[TaskSyncMode] # Only populated where action is TaskAction.SUSPEND
 
 
 @dataclass(frozen=True)

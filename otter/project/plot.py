@@ -114,7 +114,7 @@ def get_state_colour(
     if state.action_start == TaskAction.CREATE:
         return (COLOUR_BLUE, COLOUR_DGREY, ALPHA_NOSHOW)
     if state.action_start == TaskAction.SUSPEND:
-        return (COLOUR_RED, COLOUR_DGREY, ALPHA_MEDIUM)
+        return (COLOUR_RED, COLOUR_DGREY, ALPHA_NOSHOW)
     otter.log.debug(f"no colour for {state=}")
     return (COLOUR_MAGENTA, COLOUR_BLACK, ALPHA_FULL)
 
@@ -151,7 +151,7 @@ def partition_tasks(tasks: Iterable[TaskID], pred: Callable[[TaskID], bool]):
 
 
 def get_scheduling_states(reader: ReadConnection, task: TaskID):
-    tasks = reader.get_descendants_of(task)
+    tasks = reader.get_related_tasks(task, relation="descendants")
     states = reader.get_task_scheduling_states(tasks)
     return states
 
@@ -162,6 +162,7 @@ def plot_scheduling_data(
     *,
     task: Optional[TaskID],
     title: Optional[str] = None,
+    sim_id: Optional[int] = None,
     do_format: bool = True,
     y_extent=0.85,
     y_bias=0.00,
@@ -191,7 +192,7 @@ def plot_scheduling_data(
     otter.log.debug(f"plot task {task} and descendants")
     otter.log.debug(f"{reader.get_task(task)}")
 
-    task_coll = reader.get_descendants_of(task)
+    task_coll = reader.get_related_tasks(task, relation="descendants")
     if task != root_task:
         task_coll.append(task)
     phase_tasks, other_tasks = partition_tasks(
@@ -199,7 +200,7 @@ def plot_scheduling_data(
     )
 
     otter.log.debug("get phase tasks' scheduling states")
-    phase_sched = reader.get_task_scheduling_states(phase_tasks)
+    phase_sched = reader.get_task_scheduling_states(phase_tasks, sim_id=sim_id)
     phase_sched_df = pd.DataFrame(
         map(partial(get_phase_plotting_data, reader=reader, get_colour=get_colour), phase_sched)
     )
@@ -208,20 +209,20 @@ def plot_scheduling_data(
     otter.log.debug(f"get non-phase tasks' scheduling states ({len(other_tasks)} tasks)")
     scheduling_states: List[TaskSchedulingState]
     if len(other_tasks) < MAX_QUERY_PARAMS:
-        scheduling_states = reader.get_task_scheduling_states(other_tasks)
+        scheduling_states = reader.get_task_scheduling_states(other_tasks, sim_id=sim_id)
     else:
         otter.log.warning(f"get task scheduling states in batches of {MAX_QUERY_PARAMS})")
         scheduling_batches: List[List[TaskSchedulingState]] = []
         num_batches = 0
         for n, batch in enumerate(batched(other_tasks, batch_size=MAX_QUERY_PARAMS), start=1):
             otter.log.warning(f"... prepare batch {n}")
-            scheduling_batches.append(reader.get_task_scheduling_states(list(batch)))
+            scheduling_batches.append(reader.get_task_scheduling_states(list(batch), sim_id=sim_id))
             num_batches += 1
         otter.log.warning(f"flatten {len(other_tasks)} tasks into a single list")
         scheduling_states = list(chain(*scheduling_batches))
         otter.log.warning(f"got all {len(other_tasks)} tasks in {num_batches} batches")
     data_getter = partial(
-        get_state_plotting_data, reader=reader, pred=is_critical_task, get_colour=get_colour
+        get_state_plotting_data, reader=reader, pred=lambda _: False, get_colour=get_colour
     )
     state_df = pd.DataFrame(map(data_getter, scheduling_states))
     task_crt_getter = partial(
@@ -351,7 +352,7 @@ def print_phase_scheduling_data(reader: ReadConnection, data: List[TaskSchedulin
         num_children = len(children)
         num_descendants = 0
         for child, _ in children:
-            desc = reader.get_descendants_of(child)
+            desc = reader.get_related_tasks(child, relation="descendants")
             num_descendants += len(desc)
         print(
             f"{s.start_ts:>17,d} | {s.duration:>15,d} | {num_children:>9,d} | {num_descendants:>9,d} | {s.action_start.name:<9s} | {s.start_location}"

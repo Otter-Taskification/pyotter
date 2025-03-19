@@ -12,7 +12,7 @@ from .project import ReadTraceData
 
 
 def print_phase_scheduling_data(reader: ReadConnection):
-    phase_tasks = reader.get_children_of(reader.get_root_task())
+    phase_tasks = reader.get_related_tasks(reader.get_root_task(), relation="children")
     phase_sched = reader.get_task_scheduling_states(phase_tasks)
     for s in phase_sched:
         if s.action_start == TaskAction.CREATE:
@@ -27,7 +27,7 @@ def print_phase_scheduling_data(reader: ReadConnection):
         num_children = len(children)
         num_descendants = 0
         for child, _ in children:
-            desc = reader.get_descendants_of(child)
+            desc = reader.get_related_tasks(child, relation="descendants")
             num_descendants += len(desc)
         print(
             f"{s.start_ts:>17,d} | {s.duration:>15,d} | {num_children:>9,d} | {num_descendants:>9,d} | {s.action_start.name:<9s} | {s.start_location}"
