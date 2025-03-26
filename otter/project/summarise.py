@@ -2,7 +2,7 @@ from typing import List
 
 import otter.log
 
-from otter.definitions import TaskAction
+from otter.definitions import TaskAction, TaskID
 from otter.db import ReadConnection
 from otter.db.types import TaskSchedulingState
 from otter.args import Summarise
@@ -80,6 +80,24 @@ def summarise_tasks_db(
 
         elif summarise == Summarise.PHASES:
             print_phase_scheduling_data(otter.project.ReadTraceData(anchorfile).connect())
+
+        elif summarise == Summarise.TIME:
+            simulations = con.get_sim_ids()
+            root_task_id = TaskID(1) #!!! HACK!!!
+            native_schedule = con.get_task_scheduling_states((root_task_id,), cond=lambda s: s.is_active)
+            simulated_schedules = {sim_id: con.get_task_scheduling_states((root_task_id,), cond=lambda s: s.is_active, sim_id=sim_id) for sim_id in simulations}
+            start, end = native_schedule[0], native_schedule[-1]
+            duration = end.end_ts - start.start_ts
+            print(anchorfile, "native", start.start_ts, end.end_ts, duration, start.action_start.name, end.action_end.name, sep=",")
+
+            for sim_id, states in simulated_schedules.items():
+                start, end = states[0], states[-1]
+                duration = end.end_ts - start.start_ts
+                # print(f"{sim_id=}")
+                # for state in states:
+                #     print(state)
+                print(anchorfile, sim_id, start.start_ts, end.end_ts, duration, start.action_start.name, end.action_end.name, sep=",")
+                # print()
 
         else:
             otter.log.error("don't know how to summarise %s", summarise)

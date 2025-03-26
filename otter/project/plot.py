@@ -104,7 +104,7 @@ def get_state_colour(
 ):
     task = reader.get_task(state.task)
     if is_root_task(task) or is_phase_task(task):
-        return (get_colour(task.attr.label), COLOUR_WHITE, ALPHA_NOSHOW)
+        return (COLOUR_RED, COLOUR_BLACK, ALPHA_FULL)
     if pred(task):
         if state.is_active:
             return (COLOUR_YELLOW, COLOUR_RED, ALPHA_FULL)
@@ -193,7 +193,7 @@ def plot_scheduling_data(
     otter.log.debug(f"{reader.get_task(task)}")
 
     task_coll = reader.get_related_tasks(task, relation="descendants")
-    if task != root_task:
+    if task != root_task or True:
         task_coll.append(task)
     phase_tasks, other_tasks = partition_tasks(
         task_coll, pred=lambda task: reader.get_task_label(task).startswith("OTTER PHASE")

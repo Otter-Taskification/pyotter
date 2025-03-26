@@ -204,7 +204,7 @@ class ReadConnection(ConnectionBase):
 
     def get_sim_ids(self) -> List[int]:
         cur = self._con.execute("select distinct sim_id from sim_task_history;").fetchall()
-        return list(cur)
+        return [sim_id for (sim_id,) in cur]
 
     def get_critical_tasks(self, /, *, sim_id: int) -> List[TaskID]:
         cur = self._con.execute(scripts["get_critical_tasks"].format(root_task=0), (sim_id,))

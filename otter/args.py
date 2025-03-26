@@ -26,6 +26,7 @@ class Summarise(str, Enum):
     STRINGS = "strings"
     SIMS = "sims"
     PHASES = "phases"
+    TIME = "time"
 
 
 class GraphType(str, Enum):
