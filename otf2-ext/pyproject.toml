@@ -1,0 +1,17 @@
+[build-system]
+requires = ["uv_build>=0.7.5,<0.8.0"]
+build-backend = "uv_build"
+
+[project]
+requires-python = ">=3.10"
+name = "otf2_ext"
+description = "Extensions to the Python otf2 package."
+version = "0.1.0"
+authors = [{ name = "Adam Tuft", email = "adam.s.tuft@durham.ac.uk" }]
+dependencies = [
+    "otf2>=2.3",
+]
+
+[tool.uv.build-backend]
+# relative to the location of this file
+module-root = ""
