@@ -17,4 +17,4 @@ def _find_dot_or_die():
 
 # _find_dot_or_die()
 
-from . import args, core, definitions, main, profile, project, reporting, utils, db, log
+from . import args, core, definitions, main, profile, project, reporting, utils, db, log, otf2_ext

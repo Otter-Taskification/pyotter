@@ -1,38 +1,36 @@
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.7.5,<0.8.0"]
+build-backend = "uv_build"
 
 [project]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 name = "otter"
 description = "Otter post-processing tool."
 readme = "README.md"
 version = "0.2.0"
 authors = [{ name = "Adam Tuft", email = "adam.s.tuft@durham.ac.uk" }]
 dependencies = [
-    "pyyaml>=6.0",
-    "igraph",
-    "otf2",
-    "colorama",
-    "prettytable",
-    "matplotlib",
-    "pandas",
+    "pyyaml>=6.0.2",
+    "igraph>=0.11.8",
+    "otf2>=2.3",
+    "colorama>=0.4.6",
+    "prettytable>=3.16.0",
+    "matplotlib>=3.10.3",
+    "pandas>=2.2.3"
 ]
 license = { file = "LICENSE" }
 
 [project.scripts]
 otter = "otter.main:select_action"
 
-[tool.setuptools.packages.find]
-where = ["."]
-exclude = ["build*"]
-
-[tool.setuptools.package-data]
-"otter.reporting.templates" = ["*.html"]
-"otter.log.config" = ["*.yaml"]
-"otter.db._scripts" = ["*.sql"]
+[tool.uv.build-backend]
+module-root = ""
+source-exclude = [
+    ".hooks/*",
+    "notebooks/*",
+]
 
 [tool.black]
-target-versions = ["py38", "py39", "py310", "py311"]
+target-version = ["py39", "py310", "py311", "py312", "py313"]
 include = '/otter'
 extend-exclude = '.sql$|.html$|.yaml$'

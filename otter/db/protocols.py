@@ -1,6 +1,6 @@
 from typing import Protocol, Optional, Tuple, Iterable
 
-from otf2_ext.events import EventType
+from otter.otf2_ext.events import EventType
 
 from otter.definitions import TaskAction, TaskID
 from otter.core.events import Event

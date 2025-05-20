@@ -5,11 +5,11 @@ from pathlib import Path
 from typing import Dict
 from time import time
 
-import otf2_ext
 
 import otter.log
 import otter.db
 
+from otter import otf2_ext
 from otter.definitions import TraceAttr
 from otter.db.protocols import TaskMetaCallback, TaskActionCallback, TaskSuspendMetaCallback
 from otter.core.events import Event, Location
