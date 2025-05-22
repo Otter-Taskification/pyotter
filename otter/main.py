@@ -30,6 +30,11 @@ def _select_action(args) -> None:
 
     otter.log.initialise(args.loglevel)
 
+    if args.anchorfile is None:
+        otter.log.error(
+            "No anchorfile specified. Either provide anchorfile argument or set OTTER_ANCHORFILE environment variable")
+        raise SystemExit(1)
+
     debug = args.loglevel == otter.log.Level.DEBUG.name.lower()
 
     with otter.profile.output(args.profile):

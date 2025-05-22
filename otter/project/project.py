@@ -72,5 +72,9 @@ class SimulateTrace(ProjectBase):
     def reader(self):
         return self._reader
 
-    def connect(self, /, dummy: bool = False):
-        return otter.db.WriteSimConnection(Path(self.project_root), dummy=dummy)
+    def connect(self, /, dummy: bool = False, parallel: bool = True):
+        """Returns a set of callbacks for recording events in the simulation"""
+        if not parallel:
+            return otter.db.WriteSimConnection(Path(self.project_root), dummy=dummy)
+        else:
+            return otter.db.WriteSimParallelConnection(Path(self.project_root), dummy=dummy)

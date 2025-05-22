@@ -555,4 +555,4 @@ def simulate_finite(
 
     print("ACTIONS:")
     for key, value in sorted(action_count.items(), key=lambda item: item[0].value):
-        print(f"    {key:<26s} {value:>1d}")
+        print(f"    {str(key):<26s} {value:>1d}")

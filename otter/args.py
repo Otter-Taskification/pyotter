@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from enum import Enum
 
 
@@ -119,7 +120,7 @@ def validate_filter_rule_pair(pair: str) -> str:
 
 def add_anchorfile_argument(parser: argparse.ArgumentParser) -> None:
     """Add the anchorfile argument to a parser"""
-    parser.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use")
+    parser.add_argument("anchorfile", help="the Otter OTF2 anchorfile to use", nargs='?', default=os.getenv("OTTER_ANCHORFILE"))
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -387,9 +388,6 @@ def prepare_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter, prog="otter"
     )
 
-    add_anchorfile_argument(parser)
-    add_common_arguments(parser)
-
     # subparsers for each action (unpack, show, ...)
     subparse_action = parser.add_subparsers(dest="action", metavar="action", required=False)
 
@@ -399,6 +397,8 @@ def prepare_parser():
     prepare_parser_filter(subparse_action)
     prepare_parser_simulate(subparse_action)
     prepare_parser_plot(subparse_action)
+
+    add_anchorfile_argument(parser)
 
     return parser
 

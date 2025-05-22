@@ -24,17 +24,18 @@ class ConnectionBase(ABC, Loggable):
         *,
         mode: Mode,
         overwrite: bool = False,
+        name: str = "tasks.db",
         **kwargs,
     ) -> None:
         super().__init__()
-        dbpath = root_path / "aux" / "tasks.db"
+        dbpath = root_path / "aux" / name
         mode_s = Mode.rwc.name if mode is Mode.wo else mode.name
         self._uri = f"file:{dbpath}?mode={mode_s}"
         if mode is Mode.wo and dbpath.exists():
             if not overwrite:
                 raise FileExistsError(dbpath)
             else:
-                self.log_warning("overwriting tasks database: %s", dbpath)
+                self.log_warning("overwriting database: %s", dbpath)
                 dbpath.unlink()
         self.log_debug("connect: %r", self)
         try:

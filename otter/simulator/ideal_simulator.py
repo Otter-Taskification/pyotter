@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Tuple, NamedTuple, Self
+from typing import Optional, List, Dict, Tuple, NamedTuple
 from itertools import count
 
 import otter.log
@@ -19,7 +19,7 @@ class Timings(NamedTuple):
     duration: int
     end_ts: int
 
-    def __gt__(self, value: Self) -> bool:
+    def __gt__(self, value) -> bool:
         return self.end_ts > value.end_ts
 
 
