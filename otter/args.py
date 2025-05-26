@@ -336,6 +336,16 @@ def prepare_parser_simulate(
         type=int,
     )
     parse_action_simulate.add_argument(
+        "--t_schedule",
+        help="scheduling cost (ns)",
+        type=int,
+    )
+    parse_action_simulate.add_argument(
+        "--t_pending",
+        help="scheduling cost per pending task (ns)",
+        type=int,
+    )
+    parse_action_simulate.add_argument(
         "--dummy",
         help="if selected, print scheduling callbacks instead of writing to DB",
         action="store_true",

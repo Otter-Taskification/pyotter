@@ -70,7 +70,9 @@ def _select_action(args) -> None:
                 args.anchorfile,
                 finite=args.finite,
                 dummy=args.dummy,
-                num_threads=args.threads
+                num_threads=args.threads,
+                t_schedule=args.t_schedule,
+                t_pending=args.t_pending,
             )
         elif args.action == Action.PLOT:
             result = otter.project.plot_scheduling_data(

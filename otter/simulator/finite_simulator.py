@@ -205,6 +205,8 @@ class TaskScheduler(Loggable):
         scheduling_policy: TaskSchedulingPolicy,
         task_event_listeners: List[TaskEventListener],
         num_threads: int = 1,
+        t_schedule: int = 0,
+        t_pending: int = 0,
     ) -> None:
         self.log_debug("CALLBACKS:")
         self.log_debug("CALLBACKS: %s", crit_task_callback)
@@ -224,6 +226,14 @@ class TaskScheduler(Loggable):
         # The time-ordered queue of task scheduling events to be evaluated
         # Contains task-create, task-suspend and task-complete events
         self._scheduling_event_queue: Deque[Event] = deque()
+
+        # Scheduling cost model parameters (in ns)
+        # the cost of scheduling (i.e. starting or resuming) a task
+        self.t_schedule = t_schedule
+        # the cost per currently pending task
+        self.t_pending = t_pending
+
+        self.log_debug(f"scheduling cost model: {t_schedule=}, {t_pending=}")
 
     def task_created(self, task: TaskID):
         for listener in self.task_event_listeners:
@@ -332,6 +342,9 @@ class TaskScheduler(Loggable):
         """
         self.log_debug(f"schedule {task_id=} on {thread=} at {global_ts=}")
 
+        ready_tasks = self.task_pool.count_ready_tasks()
+        scheduling_ts = global_ts + self.t_schedule + (self.t_pending * ready_tasks)
+
         # tell the task pool that this task was scheduled, generating the task's tsp data
         task, scheduled_state, sync_mode = self.task_pool.schedule_task(task_id)
         assert scheduled_state.is_active
@@ -340,7 +353,7 @@ class TaskScheduler(Loggable):
             assert sync_mode is not None
 
         # fire the callback for this action
-        self.task_action_callback(task.id, scheduled_state.action_start, global_ts, scheduled_state.start_location, cpu=-1, tid=thread)
+        self.task_action_callback(task.id, scheduled_state.action_start, scheduling_ts, scheduled_state.start_location, cpu=-1, tid=thread)
 
         # build the task-create events which this task will encounter
         task_create_events = self.task_pool.get_task_create_events(task.id, scheduled_state.start_ts, scheduled_state.end_ts, relative=True)
@@ -350,10 +363,10 @@ class TaskScheduler(Loggable):
         assert all((0 <= e.time <= scheduled_state.duration for e in task_create_events))
 
         events: List[Event] = [
-            Event(global_ts + evt.time, evt.task, evt.action, evt.location, -1, thread, None)
+            Event(scheduling_ts + evt.time, evt.task, evt.action, evt.location, -1, thread, None)
             for evt in task_create_events
         ]
-        state_end_ts = global_ts + scheduled_state.duration
+        state_end_ts = scheduling_ts + scheduled_state.duration
         if scheduled_state.action_end in [TaskAction.SUSPEND, TaskAction.END]:
             events.append(Event(state_end_ts, task.id, scheduled_state.action_end, scheduled_state.end_location, -1, thread, sync_mode))
         else:
@@ -514,6 +527,8 @@ def simulate_finite(
     task_action_callback: TaskActionCallback,
     task_suspend_callback: TaskSuspendMetaCallback,
     num_threads: int = 1,
+    t_schedule: int = 0,
+    t_pending: int = 0,
 ):
     action_count = defaultdict(int)
     def count_action(task: TaskID,
@@ -541,6 +556,8 @@ def simulate_finite(
         scheduling_policy=fifo,
         task_event_listeners=[task_pool, fifo],
         num_threads=num_threads,
+        t_schedule=t_schedule,
+        t_pending=t_pending,
     )
     scheduler.start()
     while scheduler.events_pending():
