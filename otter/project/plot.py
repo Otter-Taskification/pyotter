@@ -17,7 +17,7 @@ from otter.utils import batched
 ColourMap = Mapping[Any, Tuple[float, float, float]]
 ColourGetter = Callable[[Any], Tuple[float, float, float]]
 
-MAX_QUERY_PARAMS = 50000
+MAX_QUERY_PARAMS = 30000
 
 COLOUR_WHITE = (1, 1, 1)
 COLOUR_BLACK = (0, 0, 0)
