@@ -16,6 +16,21 @@ class ReadConnection(ConnectionBase):
 
     def __init__(self, root_path: Path) -> None:
         super().__init__(root_path, mode=Mode.ro)
+        # Check for simulations and try to read all simulation IDs
+        sim_register = self.get_uri("_WriteSimParallelConnection.db", Mode.ro)
+        try:
+            con = sim_register.connect()
+        except FileNotFoundError:
+            self.log_debug("no simulation register found at %s", sim_register)
+            sim_ids: List[int] = []
+        else:
+            self.log_debug("connected to simulation register at '%s'", sim_register)
+            cur = con.execute("select id from simulations order by id;")
+            sim_ids: List[int] = [sim_id for (sim_id,) in cur]
+        self.log_debug("found %d simulations", len(sim_ids))
+        self.simulations = {
+            sim_id: self.get_uri(f"sim_{sim_id}.db", Mode.ro).connect() for sim_id in sim_ids
+        }
 
     def __enter__(self):
         return self
@@ -44,14 +59,14 @@ class ReadConnection(ConnectionBase):
         return count
 
     def count_simulations(self) -> int:
-        (count,) = self._con.execute(
-            "select count(distinct sim_id) from sim_task_history"
-        ).fetchone()
-        return count
+        return len(self.simulations)
 
     def count_simulation_rows(self) -> List[Tuple[int, int]]:
-        cur = self._con.execute(scripts["count_simulation_rows"]).fetchall()
-        return list(cur)
+        rows = [
+            con.execute(scripts["count_simulation_rows"]).fetchone()
+            for con in self.simulations.values()
+        ]
+        return rows
 
     def get_root_task(self):
         return TaskID(0)
@@ -159,17 +174,30 @@ class ReadConnection(ConnectionBase):
         sim_id: Optional[int] = None,
     ) -> Generator[TaskSchedulingState, None, None]:
         """Yield 1 row per task scheduling state during the task's lifetime"""
-
-        if sim_id is not None:
-            query = scripts["get_simulated_scheduling_states"].format(
-                sim_id=sim_id,
-                placeholder=",".join("?" for task in tasks),
-            )
+        if sim_id is None:
+            yield from self._iter_task_scheduling_states(tasks)
         else:
-            query = scripts["get_task_scheduling_states"].format(
-                placeholder=",".join("?" for task in tasks)
-            )
+            yield from self._iter_simulated_task_scheduling_states(tasks, sim_id)
 
+    def _iter_simulated_task_scheduling_states(self, tasks: Sequence[TaskID], sim_id: int):
+        """Yield 1 row per task scheduling state during the task's lifetime for a specific simulation"""
+        query = scripts["get_simulated_scheduling_states"].format(
+            sim_id=sim_id,
+            placeholder=",".join("?" for task in tasks),
+        )
+        cur = self.simulations[sim_id].execute(query, tasks)
+        for row in cur:
+            start_id, end_id, *rest = row
+            start = self.get_source_location(start_id)
+            end = self.get_source_location(end_id)
+            data = [ *rest[0:3], *start, *end, *rest[3:] ]
+            yield TaskSchedulingState(*data)
+
+    def _iter_task_scheduling_states(self, tasks: Sequence[TaskID]):
+        """Yield 1 row per task scheduling state during the task's lifetime"""
+        query = scripts["get_task_scheduling_states"].format(
+            placeholder=",".join("?" for task in tasks)
+        )
         cur = self._con.execute(query, tasks)
         yield from (TaskSchedulingState(*row) for row in cur)
 
@@ -203,10 +231,10 @@ class ReadConnection(ConnectionBase):
         return list(cur)
 
     def get_sim_ids(self) -> List[int]:
-        cur = self._con.execute("select distinct sim_id from sim_task_history;").fetchall()
-        return [sim_id for (sim_id,) in cur]
+        return list(self.simulations.keys())
 
     def get_critical_tasks(self, /, *, sim_id: int) -> List[TaskID]:
+        # TODO! doesn't work with separate databases for each simulation
         cur = self._con.execute(scripts["get_critical_tasks"].format(root_task=0), (sim_id,))
         return [task for (task,) in cur]
 
