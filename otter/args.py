@@ -183,6 +183,7 @@ def prepare_parser_unpack(parent: argparse._SubParsersAction[argparse.ArgumentPa
         action="store_true",
         default=False,
     )
+    add_anchorfile_argument(parse_action_unpack)
 
 
 def prepare_parser_summary(parent: argparse._SubParsersAction[argparse.ArgumentParser]):
@@ -206,6 +207,7 @@ def prepare_parser_summary(parent: argparse._SubParsersAction[argparse.ArgumentP
         default=False,
         help=f"if set, attempt to demangle task labels as if they are C++ type names (using c++filt)",
     )
+    add_anchorfile_argument(parse_action_summary)
 
 
 def prepare_parser_show(parent: argparse._SubParsersAction[argparse.ArgumentParser]):
@@ -243,6 +245,7 @@ def prepare_parser_show(parent: argparse._SubParsersAction[argparse.ArgumentPars
         action="store_true",
         default=False,
     )
+    add_anchorfile_argument(parser_show_cfg)
 
     # parse the action "show hier"
     parser_show_hier = subparse_action_show.add_parser(
@@ -260,6 +263,7 @@ def prepare_parser_show(parent: argparse._SubParsersAction[argparse.ArgumentPars
         help="where to save the graph",
         default="hier.dot",
     )
+    add_anchorfile_argument(parser_show_hier)
 
     # parse the action "show tree"
     parser_show_tree = subparse_action_show.add_parser(
@@ -285,7 +289,7 @@ def prepare_parser_show(parent: argparse._SubParsersAction[argparse.ArgumentPars
         choices=["TB", "LR"],
         required=True,
     )
-
+    add_anchorfile_argument(parser_show_tree)
 
 def prepare_parser_filter(parent: argparse._SubParsersAction[argparse.ArgumentParser]):
     parse_action_filter = parent.add_parser(
@@ -314,7 +318,6 @@ def prepare_parser_filter(parent: argparse._SubParsersAction[argparse.ArgumentPa
         metavar="key=value",
         nargs="+",
     )
-
 
 def prepare_parser_simulate(
     parent: argparse._SubParsersAction[argparse.ArgumentParser],
@@ -351,6 +354,7 @@ def prepare_parser_simulate(
         action="store_true",
     )
     add_common_arguments(parse_action_simulate)
+    add_anchorfile_argument(parse_action_simulate)
 
 
 def prepare_parser_plot(
@@ -389,6 +393,7 @@ def prepare_parser_plot(
         default=True,
     )
     add_common_arguments(parse_action_plot)
+    add_anchorfile_argument(parse_action_plot)
 
 
 def prepare_parser():
