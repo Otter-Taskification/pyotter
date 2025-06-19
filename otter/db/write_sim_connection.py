@@ -65,7 +65,7 @@ class WriteSimParallelConnection(ConnectionBase):
         # Create a connection to a database owned by this simulation
         self._root_path = root_path
         self._sim_id = self._get_unique_simulation_id()
-        self.log_info("got sim_id ", self._sim_id)
+        self.log_info("got sim_id %d", self._sim_id)
         super().__init__(root_path, mode=Mode.wo, name=f"sim_{self._sim_id}.db")
         self._exit = ExitStack()
         self._dummy = dummy
