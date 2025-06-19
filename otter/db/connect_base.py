@@ -4,6 +4,7 @@ import sqlite3
 from abc import ABC, abstractmethod
 from enum import Enum, auto
 from pathlib import Path
+from os import PathLike
 
 from otter.log import Loggable
 
@@ -14,6 +15,27 @@ class Mode(Enum):
     rw = auto()  #  read-write, fail if not exists
     rwc = auto()  #  read-write, create if not exists
 
+
+class ConnectionURI:
+
+    def __init__(self, mode: Mode, path: str | PathLike[str]) -> None:
+        self.mode = mode
+        self.path = Path(path)
+
+    def str(self) -> str:
+        mode_s = Mode.rwc.name if self.mode is Mode.wo else self.mode.name
+        return f"file:{self.path.as_posix()}?mode={mode_s}"
+
+    def connect(self) -> sqlite3.Connection:
+        """Return a sqlite3 connection to this URI"""
+        try:
+            con = sqlite3.connect(self.str(), uri=True)
+        except sqlite3.OperationalError as err:
+            if self.mode in [Mode.ro, Mode.rw] and not self.path.exists():
+                raise FileNotFoundError(self) from None
+            else:
+                raise err
+        return con
 
 class ConnectionBase(ABC, Loggable):
 
@@ -28,27 +50,27 @@ class ConnectionBase(ABC, Loggable):
         **kwargs,
     ) -> None:
         super().__init__()
-        dbpath = root_path / "aux" / name
-        mode_s = Mode.rwc.name if mode is Mode.wo else mode.name
-        self._uri = f"file:{dbpath}?mode={mode_s}"
-        if mode is Mode.wo and dbpath.exists():
+        self.root_path = root_path
+        self.uri = self.get_uri(name, mode)
+        if mode is Mode.wo and self.uri.path.exists():
             if not overwrite:
-                raise FileExistsError(dbpath)
+                raise FileExistsError(self.uri)
             else:
-                self.log_warning("overwriting database: %s", dbpath)
-                dbpath.unlink()
+                self.log_warning("overwriting database: %s", self.uri)
+                self.uri.path.unlink()
         self.log_debug("connect: %r", self)
-        try:
-            self._con = sqlite3.connect(self._uri, uri=True)
-        except sqlite3.OperationalError as err:
-            self.log_error(str(err))
-            if mode in [Mode.ro, Mode.rw] and not dbpath.exists():
-                raise FileNotFoundError(dbpath) from None
-            else:
-                raise err
+        self._con = self.uri.connect()
+
+    def get_uri(self, name: str, mode: Mode) -> ConnectionURI:
+        """Return the URI of a database"""
+        return ConnectionURI(mode=mode, path=self.root_path / "aux" / name)
+
+    @property
+    def tasks(self):
+        return self._con
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(uri={self._uri})"
+        return f"{type(self).__name__}(uri={self.uri.str()})"
 
     @abstractmethod
     def __enter__(self): ...
