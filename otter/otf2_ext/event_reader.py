@@ -122,10 +122,11 @@ class GlobalEventReader:
         _otf2.GlobalEvtReaderCallbacks_SetIoTryLockCallback(cbs, self._io_try_lock)
         _otf2.GlobalEvtReaderCallbacks_SetProgramBeginCallback(cbs, self._program_begin)
         _otf2.GlobalEvtReaderCallbacks_SetProgramEndCallback(cbs, self._program_end)
-        _otf2.GlobalEvtReaderCallbacks_SetNonBlockingCollectiveRequestCallback(cbs, self._non_blocking_collective_request)
-        _otf2.GlobalEvtReaderCallbacks_SetNonBlockingCollectiveCompleteCallback(cbs, self._non_blocking_collective_complete)
-        _otf2.GlobalEvtReaderCallbacks_SetCommCreateCallback(cbs, self._comm_create)
-        _otf2.GlobalEvtReaderCallbacks_SetCommDestroyCallback(cbs, self._comm_destroy)
+        if _otf2.__version__ != "2.3":
+            _otf2.GlobalEvtReaderCallbacks_SetNonBlockingCollectiveRequestCallback(cbs, self._non_blocking_collective_request)
+            _otf2.GlobalEvtReaderCallbacks_SetNonBlockingCollectiveCompleteCallback(cbs, self._non_blocking_collective_complete)
+            _otf2.GlobalEvtReaderCallbacks_SetCommCreateCallback(cbs, self._comm_create)
+            _otf2.GlobalEvtReaderCallbacks_SetCommDestroyCallback(cbs, self._comm_destroy)
 
     def _buffer_flush(self, *args):
         self._append(events.BufferFlush, *args)
