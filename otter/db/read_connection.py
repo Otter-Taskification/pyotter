@@ -134,7 +134,10 @@ class ReadConnection(ConnectionBase):
     @lru_cache(maxsize=1000)
     def get_source_location(self, location_id: int) -> SourceLocation:
         """Construct a source location from its id"""
+        self.log_debug(f"get source location for {location_id=}")
         row = self._con.execute(scripts["get_source_location"], (location_id,)).fetchone()
+        if not row:
+            self.log_error(f"no source location data found for {location_id=}")
         return SourceLocation(*row)
 
     def get_all_source_locations(self) -> List[Tuple[int, SourceLocation]]:
@@ -177,6 +180,7 @@ class ReadConnection(ConnectionBase):
         if sim_id is None:
             yield from self._iter_task_scheduling_states(tasks)
         else:
+            # Think we need to open a reader to the actual trace data here, since a reader
             yield from self._iter_simulated_task_scheduling_states(tasks, sim_id)
 
     def _iter_simulated_task_scheduling_states(self, tasks: Sequence[TaskID], sim_id: int):
@@ -187,10 +191,13 @@ class ReadConnection(ConnectionBase):
         )
         cur = self.simulations[sim_id].execute(query, tasks)
         for row in cur:
-            start_id, end_id, *rest = row
+            task_id, start_id, end_id, action_start, action_end, *rest = row
+            self.log_debug(f"get source location for {start_id=}")
+            self.log_debug(f"get source location for {end_id=}")
             start = self.get_source_location(start_id)
             end = self.get_source_location(end_id)
-            data = [ *rest[0:3], *start, *end, *rest[3:] ]
+            data = [ task_id, action_start, action_end, *start, *end, *rest ]
+            self.log_debug(f"yield simulated scheduling state ({len(row)} items): {row}")
             yield TaskSchedulingState(*data)
 
     def _iter_task_scheduling_states(self, tasks: Sequence[TaskID]):
