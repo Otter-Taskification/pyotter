@@ -1,5 +1,6 @@
 from typing import Dict, Optional
 from sqlite3 import Connection
+from pprint import pformat
 
 from otter.log import is_debug_enabled
 from otter.definitions import TaskAction
@@ -107,6 +108,12 @@ class SimTaskActionWriter(WriterBase):
         self._sim_id = sim_id  # simulation ID
         self._task_actions = BufferedDBWriter(con, "sim_task_history", 7, bufsize=bufsize)
         self._task_suspend_meta = BufferedDBWriter(con, "sim_task_suspend_meta", 5, bufsize=bufsize)
+        self.log_debug("source location map: {0}".format(pformat(source, indent=2)))
+
+    def _lookup_source_id(self, source):
+        source_id = self._source[source]
+        self.log_debug(f"lookup source id for {source=} -> found {source_id=}")
+        return source_id
 
     def add_task_action(
         self,
@@ -126,7 +133,7 @@ class SimTaskActionWriter(WriterBase):
             task,
             action,
             time,
-            self._source[source_location],
+            self._lookup_source_id(source_location),
             cpu,
             tid,
         )

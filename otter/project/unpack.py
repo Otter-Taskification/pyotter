@@ -106,9 +106,9 @@ def unpack_trace(anchorfile: str, /, *, overwrite: bool) -> None:
 
     project = UnpackTraceData(anchorfile)
     try:
-        con = project.connect(overwrite=overwrite)
+        writer = project.connect(overwrite=overwrite, memory=False)
     except FileExistsError as err:
         otter.log.error("file exists: %s", str(err))
         raise SystemExit(1) from None
-    with con as writer_callbacks:
+    with writer as writer_callbacks:
         process_trace(project.anchorfile, *writer_callbacks)

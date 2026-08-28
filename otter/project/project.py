@@ -49,8 +49,8 @@ class ProjectBase(ABC, Loggable):
 
 class UnpackTraceData(ProjectBase):
 
-    def connect(self, /, overwrite: bool):
-        return otter.db.WriteConnection(self.project_root, overwrite=overwrite)
+    def connect(self, /, overwrite: bool, memory: bool = False):
+        return otter.db.WriteConnection(self.project_root, overwrite=overwrite, memory=memory)
 
 
 class ReadTraceData(ProjectBase):

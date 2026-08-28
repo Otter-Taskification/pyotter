@@ -19,8 +19,11 @@ from .writers import TaskActionWriter, TaskMetaWriter, SourceLocationWriter, Str
 
 class WriteConnection(ConnectionBase):
 
-    def __init__(self, root_path: Path, /, *, views: bool = False, overwrite: bool = False) -> None:
-        super().__init__(root_path, mode=Mode.wo, overwrite=overwrite)
+    def __init__(self, root_path: Path, /, *, views: bool = False, overwrite: bool = False, memory: bool = False) -> None:
+        if memory:
+            super().__init__(root_path, mode=Mode.memory)
+        else:
+            super().__init__(root_path, mode=Mode.wo, overwrite=overwrite)
         self.views = views
         source_location_id: Dict[SourceLocation, int] = LabellingDict()
         string_id: Dict[str, int] = LabellingDict()

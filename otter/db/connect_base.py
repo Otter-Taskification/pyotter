@@ -14,6 +14,7 @@ class Mode(Enum):
     ro = auto()  #  read-only
     rw = auto()  #  read-write, fail if not exists
     rwc = auto()  #  read-write, create if not exists
+    memory = auto()  #  in-memory database, no file
 
 
 class ConnectionURI:
@@ -23,8 +24,11 @@ class ConnectionURI:
         self.path = Path(path)
 
     def str(self) -> str:
-        mode_s = Mode.rwc.name if self.mode is Mode.wo else self.mode.name
-        return f"file:{self.path.as_posix()}?mode={mode_s}"
+        if self.mode is Mode.memory:
+            return f"file:{self.path.as_posix()}?mode=memory&cache=shared"
+        else:
+            mode_s = Mode.rwc.name if self.mode is Mode.wo else self.mode.name
+            return f"file:{self.path.as_posix()}?mode={mode_s}"
 
     def connect(self) -> sqlite3.Connection:
         """Return a sqlite3 connection to this URI"""
@@ -66,7 +70,7 @@ class ConnectionBase(ABC, Loggable):
         return ConnectionURI(mode=mode, path=self.root_path / "aux" / name)
 
     @property
-    def tasks(self):
+    def con(self):
         return self._con
 
     def __repr__(self) -> str:
