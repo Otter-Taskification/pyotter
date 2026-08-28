@@ -413,7 +413,7 @@ def prepare_parser():
     prepare_parser_simulate(subparse_action)
     prepare_parser_plot(subparse_action)
 
-    add_anchorfile_argument(parser)
+    # add_anchorfile_argument(parser)
 
     return parser
 
